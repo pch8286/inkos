@@ -2,7 +2,7 @@
   InkOS Studio — Atmospheric Literary Workbench
   Fonts: Instrument Serif (Headings/Literary), DM Sans (UI), JetBrains Mono (Data)
 */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@500;600&display=swap');
 
 @import "tailwindcss";
 
@@ -32,8 +32,8 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-serif: 'Instrument Serif', Georgia, serif;
-  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', 'Noto Serif KR', Georgia, serif;
+  --font-sans: 'DM Sans', 'Noto Sans KR', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -130,7 +130,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--background-radial);
-  background-attachment: fixed;
+  background-attachment: scroll;
   color: var(--foreground);
   transition: background 0.5s ease, color 0.5s ease;
 }
@@ -166,9 +166,15 @@ h1, h2, h3, h4 {
   font-weight: 500;
 }
 
-h1 { font-size: 2.25rem; font-style: italic; }
+h1 { font-size: 2.25rem; font-style: normal; line-height: 1.02; }
 h2 { font-size: 1.75rem; }
 h3 { font-size: 1.25rem; }
+
+@media (min-width: 768px) {
+  body {
+    background-attachment: fixed;
+  }
+}
 
 /* Focus indicator */
 :focus-visible {

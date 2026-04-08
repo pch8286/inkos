@@ -41,22 +41,22 @@ export function BootstrapView({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="max-w-5xl mx-auto px-6 py-12 md:px-10 lg:py-16 space-y-8">
-        <div className="space-y-3">
+      <div className="max-w-6xl mx-auto px-5 py-8 sm:px-6 md:px-10 lg:py-16 space-y-6 sm:space-y-8">
+        <div className="space-y-2.5 sm:space-y-3">
           <div className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground font-bold">
             InkOS Studio
           </div>
-          <h1 className="font-serif text-4xl">{t("boot.title")}</h1>
-          <p className="text-muted-foreground max-w-3xl leading-7">
+          <h1 className="font-serif max-w-3xl text-[clamp(2.25rem,8vw,3.6rem)] leading-[0.96]">{t("boot.title")}</h1>
+          <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
             {t("boot.subtitle")}
           </p>
-          <div className="text-xs text-muted-foreground break-all">
-            {bootstrap.root}
+          <div className="inline-flex max-w-full items-center rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-[11px] text-muted-foreground sm:text-xs">
+            {t("boot.pathLabel")} · <span className="ml-1 truncate">{bootstrap.root}</span>
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
-          <div className={`border ${c.cardStatic} rounded-lg p-6 space-y-5`}>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] items-start">
+          <div className={`border ${c.cardStatic} rounded-xl p-5 sm:p-6 space-y-6`}>
             <div>
               <h2 className="font-serif text-2xl">{t("boot.initTitle")}</h2>
               <p className="text-sm text-muted-foreground mt-2">{t("boot.initHint")}</p>
@@ -95,11 +95,28 @@ export function BootstrapView({
               {t("boot.globalHint")}
             </div>
 
+            <div className="space-y-3">
+              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                {t("boot.createsLabel")}
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-3 sm:gap-3">
+                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3 text-sm text-foreground">
+                  {t("boot.createsConfig")}
+                </div>
+                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3 text-sm text-foreground">
+                  {t("boot.createsBooks")}
+                </div>
+                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3 text-sm text-foreground">
+                  {t("boot.createsReuse")}
+                </div>
+              </div>
+            </div>
+
             <div className="flex justify-end">
               <button
                 onClick={handleInitialize}
                 disabled={creating}
-                className={`px-5 py-3 rounded-md text-sm ${c.btnPrimary} disabled:opacity-50`}
+                className={`w-full sm:w-auto px-5 py-3 rounded-md text-sm ${c.btnPrimary} disabled:opacity-50`}
               >
                 {creating ? t("boot.initializing") : t("boot.initialize")}
               </button>

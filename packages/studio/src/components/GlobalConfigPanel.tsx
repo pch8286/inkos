@@ -113,6 +113,13 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
     && authSession.provider === form.provider
     && authSession.status !== "failed"
     && authSession.status !== "succeeded";
+  const authSummary = cliOAuthProvider
+    ? activeAuthStatus?.authenticated
+      ? (t ? t("config.summaryReady") : "Ready")
+      : (t ? t("config.summaryNeedsAuth") : "Login required")
+    : data.apiKeySet
+      ? (t ? t("config.summaryReady") : "Ready")
+      : (t ? t("config.summaryNeedsKey") : "API key required");
 
   const handleProviderSelect = (provider: Exclude<LlmProvider, "">) => {
     setForm((current) => ({
@@ -180,7 +187,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-serif text-xl">{title}</h2>
           {!compact && (
@@ -190,13 +197,36 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
           )}
         </div>
         {data.exists && (
-          <span className="text-xs text-muted-foreground">Stored in `~/.inkos/.env`</span>
+          <span className="text-xs text-muted-foreground">
+            {(t ? t("config.storedPath") : "Stored in")} `~/.inkos/.env`
+          </span>
         )}
       </div>
 
-      <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-4`}>
+      <div className={`border ${c.cardStatic} rounded-xl p-4 md:p-5 space-y-5`}>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              {t ? t("config.providerSummary") : "Current provider"}
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">{providerLabel(form.provider)}</div>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              {t ? t("config.modelSummary") : "Current model"}
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground break-all">{form.model || defaultModelForProvider(form.provider) || "-"}</div>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              {t ? t("config.authSummary") : "Connection status"}
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">{authSummary}</div>
+          </div>
+        </div>
+
         <label className="block space-y-1.5">
-          <span className="text-sm text-muted-foreground">{t ? t("config.language") : "Default language"}</span>
+          <span className="text-sm text-muted-foreground">{t ? t("config.defaultLanguage") : "Default language"}</span>
           <select
             value={form.language}
             onChange={(event) => setForm({ ...form, language: event.target.value })}
@@ -209,8 +239,13 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
         </label>
 
         <div className="space-y-2">
-          <div className="text-sm text-muted-foreground">Provider</div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">{t ? t("config.providerLabel") : "Provider"}</div>
+            <div className="hidden sm:block text-xs text-muted-foreground">
+              {t ? t("config.projectWillUse") : "New projects will use these defaults immediately."}
+            </div>
+          </div>
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 xl:grid-cols-3">
             {PROVIDER_OPTIONS.map((option) => {
               const active = form.provider === option.value;
               return (
@@ -218,14 +253,14 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                   key={option.value}
                   type="button"
                   onClick={() => handleProviderSelect(option.value)}
-                  className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
+                  className={`min-w-[11.5rem] shrink-0 snap-start sm:min-w-0 sm:shrink rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
                     active
-                      ? "border-primary bg-primary/10 text-foreground"
+                      ? "border-primary bg-primary/10 text-foreground shadow-sm"
                       : "border-border/50 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground"
                   }`}
                 >
-                  <div className="font-medium">{option.label}</div>
-                  <div className="mt-1 text-[11px] opacity-80">
+                  <div className="font-medium leading-snug">{option.label}</div>
+                  <div className="mt-1 text-[11px] opacity-70">
                     {option.value}
                   </div>
                 </button>
@@ -297,8 +332,8 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
         )}
 
         {cliOAuthProvider && activeAuthStatus && (
-          <div className="rounded-lg border border-border/50 bg-secondary/30 p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
+          <div className="rounded-xl border border-border/50 bg-secondary/30 p-4 space-y-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-1">
                 <div className="text-sm font-medium text-foreground">
                   {authTitle(form.provider as CliOAuthProvider)}
@@ -308,7 +343,9 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                     ? (t ? t("config.authenticated") : "Authenticated")
                     : (t ? t("config.notAuthenticated") : "Not Authenticated")}
                   {" · "}
-                  {activeAuthStatus.available ? `\`${activeAuthStatus.command}\` detected` : `\`${activeAuthStatus.command}\` not found`}
+                  {activeAuthStatus.available
+                    ? (t ? t("config.commandDetected") : "`{command}` detected").replace("{command}", activeAuthStatus.command)
+                    : (t ? t("config.commandMissing") : "`{command}` not found").replace("{command}", activeAuthStatus.command)}
                 </div>
                 <div className="text-xs text-muted-foreground break-all">
                   {activeAuthStatus.credentialPath}
@@ -320,7 +357,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => void refetch()}
@@ -337,8 +374,8 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                   {authBusy
                     ? (t ? t("config.launchingLogin") : "Launching...")
                     : activeAuthStatus.authenticated
-                      ? "Re-authenticate"
-                      : "Connect in Browser"}
+                      ? (t ? t("config.reauthenticate") : "Re-authenticate")
+                      : (t ? t("config.connectBrowser") : "Connect in Browser")}
                 </button>
               </div>
             </div>
@@ -349,16 +386,17 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
 
             {!activeAuthStatus.available && (
               <div className="text-xs text-destructive">
-                Install `{activeAuthStatus.command}` first, then return here to authenticate.
+                {(t ? t("config.installCommandFirst") : "Install `{command}` first, then return here to authenticate.")
+                  .replace("{command}", activeAuthStatus.command)}
               </div>
             )}
 
             {authSession && authSession.provider === form.provider && (
               <div className="space-y-2 rounded-md bg-background/70 p-3 border border-border/40">
-                <div className="text-xs text-muted-foreground">Auth status: {authSession.status}</div>
+                <div className="text-xs text-muted-foreground">{t ? t("config.authStatus") : "Auth status"}: {authSession.status}</div>
                 {authSession.url && (
                   <a href={authSession.url} target="_blank" rel="noreferrer" className={c.link}>
-                    Open authorization page
+                    {t ? t("config.openAuthPage") : "Open authorization page"}
                   </a>
                 )}
                 {authSession.verificationCode && (
@@ -367,16 +405,16 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                   </div>
                 )}
                 {authSession.provider === "gemini-cli" && authSession.status === "awaiting-code" && (
-                  <div className="flex gap-2 items-center">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <input
                       type="text"
                       value={geminiCode}
                       onChange={(event) => setGeminiCode(event.target.value)}
-                      placeholder="Paste Gemini auth code"
+                      placeholder={t ? t("config.pasteGeminiCode") : "Paste Gemini auth code"}
                       className={`${c.input} rounded px-3 py-2 text-sm flex-1`}
                     />
                     <button type="button" onClick={submitGeminiCode} className={`px-3 py-2 text-xs rounded-md ${c.btnPrimary}`}>
-                      Submit
+                      {t ? t("config.submit") : "Submit"}
                     </button>
                   </div>
                 )}
@@ -393,7 +431,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 border-t border-border/40 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-muted-foreground">
             {providerLabel(form.provider)}
           </div>
@@ -401,7 +439,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className={`px-4 py-2.5 text-sm rounded-md ${c.btnPrimary} disabled:opacity-50`}
+            className={`w-full sm:w-auto px-4 py-2.5 text-sm rounded-md ${c.btnPrimary} disabled:opacity-50`}
           >
             {saving ? (t ? t("config.saving") : "Saving...") : (t ? t("config.saveGlobal") : "Save global defaults")}
           </button>
