@@ -2,10 +2,24 @@ import { Command } from "commander";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve, basename } from "node:path";
 import { PipelineRunner, type BookConfig, type FanficMode } from "@actalk/inkos-core";
+import { resolveCliLanguage } from "../localization.js";
 import { loadConfig, buildPipelineConfig, findProjectRoot, resolveBookId, log, logError } from "../utils.js";
 
 export const fanficCommand = new Command("fanfic")
   .description("Fan fiction writing tools (同人创作)");
+
+function slugifyFanficBookId(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff가-힣]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+}
+
+function defaultFanficGenreForLanguage(language: ReturnType<typeof resolveCliLanguage>): string {
+  return language === "ko" ? "korean-other" : "other";
+}
 
 fanficCommand
   .command("init")
@@ -13,11 +27,11 @@ fanficCommand
   .requiredOption("--title <title>", "Book title")
   .requiredOption("--from <path>", "Source file or directory (novel text, wiki, character docs)")
   .option("--mode <mode>", "Fanfic mode: canon|au|ooc|cp", "canon")
-  .option("--genre <genre>", "Genre", "other")
+  .option("--genre <genre>", "Genre (defaults from writing language when omitted)")
   .option("--platform <platform>", "Target platform", "other")
   .option("--target-chapters <n>", "Target chapter count", "100")
   .option("--chapter-words <n>", "Words per chapter", "3000")
-  .option("--lang <language>", "Writing language: zh or en. Defaults from genre.")
+  .option("--lang <language>", "Writing language: ko, zh, or en. Defaults from project config.")
   .option("--json", "Output JSON")
   .action(async (opts) => {
     try {
@@ -38,22 +52,19 @@ fanficCommand
         throw new Error(`源素材文件内容过短（${sourceText.length} 字符）。请提供至少 100 字符的原作素材。`);
       }
 
-      const bookId = opts.title
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fff]/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 30);
+      const bookId = slugifyFanficBookId(opts.title);
+      const language = resolveCliLanguage(opts.lang ?? config.language);
 
       const now = new Date().toISOString();
       const book: BookConfig = {
         id: bookId,
         title: opts.title,
         platform: opts.platform,
-        genre: opts.genre,
+        genre: opts.genre ?? defaultFanficGenreForLanguage(language),
         status: "outlining",
         targetChapters: parseInt(opts.targetChapters, 10),
         chapterWordCount: parseInt(opts.chapterWords, 10),
-        language: opts.lang ?? config.language,
+        language,
         createdAt: now,
         updatedAt: now,
         fanficMode: mode,

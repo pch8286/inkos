@@ -1,8 +1,9 @@
 import type { ContextPackage } from "../models/input-governance.js";
+import type { WritingLanguage } from "../models/language.js";
 
 export function buildGovernedMemoryEvidenceBlocks(
   contextPackage: ContextPackage,
-  language?: "zh" | "en",
+  language?: WritingLanguage,
 ): {
   readonly hookDebtBlock?: string;
   readonly hooksBlock?: string;
@@ -12,7 +13,7 @@ export function buildGovernedMemoryEvidenceBlocks(
   readonly moodTrailBlock?: string;
   readonly canonBlock?: string;
 } {
-  const resolvedLanguage = language ?? "zh";
+  const resolvedLanguage = language ?? "ko";
   const hookEntries = contextPackage.selectedContext.filter((entry) =>
     entry.source.startsWith("story/pending_hooks.md#"),
   );

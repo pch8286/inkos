@@ -2,6 +2,7 @@ import type { BookConfig, FanficMode } from "../models/book.js";
 import type { GenreProfile } from "../models/genre-profile.js";
 import type { BookRules } from "../models/book-rules.js";
 import type { LengthSpec } from "../models/length-governance.js";
+import type { WritingLanguage } from "../models/language.js";
 import { buildFanficCanonSection, buildCharacterVoiceProfiles, buildFanficModeInstructions } from "./fanfic-prompt-sections.js";
 import { buildEnglishCoreRules, buildEnglishAntiAIRules, buildEnglishCharacterMethod, buildEnglishPreWriteChecklist, buildEnglishGenreIntro } from "./en-prompt-sections.js";
 import { buildLengthSpec } from "../utils/length-metrics.js";
@@ -27,13 +28,15 @@ export function buildWriterSystemPrompt(
   chapterNumber?: number,
   mode: "full" | "creative" = "full",
   fanficContext?: FanficContext,
-  languageOverride?: "zh" | "en",
+  languageOverride?: WritingLanguage,
   inputProfile: "legacy" | "governed" = "legacy",
   lengthSpec?: LengthSpec,
 ): string {
-  const isEnglish = (languageOverride ?? genreProfile.language) === "en";
+  const resolvedLanguage = languageOverride ?? genreProfile.language;
+  const isEnglish = resolvedLanguage === "en";
+  const isKorean = resolvedLanguage === "ko";
   const governed = inputProfile === "governed";
-  const resolvedLengthSpec = lengthSpec ?? buildLengthSpec(book.chapterWordCount, isEnglish ? "en" : "zh");
+  const resolvedLengthSpec = lengthSpec ?? buildLengthSpec(book.chapterWordCount, resolvedLanguage);
 
   const outputSection = mode === "creative"
     ? buildCreativeOutputFormat(book, genreProfile, resolvedLengthSpec)
@@ -58,9 +61,27 @@ export function buildWriterSystemPrompt(
         !governed ? buildEnglishPreWriteChecklist(book, genreProfile) : "",
         outputSection,
       ]
+    : isKorean
+      ? [
+          buildGenreIntro(book, genreProfile, "ko"),
+          buildCoreRules(resolvedLengthSpec, "ko"),
+          buildGovernedInputContract("ko", governed),
+          buildLengthGuidance(resolvedLengthSpec, "ko"),
+          !governed ? buildKoreanStyleRules() : "",
+          buildGenreRules(genreProfile, genreBody),
+          buildProtagonistRules(bookRules),
+          buildBookRulesBody(bookRulesBody),
+          buildStyleGuide(styleGuide),
+          buildStyleFingerprint(styleFingerprint),
+          fanficContext ? buildFanficCanonSection(fanficContext.fanficCanon, fanficContext.fanficMode) : "",
+          fanficContext ? buildCharacterVoiceProfiles(fanficContext.fanficCanon) : "",
+          fanficContext ? buildFanficModeInstructions(fanficContext.fanficMode, fanficContext.allowedDeviations) : "",
+          !governed ? buildKoreanPreWriteChecklist(book, genreProfile) : "",
+          outputSection,
+        ]
     : [
-        buildGenreIntro(book, genreProfile),
-        buildCoreRules(resolvedLengthSpec),
+        buildGenreIntro(book, genreProfile, "zh"),
+        buildCoreRules(resolvedLengthSpec, "zh"),
         buildGovernedInputContract("zh", governed),
         buildLengthGuidance(resolvedLengthSpec, "zh"),
         !governed ? buildAntiAIExamples() : "",
@@ -90,11 +111,14 @@ export function buildWriterSystemPrompt(
 // Genre intro
 // ---------------------------------------------------------------------------
 
-function buildGenreIntro(book: BookConfig, gp: GenreProfile): string {
+function buildGenreIntro(book: BookConfig, gp: GenreProfile, language: WritingLanguage): string {
+  if (language === "ko") {
+    return `너는 ${gp.name} 장르에 특화된 한국 웹소설 작가다. 이번 원고는 ${book.platform} 플랫폼 독자를 상정하고 집필한다.`;
+  }
   return `你是一位专业的${gp.name}网络小说作家。你为${book.platform}平台写作。`;
 }
 
-function buildGovernedInputContract(language: "zh" | "en", governed: boolean): string {
+function buildGovernedInputContract(language: WritingLanguage, governed: boolean): string {
   if (!governed) return "";
 
   if (language === "en") {
@@ -111,6 +135,19 @@ function buildGovernedInputContract(language: "zh" | "en", governed: boolean): s
 - In multi-character scenes, include at least one resistance-bearing exchange instead of reducing the beat to summary or explanation.`;
   }
 
+  if (language === "ko") {
+    return `## 입력 거버넌스 계약
+
+- 이번 화에서 실제로 써야 할 내용은 제공된 chapter intent 와 composed context package 를 우선한다.
+- 권차 개요는 기본 계획일 뿐, 항상 절대 규칙은 아니다.
+- runtime rule stack 에 L4 -> L3 active override 가 기록돼 있으면 현재 작업 의도를 우선하고, 계획은 그 범위 안에서 조정한다.
+- 절대 깨지면 안 되는 것은 세계관 설정, 연속성 사실, 명시적 금지사항 같은 하드 가드레일이다.
+- Hook Debt 브리프가 있으면 씨앗이 심긴 원문 장면을 바탕으로 후속 장면이나 회수를 써야 한다. 두루뭉술하게 언급만 하지 말고, 독자가 이미 본 약속을 구체적으로 이어가라.
+- 명시적 hook agenda 에 회수 가능한 대상이 있으면 이번 화 안에 독자의 질문에 답하는 구체적 보상 장면을 배치한다.
+- 오래된 hook debt 가 남아 있으면 같은 계열의 새 떡밥을 쉽게 늘리지 말고, 먼저 기존 약속의 압박을 해소한다.
+- 다인 장면에서는 최소 한 번 이상 이해관계가 부딪히는 직접 공방을 넣고, 관계를 설명문으로만 처리하지 않는다.`;
+  }
+
   return `## 输入治理契约
 
 - 本章具体写什么，以提供给你的 chapter intent 和 composed context package 为准。
@@ -124,13 +161,21 @@ function buildGovernedInputContract(language: "zh" | "en", governed: boolean): s
 - 多角色场景里，至少给出一轮带阻力的直接交锋，不要把人物关系写成纯解释或纯总结。`;
 }
 
-function buildLengthGuidance(lengthSpec: LengthSpec, language: "zh" | "en"): string {
+function buildLengthGuidance(lengthSpec: LengthSpec, language: WritingLanguage): string {
   if (language === "en") {
     return `## Length Guidance
 
 - Target length: ${lengthSpec.target} words
 - Acceptable range: ${lengthSpec.softMin}-${lengthSpec.softMax} words
 - Hard range: ${lengthSpec.hardMin}-${lengthSpec.hardMax} words`;
+  }
+
+  if (language === "ko") {
+    return `## 분량 가이드
+
+- 목표 분량: ${lengthSpec.target}자
+- 허용 구간: ${lengthSpec.softMin}-${lengthSpec.softMax}자
+- 하드 구간: ${lengthSpec.hardMin}-${lengthSpec.hardMax}자`;
   }
 
   return `## 字数治理
@@ -144,7 +189,36 @@ function buildLengthGuidance(lengthSpec: LengthSpec, language: "zh" | "en"): str
 // Core rules (~25 universal rules)
 // ---------------------------------------------------------------------------
 
-function buildCoreRules(lengthSpec: LengthSpec): string {
+function buildCoreRules(lengthSpec: LengthSpec, language: WritingLanguage): string {
+  if (language === "ko") {
+    return `## 핵심 규칙
+
+1. 반드시 자연스럽고 현대적인 한국어로 쓴다. 중국어 예시나 용어가 보이더라도 실제 출력은 모두 한국어여야 한다.
+2. 문장은 장면과 행동을 따라 움직여야 하며, 설명문이 서사를 대신하면 안 된다.
+3. 목표 분량은 ${lengthSpec.target}자이고, 허용 구간은 ${lengthSpec.softMin}-${lengthSpec.softMax}자다.
+4. 모바일 독서 기준으로 문단 길이를 관리한다. 한 문단은 대체로 3-5행 안에 머물게 한다.
+5. 모든 장면은 새 정보, 태도 변화, 이해득실 변화 중 최소 하나를 남겨야 한다.
+6. 주인공과 조연의 행동은 과거 경험, 현재 이익, 성격의 축에서 설명 가능해야 한다.
+7. 대사는 정보 전달이 아니라 저항, 협상, 감정 충돌이 드러나는 방식으로 쓴다.
+8. 감정은 직접 이름 붙이기보다 몸의 반응, 말투, 선택, 시선 처리로 보여 준다.
+9. 장면 전환에는 시간 또는 공간의 연결고리를 남긴다.
+10. 떡밥은 심는 순간부터 회수 경로를 의식하고, 오래된 약속을 방치하지 않는다.
+
+## 문체 규율
+
+- 같은 주어, 같은 어미, 같은 문장 시작을 연속으로 반복하지 않는다.
+- 완곡어와 추상 명사는 줄이고, 동사와 명사로 장면을 움직인다.
+- 군중 반응은 "모두 놀랐다" 대신 1-2명의 구체적 반응으로 압축한다.
+- 메타 서술, 분석 리포트 문장, 작가 해설처럼 들리는 문장은 금지한다.
+- 장면의 공기와 감정은 촉각, 시선, 호흡, 소리 같은 감각으로 전달한다.
+
+## 금지사항
+
+- "아니라, 오히려" 같은 교정형 문장을 남발하지 않는다.
+- 본문 안에 hook_id, 퍼센트, 시스템 로그 같은 추적용 메타 데이터를 넣지 않는다.
+- 독자가 행동으로 추론할 수 있는 결론을 서술자가 먼저 해설하지 않는다.`;
+  }
+
   return `## 核心规则
 
 1. 以简体中文工作，句子长短交替，段落适合手机阅读（3-5行/段）
@@ -199,6 +273,25 @@ function buildCoreRules(lengthSpec: LengthSpec): string {
 - 【硬性禁令】全文严禁出现"不是……而是……""不是……，是……""不是A，是B"句式，出现即判定违规。改用直述句
 - 【硬性禁令】全文严禁出现破折号"——"，用逗号或句号断句
 - 正文中禁止出现hook_id/账本式数据（如"余量由X%降到Y%"），数值结算只放POST_SETTLEMENT`;
+}
+
+function buildKoreanStyleRules(): string {
+  return `## 한국어 문체 가드레일
+
+- 서사 설명보다 장면 진행을 우선한다.
+- "느껴졌다", "같았다", "마치", "어쩌면" 같은 완곡 표현은 꼭 필요할 때만 쓴다.
+- 감탄사와 강조 부사는 남발하지 말고, 돌발성은 행동과 감각으로 처리한다.
+- 한 장면 안에서 같은 이미지장을 세 번 이상 반복하지 않는다.
+- 끝맺음은 다음 화로 이어질 질문, 압박, 선택 중 하나를 남겨 독자의 클릭 이유를 만든다.`;
+}
+
+function buildKoreanPreWriteChecklist(book: BookConfig, genreProfile: GenreProfile): string {
+  return `## 집필 전 체크
+
+- 이번 화에서 가장 먼저 독자를 붙잡을 갈등이나 이상 신호를 첫 장면 안에 배치한다.
+- ${genreProfile.name} 장르 기대를 충족하는 보상 장면이나 전개 압박을 최소 한 번은 보여 준다.
+- 이번 화가 끝날 때 주인공의 상태, 관계, 목표 중 무엇이 달라지는지 분명히 한다.
+- ${book.platform} 독자가 다음 화를 바로 열 이유가 마지막 1-2문단에 남아 있어야 한다.`;
 }
 
 // ---------------------------------------------------------------------------

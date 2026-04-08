@@ -1,6 +1,7 @@
 import { BaseAgent } from "./base.js";
 import type { BookConfig } from "../models/book.js";
 import type { GenreProfile } from "../models/genre-profile.js";
+import type { WritingLanguage } from "../models/language.js";
 import type { ContextPackage, RuleStack } from "../models/input-governance.js";
 import { readGenreProfile, readBookRules } from "./rules-reader.js";
 import { parseWriterOutput, type ParsedWriterOutput } from "./writer-parser.js";
@@ -62,7 +63,7 @@ export class ChapterAnalyzerAgent extends BaseAgent {
       bookDir,
       chapterNumber,
       goal: this.buildMemoryGoal(chapterTitle, chapterContent),
-      outlineNode: this.findOutlineNode(volumeOutline, chapterNumber),
+      outlineNode: this.findOutlineNode(volumeOutline, chapterNumber, resolvedLanguage),
     });
     const chapterSummaries = this.renderSummarySnapshot(
       memorySelection.summaries,
@@ -121,13 +122,17 @@ export class ChapterAnalyzerAgent extends BaseAgent {
       bibleBlock: !governedMode && storyBible !== this.missingFilePlaceholder(resolvedLanguage)
         ? resolvedLanguage === "en"
           ? `\n## Story Bible\n${storyBible}\n`
-          : `\n## 世界观设定\n${storyBible}\n`
+          : resolvedLanguage === "ko"
+            ? `\n## 스토리 바이블\n${storyBible}\n`
+            : `\n## 世界观设定\n${storyBible}\n`
         : "",
       outlineOrControlBlock: reducedControlBlock || (
         volumeOutline !== this.missingFilePlaceholder(resolvedLanguage)
           ? resolvedLanguage === "en"
             ? `\n## Volume Outline\n${volumeOutline}\n`
-            : `\n## 卷纲\n${volumeOutline}\n`
+            : resolvedLanguage === "ko"
+              ? `\n## 볼륨 아웃라인\n${volumeOutline}\n`
+              : `\n## 卷纲\n${volumeOutline}\n`
           : ""
       ),
       hooksBlock: governedMemoryBlocks?.hooksBlock
@@ -135,7 +140,9 @@ export class ChapterAnalyzerAgent extends BaseAgent {
           hooksWorkingSet !== this.missingFilePlaceholder(resolvedLanguage)
             ? resolvedLanguage === "en"
               ? `\n## Current Hooks\n${hooksWorkingSet}\n`
-              : `\n## 当前伏笔池\n${hooksWorkingSet}\n`
+              : resolvedLanguage === "ko"
+                ? `\n## 현재 진행 중인 훅\n${hooksWorkingSet}\n`
+                : `\n## 当前伏笔池\n${hooksWorkingSet}\n`
             : ""
         ),
       summariesBlock: governedMemoryBlocks?.summariesBlock
@@ -143,24 +150,32 @@ export class ChapterAnalyzerAgent extends BaseAgent {
           chapterSummaries !== this.missingFilePlaceholder(resolvedLanguage)
             ? resolvedLanguage === "en"
               ? `\n## Existing Chapter Summaries\n${chapterSummaries}\n`
-              : `\n## 已有章节摘要\n${chapterSummaries}\n`
+              : resolvedLanguage === "ko"
+                ? `\n## 기존 요약 목록\n${chapterSummaries}\n`
+                : `\n## 已有章节摘要\n${chapterSummaries}\n`
             : ""
         ),
       volumeSummariesBlock: governedMemoryBlocks?.volumeSummariesBlock ?? "",
       subplotBlock: subplotWorkingSet !== this.missingFilePlaceholder(resolvedLanguage)
         ? resolvedLanguage === "en"
           ? `\n## Current Subplot Board\n${subplotWorkingSet}\n`
-          : `\n## 当前支线进度板\n${subplotWorkingSet}\n`
+          : resolvedLanguage === "ko"
+            ? `\n## 현재 서브플롯 보드\n${subplotWorkingSet}\n`
+            : `\n## 当前支线进度板\n${subplotWorkingSet}\n`
         : "",
       emotionalBlock: emotionalWorkingSet !== this.missingFilePlaceholder(resolvedLanguage)
         ? resolvedLanguage === "en"
           ? `\n## Current Emotional Arcs\n${emotionalWorkingSet}\n`
-          : `\n## 当前情感弧线\n${emotionalWorkingSet}\n`
+          : resolvedLanguage === "ko"
+            ? `\n## 현재 감정 곡선\n${emotionalWorkingSet}\n`
+            : `\n## 当前情感弧线\n${emotionalWorkingSet}\n`
         : "",
       matrixBlock: matrixWorkingSet !== this.missingFilePlaceholder(resolvedLanguage)
         ? resolvedLanguage === "en"
           ? `\n## Current Character Matrix\n${matrixWorkingSet}\n`
-          : `\n## 当前角色交互矩阵\n${matrixWorkingSet}\n`
+          : resolvedLanguage === "ko"
+            ? `\n## 현재 캐릭터 상호작용 매트릭스\n${matrixWorkingSet}\n`
+            : `\n## 当前角色交互矩阵\n${matrixWorkingSet}\n`
         : "",
     });
 
@@ -180,10 +195,7 @@ export class ChapterAnalyzerAgent extends BaseAgent {
     // If LLM didn't return a title, use the one from input or derive from chapter number
     if (
       chapterTitle
-      && (
-        output.title === this.defaultChapterTitle(chapterNumber, resolvedLanguage)
-        || output.title === `第${chapterNumber}章`
-      )
+      && output.title === this.defaultChapterTitle(chapterNumber, resolvedLanguage)
     ) {
       return {
         ...output,
@@ -205,7 +217,7 @@ export class ChapterAnalyzerAgent extends BaseAgent {
     genreProfile: GenreProfile,
     genreBody: string,
     bookRulesBody: string,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     if (language === "en") {
       const numericalBlock = genreProfile.numericalSystem
@@ -296,10 +308,105 @@ Updated character interaction matrix (Markdown table)
 
 ## Rules
 
-1. UPDATED_STATE and UPDATED_HOOKS must be incremental updates based on the current tracking files.
+    1. UPDATED_STATE and UPDATED_HOOKS must be incremental updates based on the current tracking files.
 2. Every factual change in the chapter must appear in the corresponding tracking file.
 3. Do not miss resource changes, movement, relationship changes, or information changes.
 4. Information boundaries in the character matrix must stay exact: each character only knows what they directly witnessed or learned.`;
+    }
+
+    if (language === "ko") {
+      const numericalBlock = genreProfile.numericalSystem
+        ? "\n- 이 장르는 수치/자원 시스템이 있습니다. 본문에서 보이는 모든 자원 변동을 UPDATED_LEDGER에 반영하세요."
+        : "\n- 이 장르는 수치 시스템이 없습니다. UPDATED_LEDGER는 비워 둡니다.";
+
+      return `【언어 강제】출력은 한국어로 작성하세요. === TAG === 마커는 그대로 유지합니다.
+
+당신은 소설 연속성 분석가입니다. 완성된 장면을 분석해 상태 추적 파일을 업데이트합니다.
+
+## 작업 방식
+
+새 글을 쓰는 게 아니라, 이미 완성된 본문을 읽고 추적 파일을 갱신합니다.
+1. 본문을 자세히 읽고 중요한 사실을 추출하세요.
+2. 추적 파일을 처음부터 다시 쓰지 말고 증분으로 갱신하세요.
+3. writer 파이프라인 출력 형식을 그대로 유지하세요.
+
+## 추출 항목
+
+- 등장/퇴장, 상태 변화(부상/돌파/사망 등)
+- 위치 이동과 장면 전환
+- 아이템/자원 획득 및 소모
+- 훅의 배치, 진행, 회수
+- 감정 곡선 변화
+- 서브플롯 진행
+- 관계 변화와 정보 경계 변화
+
+## 책 정보
+
+- 제목: ${book.title}
+- 장르: ${genreProfile.name} (${book.genre})
+- 플랫폼: ${book.platform}
+${numericalBlock}
+
+## 장르 가이드
+
+${genreBody}
+
+${bookRulesBody ? `## 책 규칙\n\n${bookRulesBody}` : ""}
+
+## 출력 형식
+
+=== TAG === 구분자를 정확히 아래처럼 사용하세요.
+
+=== CHAPTER_TITLE ===
+(장 제목 텍스트만 출력)
+
+=== CHAPTER_CONTENT ===
+(원문 본문을 그대로 출력. 재작성하지 마세요.)
+
+=== PRE_WRITE_CHECK ===
+(분석 모드이므로 비워 둡니다.)
+
+=== POST_SETTLEMENT ===
+(분석 모드이므로 비워 둡니다.)
+
+=== UPDATED_STATE ===
+최종 상태를 반영한 상태 카드(Markdown 표):
+| 필드 | 값 |
+| --- | --- |
+| 현재 장 | {chapter_number} |
+| 현재 위치 | ... |
+| 주인공 상태 | ... |
+| 현재 목표 | ... |
+| 현재 제약 | ... |
+| 현재 동맹 | ... |
+| 현재 충돌 | ... |
+
+=== UPDATED_LEDGER ===
+(수치 시스템이 있으면 완성된 자원 장부 표. 없으면 비워 둡니다.)
+
+=== UPDATED_HOOKS ===
+알려진 모든 훅의 최신 상태를 반영한 Markdown 표:
+| hook_id | start_chapter | type | status | last_advanced_chapter | expected_payoff | payoff_timing | notes |
+
+=== CHAPTER_SUMMARY ===
+단일 요약표 한 행:
+| Chapter | Title | Characters | Key Events | State Changes | Hook Activity | Mood | Chapter Type |
+
+=== UPDATED_SUBPLOTS ===
+갱신된 서브플롯 보드 (Markdown 표)
+
+=== UPDATED_EMOTIONAL_ARCS ===
+갱신된 감정 곡선 (Markdown 표)
+
+=== UPDATED_CHARACTER_MATRIX ===
+갱신된 캐릭터 상호작용 매트릭스 (Markdown 표)
+
+## 규칙
+
+1. UPDATED_STATE와 UPDATED_HOOKS는 현재 추적 파일 기준으로 증분 갱신해야 합니다.
+2. 본문에서 생긴 모든 사실적 변화는 대응하는 추적 파일에 반영돼야 합니다.
+3. 자원, 이동, 관계, 정보 변경 같은 핵심 항목을 누락하지 마세요.
+4. 캐릭터 상호작용 매트릭스의 정보 경계는 정확해야 하며, 캐릭터는 직접 목격/학습한 정보만 알게 되어야 합니다.`;
     }
 
     const numericalBlock = genreProfile.numericalSystem
@@ -396,7 +503,7 @@ ${bookRulesBody ? `## 本书规则\n\n${bookRulesBody}` : ""}
   }
 
   private buildUserPrompt(params: {
-    readonly language: "zh" | "en";
+    readonly language: WritingLanguage;
     readonly chapterNumber: number;
     readonly chapterContent: string;
     readonly chapterTitle?: string;
@@ -439,6 +546,29 @@ ${params.hooksBlock}${params.volumeSummariesBlock}${params.subplotBlock}${params
 Please return the result strictly in the === TAG === format.`;
     }
 
+    if (params.language === "ko") {
+      const titleLine = params.chapterTitle
+        ? `화 제목: ${params.chapterTitle}\n`
+        : "";
+
+      const ledgerBlock = params.ledger
+        ? `\n## 현재 자원 장부\n${params.ledger}\n`
+        : "";
+
+      return `제${params.chapterNumber}화를 분석해 추적 파일을 갱신하세요.
+${titleLine}
+## 챕터 본문
+
+${params.chapterContent}
+
+## 현재 상태 카드
+${params.currentState}
+${ledgerBlock}
+${params.hooksBlock}${params.volumeSummariesBlock}${params.subplotBlock}${params.emotionalBlock}${params.matrixBlock}${params.summariesBlock}${params.outlineOrControlBlock}${params.bibleBlock}
+
+=== TAG === 형식으로 정확하게 출력하세요.`;
+    }
+
     const titleLine = params.chapterTitle
       ? `章节标题：${params.chapterTitle}\n`
       : "";
@@ -465,7 +595,7 @@ ${params.hooksBlock}${params.volumeSummariesBlock}${params.subplotBlock}${params
     chapterIntent: string,
     contextPackage: ContextPackage,
     ruleStack: RuleStack,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     const selectedContext = contextPackage.selectedContext
       .map((entry) => `- ${entry.source}: ${entry.reason}${entry.excerpt ? ` | ${entry.excerpt}` : ""}`)
@@ -474,7 +604,9 @@ ${params.hooksBlock}${params.volumeSummariesBlock}${params.subplotBlock}${params
       ? ruleStack.activeOverrides
         .map((override) => `- ${override.from} -> ${override.to}: ${override.reason} (${override.target})`)
         .join("\n")
-      : "- none";
+      : language === "ko"
+        ? "- 없음"
+        : "- none";
 
     return language === "en"
       ? `\n## Chapter Control Inputs (compiled by Planner/Composer)
@@ -489,6 +621,20 @@ ${selectedContext || "- none"}
 - Diagnostic rules: ${ruleStack.sections.diagnostic.join(", ") || "(none)"}
 
 ### Active Overrides
+${overrides}\n`
+      : language === "ko"
+        ? `\n## 본문 제어 입력 (Planner/Composer 편집본)
+${chapterIntent}
+
+### 선택한 컨텍스트
+${selectedContext || "- 없음"}
+
+### 규칙 스택
+- 하드 가드레일: ${ruleStack.sections.hard.join(", ") || "(없음)"}
+- 소프트 제약: ${ruleStack.sections.soft.join(", ") || "(없음)"}
+- 진단 규칙: ${ruleStack.sections.diagnostic.join(", ") || "(없음)"}
+
+### 현재 오버라이드
 ${overrides}\n`
       : `\n## 本章控制输入（由 Planner/Composer 编译）
 ${chapterIntent}
@@ -511,8 +657,12 @@ ${overrides}\n`;
       .join("\n\n");
   }
 
-  private findOutlineNode(volumeOutline: string, chapterNumber: number): string | undefined {
-    if (!volumeOutline || volumeOutline === this.missingFilePlaceholder("zh") || volumeOutline === this.missingFilePlaceholder("en")) {
+  private findOutlineNode(
+    volumeOutline: string,
+    chapterNumber: number,
+    language: WritingLanguage = "en",
+  ): string | undefined {
+    if (!volumeOutline || volumeOutline === this.missingFilePlaceholder(language)) {
       return undefined;
     }
 
@@ -520,6 +670,8 @@ ${overrides}\n`;
     const chapterPatterns = [
       new RegExp(`^#+\\s*Chapter\\s*${chapterNumber}\\b`, "i"),
       new RegExp(`^#+\\s*第\\s*${chapterNumber}\\s*章`),
+      new RegExp(`^#+\\s*${chapterNumber}\\s*화`),
+      new RegExp(`^#+\\s*제\\s*${chapterNumber}\\s*화`),
     ];
 
     const heading = lines.find((line) => chapterPatterns.some((pattern) => pattern.test(line)));
@@ -541,7 +693,7 @@ ${overrides}\n`;
       mood: string;
       chapterType: string;
     }>,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     if (summaries.length === 0) {
       return this.missingFilePlaceholder(language);
@@ -552,6 +704,11 @@ ${overrides}\n`;
           "| Chapter | Title | Characters | Key Events | State Changes | Hook Activity | Mood | Chapter Type |",
           "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
+      : language === "ko"
+        ? [
+            "| 화 | 제목 | 등장인물 | 핵심 사건 | 상태 변화 | 훅 활동 | 분위기 | 챕터 타입 |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          ]
       : [
           "| 章节 | 标题 | 出场人物 | 关键事件 | 状态变化 | 伏笔动态 | 情绪基调 | 章节类型 |",
           "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -578,7 +735,7 @@ ${overrides}\n`;
     return value.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
   }
 
-  private async readFileOrDefault(path: string, language: "zh" | "en"): Promise<string> {
+  private async readFileOrDefault(path: string, language: WritingLanguage): Promise<string> {
     try {
       return await readFile(path, "utf-8");
     } catch {
@@ -586,11 +743,23 @@ ${overrides}\n`;
     }
   }
 
-  private missingFilePlaceholder(language: "zh" | "en"): string {
-    return language === "en" ? "(file not created yet)" : "(文件尚未创建)";
+  private missingFilePlaceholder(language: WritingLanguage): string {
+    if (language === "en") {
+      return "(file not created yet)";
+    }
+    if (language === "ko") {
+      return "(파일이 아직 생성되지 않았습니다)";
+    }
+    return "(文件尚未创建)";
   }
 
-  private defaultChapterTitle(chapterNumber: number, language: "zh" | "en"): string {
-    return language === "en" ? `Chapter ${chapterNumber}` : `第${chapterNumber}章`;
+  private defaultChapterTitle(chapterNumber: number, language: WritingLanguage): string {
+    if (language === "en") {
+      return `Chapter ${chapterNumber}`;
+    }
+    if (language === "ko") {
+      return `제${chapterNumber}화`;
+    }
+    return `第${chapterNumber}章`;
   }
 }

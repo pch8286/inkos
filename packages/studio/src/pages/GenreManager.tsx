@@ -4,13 +4,14 @@ import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useI18n } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
+import { resolveStudioLanguage, type StudioLanguage } from "../shared/language";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 interface GenreInfo {
   readonly id: string;
   readonly name: string;
   readonly source: "project" | "builtin";
-  readonly language: "zh" | "en";
+  readonly language: StudioLanguage;
 }
 
 interface GenreDetail {
@@ -32,7 +33,7 @@ interface GenreDetail {
 interface GenreFormData {
   readonly id: string;
   readonly name: string;
-  readonly language: "zh" | "en";
+  readonly language: StudioLanguage;
   readonly chapterTypes: string;
   readonly fatigueWords: string;
   readonly numericalSystem: boolean;
@@ -45,7 +46,7 @@ interface GenreFormData {
 const EMPTY_FORM: GenreFormData = {
   id: "",
   name: "",
-  language: "zh",
+  language: "ko",
   chapterTypes: "",
   fatigueWords: "",
   numericalSystem: false,
@@ -107,11 +108,12 @@ function GenreForm({
         <label className="text-xs text-muted-foreground uppercase tracking-wide">Language</label>
         <select
           value={form.language}
-          onChange={(e) => set("language", e.target.value as "zh" | "en")}
+          onChange={(e) => set("language", e.target.value as StudioLanguage)}
           className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
         >
-          <option value="zh">zh</option>
-          <option value="en">en</option>
+          <option value="ko">{t("config.korean")}</option>
+          <option value="zh">{t("config.chinese")}</option>
+          <option value="en">{t("config.english")}</option>
         </select>
       </div>
 
@@ -211,7 +213,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
   const [form, setForm] = useState<GenreFormData>(EMPTY_FORM);
 
   // Only show genres matching current language, plus custom project genres
-  const filteredGenres = data?.genres.filter((g) => g.language === lang || g.source === "project") ?? [];
+  const filteredGenres = data?.genres.filter((g) => g.language === resolveStudioLanguage(lang) || g.source === "project") ?? [];
   const validSelected = selected && filteredGenres.some((g) => g.id === selected) ? selected : null;
   const selectedGenre = filteredGenres.find((g) => g.id === validSelected) ?? null;
 
@@ -233,7 +235,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
     setForm({
       id: detail.profile.id,
       name: detail.profile.name,
-      language: detail.profile.language as "zh" | "en",
+      language: resolveStudioLanguage(detail.profile.language),
       chapterTypes: detail.profile.chapterTypes.join(", "),
       fatigueWords: detail.profile.fatigueWords.join(", "),
       numericalSystem: detail.profile.numericalSystem,
@@ -329,14 +331,14 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
           className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md ${c.btnPrimary}`}
         >
           <Plus size={16} />
-          Create Genre
+          {t("genre.createNew")}
         </button>
       </div>
 
       {formMode !== "hidden" && (
         <div className={`border ${c.cardStatic} rounded-lg p-6`}>
           <h2 className="text-lg font-medium mb-4">
-            {formMode === "create" ? "Create New Genre" : `Edit: ${form.id}`}
+            {formMode === "create" ? t("genre.createNew") : `Edit: ${form.id}`}
           </h2>
           <GenreForm
             form={form}
@@ -389,7 +391,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${c.btnSecondary} rounded-md`}
                   >
                     <Pencil size={14} />
-                    Edit
+                    {t("genre.editGenre")}
                   </button>
                   {selectedGenre?.source === "project" && (
                     <button
@@ -397,20 +399,20 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
                       className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${c.btnDanger} rounded-md`}
                     >
                       <Trash2 size={14} />
-                      Delete
+                      {t("genre.deleteGenre")}
                     </button>
                   )}
                   <button
                     onClick={() => validSelected && handleCopy(validSelected)}
                     className={`px-3 py-1.5 text-sm ${c.btnSecondary} rounded-md`}
                   >
-                    Copy to Project
+                    {t("genre.copyToProject")}
                   </button>
                 </div>
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Chapter Types</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.chapterTypes")}</div>
                 <div className="flex gap-2 flex-wrap">
                   {detail.profile.chapterTypes.map((ct) => (
                     <span key={ct} className="px-2 py-1 text-xs bg-secondary rounded">{ct}</span>
@@ -419,7 +421,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Fatigue Words</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.fatigueWords")}</div>
                 <div className="flex gap-2 flex-wrap">
                   {detail.profile.fatigueWords.slice(0, 15).map((w) => (
                     <span key={w} className="px-2 py-1 text-xs bg-secondary rounded">{w}</span>
@@ -431,12 +433,12 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Pacing</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.pacingRule")}</div>
                 <div className="text-sm">{detail.profile.pacingRule || "—"}</div>
               </div>
 
               <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Rules</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.rules")}</div>
                 <pre className="text-sm leading-relaxed whitespace-pre-wrap font-mono text-foreground/80 bg-muted/30 p-4 rounded-md max-h-[300px] overflow-y-auto">
                   {detail.body || "—"}
                 </pre>
@@ -444,7 +446,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
             </div>
           ) : (
             <div className="text-muted-foreground text-sm italic flex items-center justify-center h-full">
-              Select a genre to view details
+              {t("genre.selectHint")}
             </div>
           )}
         </div>

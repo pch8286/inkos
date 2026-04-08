@@ -36,7 +36,10 @@ export async function loadConfig(options?: { readonly requireApiKey?: boolean })
 }
 
 export function createClient(config: ProjectConfig) {
-  return createLLMClient(config.llm);
+  return createLLMClient({
+    ...config.llm,
+    extra: { ...(config.llm.extra ?? {}), projectRoot: findProjectRoot() },
+  });
 }
 
 export function buildPipelineConfig(
@@ -77,7 +80,10 @@ export function buildPipelineConfig(
     : undefined;
 
   return {
-    client: createLLMClient(config.llm),
+    client: createLLMClient({
+      ...config.llm,
+      extra: { ...(config.llm.extra ?? {}), projectRoot: root },
+    }),
     model: config.llm.model,
     projectRoot: root,
     defaultLLMConfig: config.llm,
@@ -122,7 +128,7 @@ export async function resolveBookId(
 
   if (books.length === 0) {
     throw new Error(
-      "No books found. Create one first:\n  inkos book create --title '...' --genre xuanhuan",
+      "No books found. Create one first:\n  inkos book create --title '...' --genre modern-fantasy",
     );
   }
   if (books.length === 1) {

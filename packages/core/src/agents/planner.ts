@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { BaseAgent } from "./base.js";
 import type { BookConfig } from "../models/book.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import { parseBookRules } from "../models/book-rules.js";
 import { ChapterIntentSchema, type ChapterConflict, type ChapterIntent } from "../models/input-governance.js";
 import {
@@ -84,11 +85,12 @@ export class PlannerAgent extends BaseAgent {
     const activeHookCount = memorySelection.activeHooks.filter(
       (hook) => hook.status !== "resolved" && hook.status !== "deferred",
     ).length;
+    const resolvedLanguage = resolveWritingLanguage(input.book.language);
     const hookAgenda = buildPlannerHookAgenda({
       hooks: memorySelection.activeHooks,
       chapterNumber: input.chapterNumber,
       targetChapters: input.book.targetChapters,
-      language: input.book.language ?? "zh",
+      language: resolvedLanguage,
     });
     const directives = this.buildStructuredDirectives({
       chapterNumber: input.chapterNumber,
@@ -114,9 +116,9 @@ export class PlannerAgent extends BaseAgent {
     const runtimePath = join(runtimeDir, `chapter-${String(input.chapterNumber).padStart(4, "0")}.intent.md`);
     const intentMarkdown = this.renderIntentMarkdown(
       intent,
-      input.book.language ?? "zh",
-      renderHookSnapshot(memorySelection.hooks, input.book.language ?? "zh"),
-      renderSummarySnapshot(memorySelection.summaries, input.book.language ?? "zh"),
+      resolvedLanguage,
+      renderHookSnapshot(memorySelection.hooks, resolvedLanguage),
+      renderSummarySnapshot(memorySelection.summaries, resolvedLanguage),
       activeHookCount,
     );
     await writeFile(runtimePath, intentMarkdown, "utf-8");
@@ -388,7 +390,7 @@ export class PlannerAgent extends BaseAgent {
       : `Avoid another ${repeatedToken}-centric title. Pick a new image or action focus for this chapter title.`;
   }
 
-  private renderHookBudget(activeCount: number, language: "zh" | "en"): string {
+  private renderHookBudget(activeCount: number, language: WritingLanguage): string {
     const cap = 12;
     if (activeCount < 10) {
       return language === "en"
@@ -640,7 +642,7 @@ export class PlannerAgent extends BaseAgent {
 
   private renderIntentMarkdown(
     intent: ChapterIntent,
-    language: "zh" | "en",
+    language: WritingLanguage,
     pendingHooks: string,
     chapterSummaries: string,
     activeHookCount: number,
@@ -731,7 +733,7 @@ export class PlannerAgent extends BaseAgent {
   }
 
   private isChineseLanguage(language: string | undefined): boolean {
-    return (language ?? "zh").toLowerCase().startsWith("zh");
+    return resolveWritingLanguage(language) === "zh";
   }
 
   private async readFileOrDefault(path: string): Promise<string> {

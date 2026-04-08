@@ -1,3 +1,5 @@
+import type { CliOAuthProvider, LlmProvider } from "./llm.js";
+
 /**
  * Shared TypeScript contracts for Studio API/UI communication.
  * Ported from PR #96 (Te9ui1a) — prevents client/server type drift.
@@ -42,7 +44,7 @@ export interface BookSummary {
 export interface BookDetail extends BookSummary {
   readonly createdAt: string;
   readonly chapterWordCount: number;
-  readonly language: "zh" | "en" | null;
+  readonly language: "ko" | "zh" | "en" | null;
 }
 
 // --- Chapters ---
@@ -140,4 +142,46 @@ export interface ApiErrorResponse {
     readonly code: string;
     readonly message: string;
   };
+}
+
+// --- Bootstrap / global config ---
+
+export interface CliAuthStatus {
+  readonly available: boolean;
+  readonly authenticated: boolean;
+  readonly credentialPath: string;
+  readonly command: string;
+  readonly details?: string;
+}
+
+export interface GlobalConfigSummary {
+  readonly exists: boolean;
+  readonly language: "ko" | "zh" | "en";
+  readonly provider: LlmProvider;
+  readonly model: string;
+  readonly baseUrl: string;
+  readonly apiKeySet: boolean;
+  readonly auth: {
+    readonly geminiCli: CliAuthStatus;
+    readonly codexCli: CliAuthStatus;
+  };
+}
+
+export interface BootstrapSummary {
+  readonly root: string;
+  readonly suggestedProjectName: string;
+  readonly projectInitialized: boolean;
+  readonly globalConfig: GlobalConfigSummary;
+}
+
+export type AuthSessionStatus = "starting" | "waiting-browser" | "awaiting-code" | "authorizing" | "succeeded" | "failed";
+
+export interface AuthSessionSummary {
+  readonly id: string;
+  readonly provider: CliOAuthProvider;
+  readonly status: AuthSessionStatus;
+  readonly url: string | null;
+  readonly verificationCode: string | null;
+  readonly error: string | null;
+  readonly logs: ReadonlyArray<string>;
 }

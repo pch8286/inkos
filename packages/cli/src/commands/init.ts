@@ -6,6 +6,10 @@ import { log, logError, GLOBAL_ENV_PATH } from "../utils.js";
 async function hasGlobalConfig(): Promise<boolean> {
   try {
     const content = await readFile(GLOBAL_ENV_PATH, "utf-8");
+    const provider = content.match(/^INKOS_LLM_PROVIDER=(.+)$/m)?.[1]?.trim();
+    if (provider === "gemini-cli" || provider === "codex-cli") {
+      return true;
+    }
     return content.includes("INKOS_LLM_API_KEY=") && !content.includes("your-api-key-here");
   } catch {
     return false;
@@ -15,7 +19,7 @@ async function hasGlobalConfig(): Promise<boolean> {
 export const initCommand = new Command("init")
   .description("Initialize an InkOS project (current directory by default)")
   .argument("[name]", "Project name (creates subdirectory). Omit to init current directory.")
-  .option("--lang <language>", "Default writing language: zh (Chinese) or en (English)", "zh")
+  .option("--lang <language>", "Default writing language: ko (Korean), zh (Chinese), or en (English)", "ko")
   .action(async (name: string | undefined, opts: { lang?: string }) => {
     const projectDir = name ? resolve(process.cwd(), name) : process.cwd();
     const projectName = basename(projectDir);
@@ -39,7 +43,7 @@ export const initCommand = new Command("init")
       const config = {
         name: projectName,
         version: "0.1.0",
-        language: opts.lang ?? "zh",
+        language: opts.lang ?? "ko",
         llm: {
           provider: process.env.INKOS_LLM_PROVIDER ?? "openai",
           baseUrl: process.env.INKOS_LLM_BASE_URL ?? "",
@@ -74,7 +78,7 @@ export const initCommand = new Command("init")
             "# Project-level LLM overrides (optional)",
             "# Global config at ~/.inkos/.env will be used by default.",
             "# Uncomment below to override for this project only:",
-            "# INKOS_LLM_PROVIDER=openai",
+            "# INKOS_LLM_PROVIDER=openai          # or gemini-cli / codex-cli",
             "# INKOS_LLM_BASE_URL=",
             "# INKOS_LLM_API_KEY=",
             "# INKOS_LLM_MODEL=",
@@ -90,11 +94,12 @@ export const initCommand = new Command("init")
           [
             "# LLM Configuration",
             "# Tip: Run 'inkos config set-global' to set once for all projects.",
-            "# Provider: openai (OpenAI / compatible proxy), anthropic (Anthropic native)",
-            "INKOS_LLM_PROVIDER=openai",
-            "INKOS_LLM_BASE_URL=",
-            "INKOS_LLM_API_KEY=",
-            "INKOS_LLM_MODEL=",
+            "# Provider: openai (OpenAI / compatible proxy), anthropic (Anthropic native), gemini-cli (Gemini CLI OAuth), codex-cli (Codex CLI OAuth)",
+            "# Uncomment the lines below to use project-specific overrides instead of global config:",
+            "# INKOS_LLM_PROVIDER=openai",
+            "# INKOS_LLM_BASE_URL=",
+            "# INKOS_LLM_API_KEY=",
+            "# INKOS_LLM_MODEL=",
             "",
             "# Optional parameters (defaults shown):",
             "# INKOS_LLM_TEMPERATURE=0.7",
@@ -107,9 +112,16 @@ export const initCommand = new Command("init")
             "",
             "# Anthropic example:",
             "# INKOS_LLM_PROVIDER=anthropic",
-            "# INKOS_LLM_PROVIDER=anthropic",
             "# INKOS_LLM_BASE_URL=",
             "# INKOS_LLM_MODEL=",
+            "",
+            "# Gemini CLI OAuth example:",
+            "# INKOS_LLM_PROVIDER=gemini-cli",
+            "# INKOS_LLM_MODEL=auto-gemini-3",
+            "",
+            "# Codex CLI OAuth example:",
+            "# INKOS_LLM_PROVIDER=codex-cli",
+            "# INKOS_LLM_MODEL=gpt-5.4",
           ].join("\n"),
           "utf-8",
         );
@@ -123,10 +135,12 @@ export const initCommand = new Command("init")
 
       log(`Project initialized at ${projectDir}`);
       log("");
-      const isEnglish = (opts.lang ?? "zh") === "en";
-      const exampleCreate = isEnglish
+      const language = opts.lang ?? "ko";
+      const exampleCreate = language === "en"
         ? "  inkos book create --title 'My Novel' --genre progression --platform royalroad --lang en"
-        : "  inkos book create --title '我的小说' --genre xuanhuan --platform tomato";
+        : language === "zh"
+          ? "  inkos book create --title '我的小说' --genre xuanhuan --platform tomato --lang zh"
+          : "  inkos book create --title '내 소설' --genre modern-fantasy --platform naver-series --lang ko";
       if (global) {
         log("Global LLM config detected. Ready to go!");
         log("");
@@ -138,6 +152,10 @@ export const initCommand = new Command("init")
         if (name) log(`  cd ${name}`);
         log("  # Option 1: Set global config (recommended, one-time):");
         log("  inkos config set-global --provider openai --base-url <your-api-url> --api-key <your-key> --model <your-model>");
+        log("  #           or Gemini CLI OAuth:");
+        log("  inkos config set-global --provider gemini-cli --model auto-gemini-3");
+        log("  #           or Codex CLI OAuth:");
+        log("  inkos config set-global --provider codex-cli --model gpt-5.4");
         log("  # Option 2: Edit .env for this project only");
         log("");
         log(exampleCreate);

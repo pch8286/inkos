@@ -29,6 +29,7 @@ import type { AuditResult, AuditIssue } from "../agents/continuity.js";
 import type { RadarResult } from "../agents/radar.js";
 import type { LengthSpec, LengthTelemetry } from "../models/length-governance.js";
 import type { ContextPackage, RuleStack } from "../models/input-governance.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import { buildLengthSpec, countChapterLength, formatLengthCount, isOutsideHardRange, isOutsideSoftRange, resolveLengthCountingMode, type LengthLanguage } from "../utils/length-metrics.js";
 import { analyzeLongSpanFatigue } from "../utils/long-span-fatigue.js";
 import { loadNarrativeMemorySeed, loadSnapshotCurrentStateFacts } from "../state/runtime-state-store.js";
@@ -182,8 +183,10 @@ export class PipelineRunner {
     this.state = new StateManager(config.projectRoot);
   }
 
-  private localize(language: LengthLanguage, messages: { zh: string; en: string }): string {
-    return language === "en" ? messages.en : messages.zh;
+  private localize(language: LengthLanguage, messages: { zh: string; en: string; ko?: string }): string {
+    if (language === "en") return messages.en;
+    if (language === "ko") return messages.ko ?? messages.en;
+    return messages.zh;
   }
 
   private async resolveBookLanguage(
@@ -197,7 +200,7 @@ export class PipelineRunner {
       const { profile } = await this.loadGenreProfile(book.genre);
       return profile.language;
     } catch {
-      return "zh";
+      return "ko";
     }
   }
 
@@ -206,25 +209,26 @@ export class PipelineRunner {
       const book = await this.state.loadBookConfig(bookId);
       return await this.resolveBookLanguage(book);
     } catch {
-      return "zh";
+      return "ko";
     }
   }
 
   private languageFromLengthSpec(lengthSpec: Pick<LengthSpec, "countingMode">): LengthLanguage {
-    return lengthSpec.countingMode === "en_words" ? "en" : "zh";
+    if (lengthSpec.countingMode === "en_words") return "en";
+    return lengthSpec.countingMode === "zh_chars" ? "zh" : "ko";
   }
 
-  private logStage(language: LengthLanguage, message: { zh: string; en: string }): void {
+  private logStage(language: LengthLanguage, message: { zh: string; en: string; ko?: string }): void {
     this.config.logger?.info(
-      `${this.localize(language, { zh: "阶段：", en: "Stage: " })}${this.localize(language, message)}`,
+      `${this.localize(language, { zh: "阶段：", en: "Stage: ", ko: "단계: " })}${this.localize(language, message)}`,
     );
   }
 
-  private logInfo(language: LengthLanguage, message: { zh: string; en: string }): void {
+  private logInfo(language: LengthLanguage, message: { zh: string; en: string; ko?: string }): void {
     this.config.logger?.info(this.localize(language, message));
   }
 
-  private logWarn(language: LengthLanguage, message: { zh: string; en: string }): void {
+  private logWarn(language: LengthLanguage, message: { zh: string; en: string; ko?: string }): void {
     this.config.logger?.warn(this.localize(language, message));
   }
 
@@ -252,7 +256,7 @@ export class PipelineRunner {
     readonly mode: "original" | "fanfic" | "series";
     readonly sourceCanon?: string;
     readonly styleGuide?: string;
-    readonly language: "zh" | "en";
+    readonly language: WritingLanguage;
     readonly stageLanguage: LengthLanguage;
     readonly maxRetries?: number;
   }): Promise<ArchitectOutput> {
@@ -316,7 +320,7 @@ export class PipelineRunner {
       }>;
       readonly overallFeedback: string;
     },
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     const dimensionLines = review.dimensions
       .map((dimension) => (
@@ -362,12 +366,18 @@ export class PipelineRunner {
     if (typeof override === "string") {
       return { model: override, client: this.config.client };
     }
-    // Full override — needs its own client if baseUrl differs
-    if (!override.baseUrl) {
+    const needsDedicatedClient = Boolean(
+      override.baseUrl
+      || override.provider
+      || override.apiKeyEnv
+      || override.stream !== undefined,
+    );
+    if (!needsDedicatedClient) {
       return { model: override.model, client: this.config.client };
     }
     const base = this.config.defaultLLMConfig;
     const provider = override.provider ?? base?.provider ?? "custom";
+    const baseUrl = override.baseUrl ?? base?.baseUrl ?? "https://example.invalid/v1";
     const apiKeySource = override.apiKeyEnv
       ? `env:${override.apiKeyEnv}`
       : `base:${base?.apiKey ?? ""}`;
@@ -375,7 +385,7 @@ export class PipelineRunner {
     const apiFormat = base?.apiFormat ?? "chat";
     const cacheKey = [
       provider,
-      override.baseUrl,
+      baseUrl,
       apiKeySource,
       `stream:${stream}`,
       `format:${apiFormat}`,
@@ -387,12 +397,16 @@ export class PipelineRunner {
         : base?.apiKey ?? "";
       client = createLLMClient({
         provider,
-        baseUrl: override.baseUrl,
+        baseUrl,
         apiKey,
         model: override.model,
         temperature: base?.temperature ?? 0.7,
         maxTokens: base?.maxTokens ?? 8192,
         thinkingBudget: base?.thinkingBudget ?? 0,
+        extra: {
+          ...(base?.extra ?? {}),
+          projectRoot: this.config.projectRoot,
+        },
         apiFormat,
         stream,
       });
@@ -448,7 +462,7 @@ export class PipelineRunner {
     this.logStage(stageLanguage, { zh: "生成基础设定", en: "generating foundation" });
     const { profile: gp } = await this.loadGenreProfile(book.genre);
     const reviewer = new FoundationReviewerAgent(this.agentCtxFor("foundation-reviewer", book.id));
-    const resolvedLanguage = (book.language ?? gp.language) === "en" ? "en" as const : "zh" as const;
+    const resolvedLanguage = resolveWritingLanguage(book.language ?? gp.language);
     const foundation = await this.generateAndReviewFoundation({
       generate: (reviewFeedback) => architect.generateFoundation(
         book,
@@ -539,7 +553,7 @@ export class PipelineRunner {
     const reviewer = new FoundationReviewerAgent(this.agentCtxFor("foundation-reviewer", book.id));
     this.logStage(stageLanguage, { zh: "生成同人基础设定", en: "generating fanfic foundation" });
     const { profile: gp } = await this.loadGenreProfile(book.genre);
-    const resolvedLanguage = (book.language ?? gp.language) === "en" ? "en" as const : "zh" as const;
+    const resolvedLanguage = resolveWritingLanguage(book.language ?? gp.language);
     const foundation = await this.generateAndReviewFoundation({
       generate: (reviewFeedback) => architect.generateFanficFoundation(
         book,
@@ -1837,7 +1851,9 @@ ${matrix}`,
         const allText = input.chapters.map((c, i) =>
           resolvedLanguage === "en"
             ? `Chapter ${i + 1}: ${c.title}\n\n${c.content}`
-            : `第${i + 1}章 ${c.title}\n\n${c.content}`,
+            : resolvedLanguage === "ko"
+              ? `제${i + 1}화 ${c.title}\n\n${c.content}`
+              : `第${i + 1}章 ${c.title}\n\n${c.content}`,
         ).join("\n\n---\n\n");
 
         const architect = new ArchitectAgent(this.agentCtxFor("architect", input.bookId));
@@ -1847,7 +1863,7 @@ ${matrix}`,
               generate: (reviewFeedback) => architect.generateFoundationFromImport(book, allText, undefined, reviewFeedback, { importMode: "series" }),
               reviewer: new FoundationReviewerAgent(this.agentCtxFor("foundation-reviewer", input.bookId)),
               mode: "series",
-              language: resolvedLanguage === "en" ? "en" : "zh",
+              language: resolvedLanguage,
               stageLanguage: resolvedLanguage,
             })
           : await architect.generateFoundationFromImport(book, allText);

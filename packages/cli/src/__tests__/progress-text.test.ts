@@ -54,6 +54,27 @@ describe("CLI progress text", () => {
     expect(formatWriteDoneLine("en")).toBe("Done.");
   });
 
+  it("formats Korean write progress lines", () => {
+    expect(formatWriteStartLine("ko", 3, 5, "demo-book")).toBe('[3/5] "demo-book" 다음 화 집필 중...');
+    expect(formatWriteCompletionLines("ko", {
+      chapterNumber: 7,
+      title: "겨울 항구",
+      wordCount: 3120,
+      passedAudit: true,
+      revised: true,
+      status: "ready-for-review",
+      issues: [],
+    })).toEqual([
+      "  7화: 겨울 항구",
+      "  분량: 3120자",
+      "  감사: 통과",
+      "  자동 수정: 실행됨 (치명 이슈 수정 완료)",
+      "  상태: ready-for-review",
+      "",
+    ]);
+    expect(formatWriteDoneLine("ko")).toBe("완료.");
+  });
+
   it("formats Chinese import progress lines", () => {
     expect(formatImportDiscoveryLine("zh", 12, "demo-book")).toBe('发现 12 章，准备导入到「demo-book」。');
     expect(formatImportResumeLine("zh", 8)).toBe("从第 8 章继续导入。");
@@ -87,6 +108,24 @@ describe("CLI progress text", () => {
       "  Next chapter number: 13",
       '',
       'Run "inkos write next demo-book" to continue writing.',
+    ]);
+  });
+
+  it("formats Korean import progress lines", () => {
+    expect(formatImportDiscoveryLine("ko", 6, "demo-book")).toBe('6화를 발견했습니다. "demo-book"에 가져올 준비를 합니다.');
+    expect(formatImportResumeLine("ko", 2)).toBe("2화부터 다시 가져옵니다.");
+    expect(formatImportCompletionLines("ko", {
+      importedCount: 6,
+      totalCountLabel: "18000자",
+      nextChapter: 7,
+      bookId: "demo-book",
+    })).toEqual([
+      "가져오기 완료:",
+      "  가져온 화수: 6",
+      "  총 분량: 18000자",
+      "  다음 화 번호: 7",
+      "",
+      '"inkos write next demo-book"를 실행해 이어서 집필하세요.',
     ]);
   });
 });

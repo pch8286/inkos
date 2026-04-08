@@ -1,6 +1,7 @@
 ---
 name: 仙侠
 id: xianxia
+language: zh
 chapterTypes: ["战斗章", "悟道章", "布局章", "过渡章", "回收章"]
 fatigueWords: ["冷笑", "蝼蚁", "倒吸凉气", "瞳孔骤缩", "天道", "大道", "因果", "气运", "仿佛", "不禁", "宛如", "竟然"]
 numericalSystem: true

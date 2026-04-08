@@ -1,10 +1,11 @@
 import { z } from "zod";
 import yaml from "js-yaml";
+import { detectWritingLanguageFromText, WritingLanguageSchema } from "./language.js";
 
 export const GenreProfileSchema = z.object({
   name: z.string(),
   id: z.string(),
-  language: z.enum(["zh", "en"]).default("zh"),
+  language: WritingLanguageSchema.default("ko"),
   chapterTypes: z.array(z.string()),
   fatigueWords: z.array(z.string()),
   numericalSystem: z.boolean().default(false),
@@ -29,8 +30,17 @@ export function parseGenreProfile(raw: string): ParsedGenreProfile {
   }
 
   const frontmatter = yaml.load(fmMatch[1]) as Record<string, unknown>;
-  const profile = GenreProfileSchema.parse(frontmatter);
   const body = fmMatch[2].trim();
+  const inferredLanguage = detectWritingLanguageFromText(
+    [String(frontmatter.name ?? ""), body].filter(Boolean).join("\n"),
+  );
+  const profile = GenreProfileSchema.parse(frontmatter);
 
-  return { profile, body };
+  return {
+    profile: {
+      ...profile,
+      language: typeof frontmatter.language === "string" ? profile.language : inferredLanguage,
+    },
+    body,
+  };
 }

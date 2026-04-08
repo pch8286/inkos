@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatBar";
 import { Dashboard } from "./pages/Dashboard";
+import { BootstrapView } from "./pages/BootstrapView";
 import { BookDetail } from "./pages/BookDetail";
 import { BookCreate } from "./pages/BookCreate";
 import { ChapterReader } from "./pages/ChapterReader";
@@ -21,6 +22,7 @@ import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
 import { Sun, Moon, Bell, MessageSquare } from "lucide-react";
+import type { BootstrapSummary } from "./shared/contracts";
 
 export type Route =
   | { page: "dashboard" }
@@ -49,6 +51,7 @@ export function App() {
   const sse = useSSE();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
+  const { data: bootstrap, loading: bootstrapLoading, error: bootstrapError, refetch: refetchBootstrap } = useApi<BootstrapSummary>("/bootstrap");
   const { data: project, refetch: refetchProject } = useApi<{ language: string; languageExplicit: boolean }>("/project");
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
@@ -61,13 +64,22 @@ export function App() {
   }, [isDark]);
 
   useEffect(() => {
+    if (!bootstrapLoading && bootstrap && !bootstrap.projectInitialized) {
+      setReady(true);
+      setShowLanguageSelector(false);
+      return;
+    }
+    if (bootstrap?.projectInitialized && !project) {
+      setReady(false);
+      return;
+    }
     if (project) {
       if (!project.languageExplicit) {
         setShowLanguageSelector(true);
       }
       setReady(true);
     }
-  }, [project]);
+  }, [bootstrap, bootstrapLoading, project]);
 
   const nav = {
     toDashboard: () => setRoute({ page: "dashboard" }),
@@ -92,12 +104,52 @@ export function App() {
     activeBookId
       ? `book:${activeBookId}`
       : route.page;
+  const connectionStatus = bootstrap
+    ? (() => {
+      const provider = bootstrap.globalConfig.provider;
+      if (!provider) {
+        return "Configure provider";
+      }
+      if (provider === "gemini-cli" && !bootstrap.globalConfig.auth.geminiCli.authenticated) {
+        return "Gemini login required";
+      }
+      if (provider === "codex-cli" && !bootstrap.globalConfig.auth.codexCli.authenticated) {
+        return "Codex login required";
+      }
+      if ((provider === "openai" || provider === "anthropic" || provider === "custom") && !bootstrap.globalConfig.apiKeySet) {
+        return `${provider} API key missing`;
+      }
+      return `${provider} ready`;
+    })()
+    : null;
 
-  if (!ready) {
+  if (bootstrapError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-8 text-center text-destructive">
+        {bootstrapError}
+      </div>
+    );
+  }
+
+  if (!ready || bootstrapLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
+    );
+  }
+
+  if (bootstrap && !bootstrap.projectInitialized) {
+    return (
+      <BootstrapView
+        bootstrap={bootstrap}
+        theme={theme}
+        t={t}
+        onInitialized={() => {
+          refetchBootstrap();
+          refetchProject();
+        }}
+      />
     );
   }
 
@@ -129,6 +181,15 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {connectionStatus && (
+              <button
+                onClick={nav.toConfig}
+                className="rounded-full border border-border/60 bg-secondary/60 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                title="Open Studio settings"
+              >
+                {connectionStatus}
+              </button>
+            )}
 
             <button
               onClick={() => setTheme(isDark ? "light" : "dark")}

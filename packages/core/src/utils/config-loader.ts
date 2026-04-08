@@ -5,11 +5,24 @@ import { ProjectConfigSchema, type ProjectConfig } from "../models/project.js";
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".inkos");
 export const GLOBAL_ENV_PATH = join(GLOBAL_CONFIG_DIR, ".env");
+const LLM_ENV_KEYS = [
+  "INKOS_LLM_PROVIDER",
+  "INKOS_LLM_BASE_URL",
+  "INKOS_LLM_MODEL",
+  "INKOS_LLM_API_KEY",
+  "INKOS_LLM_TEMPERATURE",
+  "INKOS_LLM_MAX_TOKENS",
+  "INKOS_LLM_THINKING_BUDGET",
+  "INKOS_LLM_API_FORMAT",
+] as const;
 
 export function isApiKeyOptionalForEndpoint(params: {
   readonly provider?: string | undefined;
   readonly baseUrl?: string | undefined;
 }): boolean {
+  if (params.provider === "gemini-cli" || params.provider === "codex-cli") {
+    return true;
+  }
   if (params.provider === "anthropic") {
     return false;
   }
@@ -44,9 +57,21 @@ export async function loadProjectConfig(
   options?: { readonly requireApiKey?: boolean },
 ): Promise<ProjectConfig> {
   // Load global ~/.inkos/.env first, then project .env overrides
-  const { config: loadEnv } = await import("dotenv");
+  const { config: loadEnv, parse: parseEnv } = await import("dotenv");
   loadEnv({ path: GLOBAL_ENV_PATH });
+  const envAfterGlobal = captureLlmEnv(process.env);
+
+  const projectEnvPath = join(root, ".env");
+  const projectEnvRaw = await readFile(projectEnvPath, "utf-8").catch(() => "");
+  const projectFileEnv = projectEnvRaw.length > 0 ? parseEnv(projectEnvRaw) : {};
+
   loadEnv({ path: join(root, ".env"), override: true });
+
+  // Fresh projects scaffold .env with placeholder openai fields. If the user later adds
+  // a global config, those placeholders should not override the real config.
+  if (isScaffoldProjectLlmOverride(projectFileEnv)) {
+    restoreLlmEnv(process.env, envAfterGlobal);
+  }
 
   const configPath = join(root, "inkos.json");
 
@@ -70,6 +95,7 @@ export async function loadProjectConfig(
   // .env overrides inkos.json for LLM settings
   const env = process.env;
   const llm = (config.llm ?? {}) as Record<string, unknown>;
+  const configProvider = typeof llm.provider === "string" ? llm.provider : undefined;
   if (env.INKOS_LLM_PROVIDER) llm.provider = env.INKOS_LLM_PROVIDER;
   if (env.INKOS_LLM_BASE_URL) llm.baseUrl = env.INKOS_LLM_BASE_URL;
   if (env.INKOS_LLM_MODEL) llm.model = env.INKOS_LLM_MODEL;
@@ -95,6 +121,30 @@ export async function loadProjectConfig(
     llm.extra = { ...(llm.extra as Record<string, unknown> ?? {}), ...extraFromEnv };
   }
   if (env.INKOS_LLM_API_FORMAT) llm.apiFormat = env.INKOS_LLM_API_FORMAT;
+
+  const provider = typeof llm.provider === "string" ? llm.provider : undefined;
+  const providerChangedByEnv = typeof env.INKOS_LLM_PROVIDER === "string"
+    && env.INKOS_LLM_PROVIDER.length > 0
+    && env.INKOS_LLM_PROVIDER !== configProvider;
+  if (provider === "gemini-cli") {
+    llm.baseUrl = typeof env.INKOS_LLM_BASE_URL === "string" && env.INKOS_LLM_BASE_URL.length > 0
+      ? env.INKOS_LLM_BASE_URL
+      : "https://gemini-cli.invalid";
+    llm.model = typeof env.INKOS_LLM_MODEL === "string" && env.INKOS_LLM_MODEL.length > 0
+      ? env.INKOS_LLM_MODEL
+      : !providerChangedByEnv && typeof llm.model === "string" && llm.model.length > 0
+        ? llm.model
+        : "auto-gemini-3";
+  } else if (provider === "codex-cli") {
+    llm.baseUrl = typeof env.INKOS_LLM_BASE_URL === "string" && env.INKOS_LLM_BASE_URL.length > 0
+      ? env.INKOS_LLM_BASE_URL
+      : "https://codex-cli.invalid";
+    llm.model = typeof env.INKOS_LLM_MODEL === "string" && env.INKOS_LLM_MODEL.length > 0
+      ? env.INKOS_LLM_MODEL
+      : !providerChangedByEnv && typeof llm.model === "string" && llm.model.length > 0
+        ? llm.model
+        : "gpt-5.4";
+  }
   config.llm = llm;
 
   // Global language override
@@ -102,7 +152,6 @@ export async function loadProjectConfig(
 
   // API key ONLY from env — never stored in inkos.json
   const apiKey = env.INKOS_LLM_API_KEY;
-  const provider = typeof llm.provider === "string" ? llm.provider : undefined;
   const baseUrl = typeof llm.baseUrl === "string" ? llm.baseUrl : undefined;
   const apiKeyOptional = isApiKeyOptionalForEndpoint({ provider, baseUrl });
 
@@ -137,4 +186,43 @@ function isPrivateIpv4(hostname: string): boolean {
   if (parts[0] === 192 && parts[1] === 168) return true;
   if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
   return false;
+}
+
+function captureLlmEnv(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  return Object.fromEntries(LLM_ENV_KEYS.map((key) => [key, env[key]]));
+}
+
+function restoreLlmEnv(
+  env: NodeJS.ProcessEnv,
+  snapshot: Record<string, string | undefined>,
+): void {
+  for (const key of LLM_ENV_KEYS) {
+    const value = snapshot[key];
+    if (typeof value === "string") {
+      env[key] = value;
+    } else {
+      delete env[key];
+    }
+  }
+}
+
+function isScaffoldProjectLlmOverride(projectEnv: Record<string, string>): boolean {
+  const provider = projectEnv.INKOS_LLM_PROVIDER?.trim() ?? "";
+  const baseUrl = projectEnv.INKOS_LLM_BASE_URL?.trim() ?? "";
+  const apiKey = projectEnv.INKOS_LLM_API_KEY?.trim() ?? "";
+  const model = projectEnv.INKOS_LLM_MODEL?.trim() ?? "";
+  const hasOptionalOverrides = (
+    (projectEnv.INKOS_LLM_TEMPERATURE?.trim() ?? "") !== ""
+    || (projectEnv.INKOS_LLM_MAX_TOKENS?.trim() ?? "") !== ""
+    || (projectEnv.INKOS_LLM_THINKING_BUDGET?.trim() ?? "") !== ""
+    || (projectEnv.INKOS_LLM_API_FORMAT?.trim() ?? "") !== ""
+  );
+
+  return (
+    provider === "openai"
+    && baseUrl === ""
+    && apiKey === ""
+    && model === ""
+    && !hasOptionalOverrides
+  );
 }

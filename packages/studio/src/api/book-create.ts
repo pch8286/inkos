@@ -1,9 +1,10 @@
 import type { Platform } from "@actalk/inkos-core";
+import type { StudioLanguage } from "../shared/language.js";
 
 export interface StudioCreateBookBody {
   readonly title: string;
   readonly genre: string;
-  readonly language?: string;
+  readonly language?: StudioLanguage;
   readonly platform?: string;
   readonly chapterWordCount?: number;
   readonly targetChapters?: number;
@@ -17,7 +18,7 @@ export interface StudioBookConfigDraft {
   readonly status: "outlining";
   readonly targetChapters: number;
   readonly chapterWordCount: number;
-  readonly language?: "zh" | "en";
+  readonly language?: StudioLanguage;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -37,6 +38,10 @@ interface WaitForStudioBookReadyOptions {
 
 export function normalizeStudioPlatform(platform?: string): Platform {
   switch (platform) {
+    case "naver-series":
+    case "kakao-page":
+    case "munpia":
+    case "novelpia":
     case "tomato":
     case "feilu":
     case "qidian":
@@ -50,8 +55,9 @@ export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): 
   return {
     id: body.title
       .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fff]/g, "-")
+      .replace(/[^a-z0-9\u4e00-\u9fff가-힣]/g, "-")
       .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
       .slice(0, 30),
     title: body.title,
     platform: normalizeStudioPlatform(body.platform),
@@ -63,7 +69,9 @@ export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): 
       ? { language: "en" as const }
       : body.language === "zh"
         ? { language: "zh" as const }
-        : {}),
+        : body.language === "ko"
+          ? { language: "ko" as const }
+          : {}),
     createdAt: now,
     updatedAt: now,
   };

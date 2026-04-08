@@ -113,7 +113,7 @@ async function exportEpub(
   }
 
   const epubInstance = new EPub(
-    { title: book.title, lang: book.language === "en" ? "en" : "zh-CN" },
+    { title: book.title, lang: book.language === "en" ? "en" : book.language === "ko" ? "ko-KR" : "zh-CN" },
     epubChapters,
   );
   const epubBuffer: Buffer = await epubInstance.genEpub();

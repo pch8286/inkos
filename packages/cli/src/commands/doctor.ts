@@ -64,7 +64,12 @@ export const doctorCommand = new Command("doctor")
       let hasGlobal = false;
       try {
         const globalContent = await readFile(GLOBAL_ENV_PATH, "utf-8");
-        hasGlobal = globalContent.includes("INKOS_LLM_API_KEY=") && !globalContent.includes("your-api-key-here");
+        const provider = globalContent.match(/^INKOS_LLM_PROVIDER=(.+)$/m)?.[1]?.trim();
+        hasGlobal = (
+          provider === "gemini-cli"
+          || provider === "codex-cli"
+          || (globalContent.includes("INKOS_LLM_API_KEY=") && !globalContent.includes("your-api-key-here"))
+        );
       } catch { /* no global config */ }
       checks.push({
         name: "Global Config",
@@ -95,11 +100,13 @@ export const doctorCommand = new Command("doctor")
       checks.push({
         name: "LLM API Key",
         ok: hasKey,
-        detail: apiKeyOptional
-          ? "Optional for local/self-hosted endpoint"
-          : hasKey
-            ? "Configured"
-            : "Missing — run 'inkos config set-global' or add to project .env",
+        detail: provider === "gemini-cli" || provider === "codex-cli"
+          ? "Optional for OAuth-backed CLI provider"
+          : apiKeyOptional
+            ? "Optional for local/self-hosted endpoint"
+            : hasKey
+              ? "Configured"
+              : "Missing — run 'inkos config set-global' or add to project .env",
       });
     }
 
@@ -161,16 +168,29 @@ export const doctorCommand = new Command("doctor")
         const { config: loadDotenv } = await import("dotenv");
         loadDotenv({ path: GLOBAL_ENV_PATH });
         const env = process.env;
+        const provider = env.INKOS_LLM_PROVIDER ?? "custom";
         const apiKeyOptional = isApiKeyOptionalForEndpoint({
-          provider: env.INKOS_LLM_PROVIDER,
+          provider,
           baseUrl: env.INKOS_LLM_BASE_URL,
         });
-        if ((env.INKOS_LLM_API_KEY || apiKeyOptional) && env.INKOS_LLM_BASE_URL && env.INKOS_LLM_MODEL) {
+        const resolvedBaseUrl = env.INKOS_LLM_BASE_URL
+          ?? (provider === "gemini-cli"
+            ? "https://gemini-cli.invalid"
+            : provider === "codex-cli"
+              ? "https://codex-cli.invalid"
+              : undefined);
+        const resolvedModel = env.INKOS_LLM_MODEL
+          ?? (provider === "gemini-cli"
+            ? "auto-gemini-3"
+            : provider === "codex-cli"
+              ? "gpt-5.4"
+              : undefined);
+        if ((env.INKOS_LLM_API_KEY || apiKeyOptional) && resolvedBaseUrl && resolvedModel) {
           llmConfig = LLMConfigSchema.parse({
-            provider: env.INKOS_LLM_PROVIDER ?? "custom",
-            baseUrl: env.INKOS_LLM_BASE_URL,
+            provider,
+            baseUrl: resolvedBaseUrl,
             apiKey: env.INKOS_LLM_API_KEY ?? "",
-            model: env.INKOS_LLM_MODEL,
+            model: resolvedModel,
           });
         }
       }
@@ -182,23 +202,36 @@ export const doctorCommand = new Command("doctor")
           detail: "No LLM config available (no project config or global .env)",
         });
       } else {
+        const apiKeyOptional = isApiKeyOptionalForEndpoint({
+          provider: llmConfig.provider,
+          baseUrl: llmConfig.baseUrl,
+        });
         checks.push({
           name: "LLM Config",
           ok: true,
           detail: `provider=${llmConfig.provider} model=${llmConfig.model} stream=${llmConfig.stream ?? true} baseUrl=${llmConfig.baseUrl}`,
         });
 
-        const client = createLLMClient(llmConfig);
-        log("\n  [..] Testing API connectivity...");
-        const response = await chatCompletion(client, llmConfig.model, [
-          { role: "user", content: "Say OK" },
-        ], { maxTokens: 16 });
+        const isCliOauthProvider = llmConfig.provider === "gemini-cli" || String(llmConfig.provider) === "codex-cli";
+        if (apiKeyOptional && !isCliOauthProvider) {
+          checks.push({
+            name: "API Connectivity",
+            ok: true,
+            detail: "Skipped for local/self-hosted endpoint",
+          });
+        } else {
+          const client = createLLMClient(llmConfig);
+          log("\n  [..] Testing API connectivity...");
+          const response = await chatCompletion(client, llmConfig.model, [
+            { role: "user", content: "Say OK" },
+          ], { maxTokens: 16 });
 
-        checks.push({
-          name: "API Connectivity",
-          ok: true,
-          detail: `OK (model: ${llmConfig.model}, tokens: ${response.usage.totalTokens})`,
-        });
+          checks.push({
+            name: "API Connectivity",
+            ok: true,
+            detail: `OK (model: ${llmConfig.model}, tokens: ${response.usage.totalTokens})`,
+          });
+        }
       }
     } catch (e) {
       const errMsg = String(e);

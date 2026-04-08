@@ -11,6 +11,7 @@ import {
   type RuntimeStateDelta,
   type StateManifest,
 } from "../models/runtime-state.js";
+import type { WritingLanguage } from "../models/language.js";
 import { evaluateHookAdmission } from "../utils/hook-governance.js";
 import { resolveHookPayoffTiming } from "../utils/hook-lifecycle.js";
 import { validateRuntimeState } from "./state-validator.js";
@@ -178,7 +179,7 @@ function preferRicherText(primary: string, fallback: string): string {
 
 function applyCurrentStatePatch(
   currentState: CurrentStateState,
-  language: "zh" | "en",
+  language: WritingLanguage,
   delta: RuntimeStateDelta,
 ): CurrentStateState {
   if (!delta.currentStatePatch) {

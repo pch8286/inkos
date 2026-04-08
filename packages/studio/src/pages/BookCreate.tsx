@@ -3,6 +3,7 @@ import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
+import { resolveStudioLanguage, type StudioLanguage } from "../shared/language";
 
 interface Nav {
   toDashboard: () => void;
@@ -13,7 +14,7 @@ interface GenreInfo {
   readonly id: string;
   readonly name: string;
   readonly source: "project" | "builtin";
-  readonly language: "zh" | "en";
+  readonly language: StudioLanguage;
 }
 
 interface PlatformOption {
@@ -35,6 +36,14 @@ const PLATFORMS_EN: ReadonlyArray<PlatformOption> = [
   { value: "other", label: "Other" },
 ];
 
+const PLATFORMS_KO: ReadonlyArray<PlatformOption> = [
+  { value: "naver-series", label: "네이버 시리즈" },
+  { value: "kakao-page", label: "카카오페이지" },
+  { value: "munpia", label: "문피아" },
+  { value: "novelpia", label: "노벨피아" },
+  { value: "other", label: "기타" },
+];
+
 export function pickValidValue(current: string, available: ReadonlyArray<string>): string {
   if (current && available.includes(current)) {
     return current;
@@ -42,12 +51,18 @@ export function pickValidValue(current: string, available: ReadonlyArray<string>
   return available[0] ?? "";
 }
 
-export function defaultChapterWordsForLanguage(language: "zh" | "en"): string {
+export function defaultChapterWordsForLanguage(language: StudioLanguage): string {
   return language === "en" ? "2000" : "3000";
 }
 
-export function platformOptionsForLanguage(language: "zh" | "en"): ReadonlyArray<PlatformOption> {
-  return language === "en" ? PLATFORMS_EN : PLATFORMS_ZH;
+export function platformOptionsForLanguage(language: StudioLanguage): ReadonlyArray<PlatformOption> {
+  if (language === "en") {
+    return PLATFORMS_EN;
+  }
+  if (language === "ko") {
+    return PLATFORMS_KO;
+  }
+  return PLATFORMS_ZH;
 }
 
 interface WaitForBookReadyOptions {
@@ -115,7 +130,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   const { data: genreData } = useApi<{ genres: ReadonlyArray<GenreInfo> }>("/genres");
   const { data: project } = useApi<{ language: string }>("/project");
 
-  const projectLang = (project?.language ?? "zh") as "zh" | "en";
+  const projectLang = resolveStudioLanguage(project?.language);
 
   const [title, setTitle] = useState("");
   const [genre, setGenre] = useState("");

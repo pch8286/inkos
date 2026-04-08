@@ -16,26 +16,43 @@ import { loadConfig, buildPipelineConfig, findProjectRoot, resolveBookId, log, l
 export const bookCommand = new Command("book")
   .description("Manage books");
 
+function slugifyBookId(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff가-힣]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+}
+
+function defaultGenreForLanguage(language: ReturnType<typeof resolveCliLanguage>): string {
+  if (language === "zh") return "xuanhuan";
+  if (language === "en") return "progression";
+  return "modern-fantasy";
+}
+
+function defaultPlatformForLanguage(language: ReturnType<typeof resolveCliLanguage>): string {
+  if (language === "zh") return "tomato";
+  if (language === "en") return "other";
+  return "naver-series";
+}
+
 bookCommand
   .command("create")
   .description("Create a new book with AI-generated foundation")
   .requiredOption("--title <title>", "Book title")
-  .option("--genre <genre>", "Genre", "xuanhuan")
-  .option("--platform <platform>", "Target platform", "tomato")
+  .option("--genre <genre>", "Genre (defaults from writing language when omitted)")
+  .option("--platform <platform>", "Target platform (defaults from writing language when omitted)")
   .option("--target-chapters <n>", "Target chapter count", "200")
   .option("--chapter-words <n>", "Words per chapter", "3000")
   .option("--brief <path>", "Path to creative brief file (.md/.txt) — Architect builds from your ideas instead of generating from scratch")
-  .option("--lang <language>", "Writing language: zh (Chinese) or en (English). Defaults from genre.")
+  .option("--lang <language>", "Writing language: ko (Korean), zh (Chinese), or en (English). Defaults from project config.")
   .option("--json", "Output JSON")
   .action(async (opts) => {
     try {
       const root = findProjectRoot();
 
-      const bookId = opts.title
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fff]/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 30);
+      const bookId = slugifyBookId(opts.title);
 
       const bookDir = join(root, "books", bookId);
       try {
@@ -51,20 +68,22 @@ bookCommand
       }
 
       const config = await loadConfig();
+      const language = resolveCliLanguage(opts.lang ?? config.language);
+      const genre = opts.genre ?? defaultGenreForLanguage(language);
+      const platform = opts.platform ?? defaultPlatformForLanguage(language);
       const now = new Date().toISOString();
       const book: BookConfig = {
         id: bookId,
         title: opts.title,
-        platform: opts.platform,
-        genre: opts.genre,
+        platform,
+        genre,
         status: "outlining",
         targetChapters: parseInt(opts.targetChapters, 10),
         chapterWordCount: parseInt(opts.chapterWords, 10),
-        language: opts.lang ?? config.language,
+        language,
         createdAt: now,
         updatedAt: now,
       };
-      const language = resolveCliLanguage(book.language);
 
       if (!opts.json) log(formatBookCreateCreating(language, book.title, book.genre, book.platform));
 
@@ -109,7 +128,7 @@ bookCommand
   .option("--chapter-words <n>", "Words per chapter")
   .option("--target-chapters <n>", "Target chapter count")
   .option("--status <status>", "Book status (outlining/active/paused/completed)")
-  .option("--lang <language>", "Writing language: zh or en")
+  .option("--lang <language>", "Writing language: ko, zh, or en")
   .option("--json", "Output JSON")
   .action(async (bookIdArg: string | undefined, opts) => {
     try {

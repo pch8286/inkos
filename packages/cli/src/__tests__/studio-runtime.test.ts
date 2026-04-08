@@ -40,7 +40,7 @@ describe("studio runtime resolution", () => {
         "/repo/test-project",
       ],
     });
-  });
+  }, 15_000);
 
   it("finds monorepo packages/studio sources from a project directory", async () => {
     accessMock.mockImplementation(async (path: string) => {

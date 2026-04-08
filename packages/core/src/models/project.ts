@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { WritingLanguageSchema } from "./language.js";
 
 export const LLMConfigSchema = z.object({
-  provider: z.enum(["anthropic", "openai", "custom"]),
+  provider: z.enum(["anthropic", "openai", "custom", "gemini-cli", "codex-cli"]),
   baseUrl: z.string().url(),
   apiKey: z.string().default(""),
   model: z.string().min(1),
@@ -62,7 +63,7 @@ export type QualityGates = z.infer<typeof QualityGatesSchema>;
 
 export const AgentLLMOverrideSchema = z.object({
   model: z.string().min(1),
-  provider: z.enum(["anthropic", "openai", "custom"]).optional(),
+  provider: z.enum(["anthropic", "openai", "custom", "gemini-cli", "codex-cli"]).optional(),
   baseUrl: z.string().url().optional(),
   apiKeyEnv: z.string().optional(),
   stream: z.boolean().optional(),
@@ -78,7 +79,7 @@ const ModelOverrideValueSchema = z.union([z.string(), AgentLLMOverrideSchema]);
 export const ProjectConfigSchema = z.object({
   name: z.string().min(1),
   version: z.literal("0.1.0"),
-  language: z.enum(["zh", "en"]).default("zh"),
+  language: WritingLanguageSchema.default("ko"),
   llm: LLMConfigSchema,
   notify: z.array(NotifyChannelSchema).default([]),
   detection: DetectionConfigSchema.optional(),

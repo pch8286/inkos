@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
-import { chatCompletion, type LLMClient } from "../llm/provider.js";
+import { chatCompletion, chatWithTools, type LLMClient } from "../llm/provider.js";
 
 const ZERO_USAGE = {
   prompt_tokens: 11,
@@ -17,7 +20,133 @@ async function captureError(task: Promise<unknown>): Promise<Error> {
   throw new Error("Expected promise to reject");
 }
 
+const tempDirs: string[] = [];
+
+async function createFakeGeminiCliFixture(): Promise<{
+  readonly commandPath: string;
+  readonly oauthPath: string;
+  readonly isolatedHomeBase: string;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "inkos-fake-gemini-cli-"));
+  tempDirs.push(root);
+
+  const sourceHome = join(root, "source-home");
+  const sourceGeminiDir = join(sourceHome, ".gemini");
+  const isolatedHomeBase = join(root, "isolated-home");
+  const oauthPath = join(sourceGeminiDir, "oauth_creds.json");
+  const commandPath = join(root, "fake-gemini.mjs");
+
+  await mkdir(sourceGeminiDir, { recursive: true });
+  await writeFile(oauthPath, JSON.stringify({ test: true }), "utf-8");
+
+  const script = `#!/usr/bin/env node
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+const args = process.argv.slice(2);
+const stdin = await new Promise((resolve, reject) => {
+  const chunks = [];
+  process.stdin.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+  process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+  process.stdin.on("error", reject);
+});
+
+const modelIndex = args.indexOf("--model");
+const model = modelIndex >= 0 ? args[modelIndex + 1] : "auto-gemini-3";
+const settingsPath = join(process.env.GEMINI_CLI_HOME, ".gemini", "settings.json");
+const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+const toolMode = args.includes("--approval-mode");
+
+console.log(JSON.stringify({ type: "init", session_id: "fake-session", model }));
+console.log(JSON.stringify({ type: "message", role: "user", content: stdin.trim() }));
+
+if (toolMode) {
+  const discoveryCommand = settings.tools?.discoveryCommand;
+  const callCommand = settings.tools?.callCommand;
+  const commandsReady = typeof discoveryCommand === "string"
+    && typeof callCommand === "string"
+    && existsSync(discoveryCommand)
+    && existsSync(callCommand)
+    && (statSync(discoveryCommand).mode & 0o111) !== 0
+    && (statSync(callCommand).mode & 0o111) !== 0;
+  console.log(JSON.stringify({ type: "message", role: "assistant", content: commandsReady ? "TOOLS_READY" : "TOOLS_MISSING", delta: true }));
+} else {
+  const content = stdin.includes("ping") ? "FAKE_OK" : "UNEXPECTED_PROMPT";
+  console.log(JSON.stringify({ type: "message", role: "assistant", content, delta: true }));
+}
+
+console.log(JSON.stringify({
+  type: "result",
+  status: "success",
+  stats: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
+}));
+`;
+
+  await writeFile(commandPath, script, "utf-8");
+  await chmod(commandPath, 0o755);
+
+  return { commandPath, oauthPath, isolatedHomeBase };
+}
+
+async function createFakeCodexCliFixture(): Promise<{
+  readonly commandPath: string;
+  readonly authPath: string;
+  readonly isolatedHomeBase: string;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "inkos-fake-codex-cli-"));
+  tempDirs.push(root);
+
+  const sourceHome = join(root, "source-home");
+  const isolatedHomeBase = join(root, "isolated-home");
+  const authPath = join(sourceHome, "auth.json");
+  const commandPath = join(root, "fake-codex.mjs");
+
+  await mkdir(sourceHome, { recursive: true });
+  await writeFile(authPath, JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: "token" } }), "utf-8");
+
+  const script = `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const stdin = await new Promise((resolve, reject) => {
+  const chunks = [];
+  process.stdin.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+  process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+  process.stdin.on("error", reject);
+});
+
+const modelIndex = args.indexOf("--model");
+const model = modelIndex >= 0 ? args[modelIndex + 1] : "gpt-5.4";
+console.log(JSON.stringify({ type: "thread.started", thread_id: "fake-thread" }));
+console.log(JSON.stringify({ type: "turn.started" }));
+
+let text = "FAKE_CODEX_OK";
+if (stdin.includes("Return exactly one JSON object")) {
+  text = JSON.stringify({ type: "tool", name: "list_books", arguments: { limit: 1 } });
+}
+if (stdin.includes("Return a final JSON object")) {
+  text = JSON.stringify({ type: "final", content: "DONE" });
+}
+
+console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text } }));
+console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 21, output_tokens: 9, model } }));
+`;
+
+  await writeFile(commandPath, script, "utf-8");
+  await chmod(commandPath, 0o755);
+
+  return { commandPath, authPath, isolatedHomeBase };
+}
+
 describe("chatCompletion stream fallback", () => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("falls back to sync chat completion when streamed chat returns no chunks", async () => {
     const create = vi.fn()
       .mockResolvedValueOnce({
@@ -132,5 +261,192 @@ describe("chatCompletion stream fallback", () => {
     expect(create.mock.calls[1]?.[0]).toMatchObject({ stream: false });
     expect(error.message).toContain("stream:true");
     expect(error.message).not.toContain("\"stream\": false");
+  });
+
+  it("dispatches gemini-cli provider to local CLI runtime", async () => {
+    const client: LLMClient = {
+      provider: "gemini-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0, maxTokensCap: null,
+        extra: {
+          geminiCliCommand: "inkos-nonexistent-gemini-cli-command",
+          geminiCliOauthSource: "/tmp/inkos-missing-oauth-creds.json",
+        },
+      },
+    };
+
+    const error = await captureError(chatCompletion(client, "auto-gemini-3", [
+      { role: "user", content: "ping" },
+    ]));
+
+    expect(error.message).toContain("Gemini CLI OAuth credentials not found");
+  });
+
+  it("requires projectRoot when gemini-cli tool mode is used", async () => {
+    const client: LLMClient = {
+      provider: "gemini-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0, maxTokensCap: null,
+        extra: {},
+      },
+    };
+
+    const error = await captureError(chatWithTools(
+      client,
+      "auto-gemini-3",
+      [{ role: "user", content: "list books" }],
+      [],
+    ));
+
+    expect(error.message).toContain("projectRoot");
+  });
+
+  it("streams assistant content through the gemini-cli runtime", async () => {
+    const fixture = await createFakeGeminiCliFixture();
+    const client: LLMClient = {
+      provider: "gemini-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          geminiCliCommand: fixture.commandPath,
+          geminiCliOauthSource: fixture.oauthPath,
+          geminiCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const result = await chatCompletion(client, "auto-gemini-3", [
+      { role: "user", content: "ping" },
+    ]);
+
+    expect(result.content).toBe("FAKE_OK");
+    expect(result.usage).toEqual({
+      promptTokens: 12,
+      completionTokens: 3,
+      totalTokens: 15,
+    });
+  });
+
+  it("writes executable discovery and call commands for gemini-cli tool mode", async () => {
+    const fixture = await createFakeGeminiCliFixture();
+    const client: LLMClient = {
+      provider: "gemini-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          geminiCliCommand: fixture.commandPath,
+          geminiCliOauthSource: fixture.oauthPath,
+          geminiCliIsolatedHomeBase: fixture.isolatedHomeBase,
+          projectRoot: "/tmp/inkos-test-project",
+        },
+      },
+    };
+
+    const result = await chatWithTools(
+      client,
+      "auto-gemini-3",
+      [{ role: "user", content: "inspect tool bridge setup" }],
+      [{
+        name: "list_books",
+        description: "List books in the project",
+        parameters: {
+          type: "object",
+          properties: {},
+        },
+      }],
+    );
+
+    expect(result.content).toBe("TOOLS_READY");
+    expect(result.toolCalls).toEqual([]);
+  });
+
+  it("streams assistant content through the codex-cli runtime", async () => {
+    const fixture = await createFakeCodexCliFixture();
+    const client: LLMClient = {
+      provider: "codex-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          codexCliCommand: fixture.commandPath,
+          codexCliAuthSource: fixture.authPath,
+          codexCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const result = await chatCompletion(client, "gpt-5.4", [
+      { role: "user", content: "ping" },
+    ]);
+
+    expect(result.content).toBe("FAKE_CODEX_OK");
+    expect(result.usage).toEqual({
+      promptTokens: 21,
+      completionTokens: 9,
+      totalTokens: 30,
+    });
+  });
+
+  it("parses structured tool output from the codex-cli runtime", async () => {
+    const fixture = await createFakeCodexCliFixture();
+    const client: LLMClient = {
+      provider: "codex-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          codexCliCommand: fixture.commandPath,
+          codexCliAuthSource: fixture.authPath,
+          codexCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const result = await chatWithTools(
+      client,
+      "gpt-5.4",
+      [{ role: "user", content: "Need a tool" }],
+      [{
+        name: "list_books",
+        description: "List books in the project",
+        parameters: {
+          type: "object",
+          properties: {
+            limit: { type: "number" },
+          },
+        },
+      }],
+    );
+
+    expect(result.content).toBe("");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]?.name).toBe("list_books");
+    expect(JSON.parse(result.toolCalls[0]!.arguments)).toEqual({ limit: 1 });
   });
 });

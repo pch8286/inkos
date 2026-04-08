@@ -35,7 +35,7 @@ genreCommand
 genreCommand
   .command("show")
   .description("Display a genre profile")
-  .argument("<id>", "Genre ID (e.g. xuanhuan, urban, horror)")
+  .argument("<id>", "Genre ID (e.g. modern-fantasy, murim, xuanhuan)")
   .action(async (id: string) => {
     try {
       const root = findProjectRoot();
@@ -71,6 +71,7 @@ genreCommand
   .description("Scaffold a new genre profile in the project genres/ directory")
   .argument("<id>", "Genre ID (e.g. scifi, wuxia, romance)")
   .option("--name <name>", "Genre display name", "")
+  .option("--lang <language>", "Genre language: ko, zh, or en", "ko")
   .option("--numerical", "Enable numerical system", false)
   .option("--power", "Enable power scaling", false)
   .option("--era", "Enable era research", false)
@@ -90,27 +91,14 @@ genreCommand
       await mkdir(genresDir, { recursive: true });
 
       const name = opts.name || id;
-      const template = `---
-name: ${name}
-id: ${id}
-chapterTypes: ["推进章", "布局章", "过渡章", "回收章"]
-fatigueWords: ["震惊", "不可思议", "难以置信"]
-numericalSystem: ${opts.numerical}
-powerScaling: ${opts.power}
-eraResearch: ${opts.era}
-pacingRule: "每2-3章有一个明确的进展或反馈"
-satisfactionTypes: ["目标达成", "困难克服", "真相揭示"]
-auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
----
-
-## 题材禁忌
-
-- (根据题材添加禁忌)
-
-## 叙事指导
-
-(根据题材描述叙事重心和风格要求)
-`;
+      const template = buildGenreTemplate({
+        id,
+        name,
+        language: opts.lang,
+        numericalSystem: opts.numerical,
+        powerScaling: opts.power,
+        eraResearch: opts.era,
+      });
 
       await writeFile(filePath, template, "utf-8");
       log(`Created genre profile: ${filePath}`);
@@ -124,7 +112,7 @@ auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
 genreCommand
   .command("copy")
   .description("Copy a built-in genre profile to project for customization")
-  .argument("<id>", "Genre ID to copy (e.g. xuanhuan)")
+  .argument("<id>", "Genre ID to copy (e.g. modern-fantasy, murim, xuanhuan)")
   .action(async (id: string) => {
     try {
       const root = findProjectRoot();
@@ -158,3 +146,85 @@ genreCommand
       process.exit(1);
     }
   });
+
+function buildGenreTemplate(params: {
+  readonly id: string;
+  readonly name: string;
+  readonly language: string;
+  readonly numericalSystem: boolean;
+  readonly powerScaling: boolean;
+  readonly eraResearch: boolean;
+}): string {
+  if (params.language === "en") {
+    return `---
+name: ${params.name}
+id: ${params.id}
+language: en
+chapterTypes: ["progress", "setup", "transition", "payoff"]
+fatigueWords: ["suddenly", "somehow", "couldn't believe", "it felt like"]
+numericalSystem: ${params.numericalSystem}
+powerScaling: ${params.powerScaling}
+eraResearch: ${params.eraResearch}
+pacingRule: "Deliver a clear turn, gain, or reveal every 2-3 chapters"
+satisfactionTypes: ["goal achieved", "obstacle cleared", "truth revealed"]
+auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
+---
+
+## Genre Pitfalls
+
+- (Add genre-specific pitfalls)
+
+## Narrative Guidance
+
+(Describe pacing, tone, and reader expectations for this genre)
+`;
+  }
+
+  if (params.language === "zh") {
+    return `---
+name: ${params.name}
+id: ${params.id}
+language: zh
+chapterTypes: ["推进章", "布局章", "过渡章", "回收章"]
+fatigueWords: ["震惊", "不可思议", "难以置信"]
+numericalSystem: ${params.numericalSystem}
+powerScaling: ${params.powerScaling}
+eraResearch: ${params.eraResearch}
+pacingRule: "每2-3章有一个明确的进展或反馈"
+satisfactionTypes: ["目标达成", "困难克服", "真相揭示"]
+auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
+---
+
+## 题材禁忌
+
+- (根据题材添加禁忌)
+
+## 叙事指导
+
+(根据题材描述叙事重心和风格要求)
+`;
+  }
+
+  return `---
+name: ${params.name}
+id: ${params.id}
+language: ko
+chapterTypes: ["전개화", "설치화", "전환화", "회수화"]
+fatigueWords: ["충격", "믿기 어려웠다", "순간", "왠지"]
+numericalSystem: ${params.numericalSystem}
+powerScaling: ${params.powerScaling}
+eraResearch: ${params.eraResearch}
+pacingRule: "2-3화마다 분명한 진전, 보상, 반전 중 하나는 보여준다"
+satisfactionTypes: ["목표 달성", "장애 극복", "진실 공개"]
+auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
+---
+
+## 장르 금기
+
+- (장르별 금기를 추가)
+
+## 서사 가이드
+
+(이 장르에서 중요한 전개 리듬, 문체, 독자 기대를 적기)
+`;
+}

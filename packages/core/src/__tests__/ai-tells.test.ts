@@ -27,6 +27,15 @@ describe("analyzeAITells", () => {
     expect(paraIssues[0]!.severity).toBe("warning");
   });
 
+  it("detects Korean hedge density with warning", () => {
+    const content = Array.from({ length: 20 }, () => "그는 어쩌면 마치 그 순간의 그림자를 더듬어 보았다. ")
+      .join("");
+
+    const result = analyzeAITells(content);
+    const hedgeIssues = result.issues.filter((i) => i.category === "완곡어 밀도");
+    expect(hedgeIssues.length).toBeGreaterThan(0);
+  });
+
   it("detects high hedge word density (dim 21)", () => {
     const content = [
       "他似乎觉得这件事可能不太对劲。",
@@ -65,6 +74,19 @@ describe("analyzeAITells", () => {
     const listIssues = result.issues.filter((i) => i.category === "列表式结构");
     expect(listIssues.length).toBeGreaterThan(0);
     expect(listIssues[0]!.severity).toBe("info");
+  });
+
+  it("detects Korean list-like sentence structure (dim 23)", () => {
+    const content = [
+      "그는 바닥을 천천히 확인했다.",
+      "그는 창문을 향해 한 발짝 다가갔다.",
+      "그는 어둠 속의 실루엣을 바라봤다.",
+      "그는 손끝의 떨림을 참고 칼자루를 움켜쥐었다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content);
+    const listIssues = result.issues.filter((i) => i.category === "목록형 문장 구조");
+    expect(listIssues.length).toBeGreaterThan(0);
   });
 
   it("returns no issues for content with fewer than 3 paragraphs", () => {

@@ -5,26 +5,571 @@ import { serve } from "@hono/node-server";
 import {
   StateManager,
   PipelineRunner,
+  Scheduler,
   createLLMClient,
   createLogger,
   computeAnalytics,
   loadProjectConfig,
+  GLOBAL_ENV_PATH,
   type PipelineConfig,
   type ProjectConfig,
   type LogSink,
   type LogEntry,
 } from "@actalk/inkos-core";
-import { access, readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { access, readFile, readdir, realpath } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { basename, delimiter, dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
 import { buildStudioBookConfig } from "./book-create.js";
+import { defaultModelForProvider, isCliOAuthProvider } from "../shared/llm.js";
 
 // --- Event bus for SSE ---
 
 type EventHandler = (event: string, data: unknown) => void;
 const subscribers = new Set<EventHandler>();
 const bookCreateStatus = new Map<string, { status: "creating" | "error"; error?: string }>();
+type StudioLanguage = "ko" | "zh" | "en";
+type CliOAuthProvider = "gemini-cli" | "codex-cli";
+
+interface AuthStatus {
+  readonly available: boolean;
+  readonly authenticated: boolean;
+  readonly credentialPath: string;
+  readonly command: string;
+  readonly details?: string;
+}
+
+interface GlobalConfigPayload {
+  readonly exists: boolean;
+  readonly language: StudioLanguage;
+  readonly provider: string;
+  readonly model: string;
+  readonly baseUrl: string;
+  readonly apiKeySet: boolean;
+  readonly auth: {
+    readonly geminiCli: AuthStatus;
+    readonly codexCli: AuthStatus;
+  };
+}
+
+interface BootstrapPayload {
+  readonly root: string;
+  readonly suggestedProjectName: string;
+  readonly projectInitialized: boolean;
+  readonly globalConfig: GlobalConfigPayload;
+}
+
+type AuthSessionStatus = "starting" | "waiting-browser" | "awaiting-code" | "authorizing" | "succeeded" | "failed";
+
+interface AuthSessionPayload {
+  readonly id: string;
+  readonly provider: CliOAuthProvider;
+  readonly status: AuthSessionStatus;
+  readonly url: string | null;
+  readonly verificationCode: string | null;
+  readonly error: string | null;
+  readonly logs: ReadonlyArray<string>;
+}
+
+interface AuthSessionRecord {
+  readonly id: string;
+  readonly provider: CliOAuthProvider;
+  child?: ReturnType<typeof spawn>;
+  status: AuthSessionStatus;
+  url?: string;
+  verificationCode?: string;
+  error?: string;
+  logs: string[];
+}
+
+const authSessions = new Map<string, AuthSessionRecord>();
+
+function resolveStudioLanguage(
+  value: unknown,
+  fallback: StudioLanguage = "ko",
+): StudioLanguage {
+  return value === "ko" || value === "zh" || value === "en" ? value : fallback;
+}
+
+function defaultFanficGenreForLanguage(language: StudioLanguage): string {
+  return language === "ko" ? "korean-other" : "other";
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+async function resolveCommandPath(command: string): Promise<string | null> {
+  const trimmed = command.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes("/")) {
+    try {
+      await access(trimmed);
+      return trimmed;
+    } catch {
+      return null;
+    }
+  }
+
+  for (const part of (process.env.PATH ?? "").split(delimiter)) {
+    if (!part) continue;
+    const candidate = join(part, trimmed);
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function getGeminiAuthPath(): string {
+  const sourceHome = process.env.INKOS_GEMINI_CLI_SOURCE_HOME
+    ?? process.env.GEMINI_CLI_HOME
+    ?? homedir();
+  return join(sourceHome, ".gemini", "oauth_creds.json");
+}
+
+function getCodexAuthPath(): string {
+  const sourceHome = process.env.INKOS_CODEX_CLI_SOURCE_HOME
+    ?? process.env.CODEX_HOME
+    ?? join(homedir(), ".codex");
+  return process.env.INKOS_CODEX_CLI_AUTH_SOURCE
+    ?? join(sourceHome, "auth.json");
+}
+
+async function getAuthStatus(): Promise<GlobalConfigPayload["auth"]> {
+  const [geminiCommandPath, codexCommandPath] = await Promise.all([
+    resolveCommandPath("gemini"),
+    resolveCommandPath("codex"),
+  ]);
+
+  let geminiDetails: string | undefined;
+  try {
+    const raw = JSON.parse(await readFile(join(resolveGeminiCliHomeForAuth(), ".gemini", "settings.json"), "utf-8")) as {
+      security?: { auth?: { selectedType?: string } };
+    };
+    if (typeof raw.security?.auth?.selectedType === "string") {
+      geminiDetails = raw.security.auth.selectedType;
+    }
+  } catch {
+    geminiDetails = undefined;
+  }
+
+  let codexDetails: string | undefined;
+  try {
+    const raw = JSON.parse(await readFile(getCodexAuthPath(), "utf-8")) as { auth_mode?: string };
+    if (typeof raw.auth_mode === "string") {
+      codexDetails = raw.auth_mode;
+    }
+  } catch {
+    codexDetails = undefined;
+  }
+
+  return {
+    geminiCli: {
+      available: geminiCommandPath !== null,
+      authenticated: existsSync(getGeminiAuthPath()),
+      credentialPath: getGeminiAuthPath(),
+      command: "gemini",
+      details: geminiDetails,
+    },
+    codexCli: {
+      available: codexCommandPath !== null,
+      authenticated: existsSync(getCodexAuthPath()),
+      credentialPath: getCodexAuthPath(),
+      command: "codex",
+      details: codexDetails,
+    },
+  };
+}
+
+async function readGlobalConfigSummary(): Promise<GlobalConfigPayload> {
+  const { parsed, exists } = await readGlobalEnvEntries();
+
+  return {
+    exists,
+    language: resolveStudioLanguage(parsed.INKOS_DEFAULT_LANGUAGE, "ko"),
+    provider: parsed.INKOS_LLM_PROVIDER ?? "",
+    model: parsed.INKOS_LLM_MODEL ?? "",
+    baseUrl: parsed.INKOS_LLM_BASE_URL ?? "",
+    apiKeySet: typeof parsed.INKOS_LLM_API_KEY === "string" && parsed.INKOS_LLM_API_KEY.trim().length > 0,
+    auth: await getAuthStatus(),
+  };
+}
+
+async function readGlobalEnvEntries(): Promise<{
+  readonly parsed: Record<string, string>;
+  readonly exists: boolean;
+}> {
+  const { parse: parseEnv } = await import("dotenv");
+
+  try {
+    return {
+      parsed: parseEnv(await readFile(GLOBAL_ENV_PATH, "utf-8")),
+      exists: true,
+    };
+  } catch {
+    return {
+      parsed: {},
+      exists: false,
+    };
+  }
+}
+
+function buildGlobalConfigLines(entries: {
+  readonly language: StudioLanguage;
+  readonly provider: string;
+  readonly model: string;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+}): string {
+  const lines = [
+    "# InkOS Global LLM Configuration",
+    `INKOS_LLM_PROVIDER=${entries.provider}`,
+  ];
+  if (entries.baseUrl) lines.push(`INKOS_LLM_BASE_URL=${entries.baseUrl}`);
+  if (entries.apiKey) lines.push(`INKOS_LLM_API_KEY=${entries.apiKey}`);
+  lines.push(`INKOS_LLM_MODEL=${entries.model}`);
+  lines.push(`INKOS_DEFAULT_LANGUAGE=${entries.language}`);
+  return `${lines.join("\n")}\n`;
+}
+
+async function writeGlobalConfig(payload: {
+  readonly language?: StudioLanguage;
+  readonly provider: string;
+  readonly model: string;
+  readonly baseUrl?: string;
+  readonly apiKey?: string;
+}): Promise<void> {
+  const { GLOBAL_CONFIG_DIR } = await import("@actalk/inkos-core");
+  const { mkdir, writeFile } = await import("node:fs/promises");
+
+  await mkdir(GLOBAL_CONFIG_DIR ?? dirname(GLOBAL_ENV_PATH), { recursive: true });
+  const { parsed: existing } = await readGlobalEnvEntries();
+
+  const provider = String(payload.provider ?? "").trim();
+  const existingProvider = String(existing.INKOS_LLM_PROVIDER ?? "").trim();
+  const cliOAuthProvider = isCliOAuthProvider(provider);
+  const model = String(payload.model ?? "").trim()
+    || defaultModelForProvider(provider);
+  const rawBaseUrl = String(payload.baseUrl ?? "").trim();
+  const rawApiKey = String(payload.apiKey ?? "").trim();
+  const baseUrl = rawBaseUrl
+    || (!cliOAuthProvider && existingProvider === provider ? String(existing.INKOS_LLM_BASE_URL ?? "").trim() : "");
+  const apiKey = rawApiKey
+    || (!cliOAuthProvider && existingProvider === provider ? String(existing.INKOS_LLM_API_KEY ?? "").trim() : "");
+  const language = resolveStudioLanguage(payload.language ?? existing.INKOS_DEFAULT_LANGUAGE, "ko");
+
+  if (!provider) {
+    throw new ApiError(400, "INVALID_PROVIDER", "provider is required");
+  }
+  if (!model) {
+    throw new ApiError(400, "INVALID_MODEL", "model is required");
+  }
+  if (!cliOAuthProvider && !baseUrl) {
+    throw new ApiError(400, "INVALID_BASE_URL", "baseUrl is required unless provider is gemini-cli or codex-cli");
+  }
+  if (!cliOAuthProvider && !apiKey) {
+    throw new ApiError(400, "INVALID_API_KEY", "apiKey is required unless provider is gemini-cli or codex-cli");
+  }
+
+  await writeFile(GLOBAL_ENV_PATH, buildGlobalConfigLines({
+    language,
+    provider,
+    model,
+    baseUrl,
+    apiKey,
+  }), "utf-8");
+
+  process.env.INKOS_LLM_PROVIDER = provider;
+  process.env.INKOS_LLM_MODEL = model;
+  if (baseUrl) process.env.INKOS_LLM_BASE_URL = baseUrl;
+  else delete process.env.INKOS_LLM_BASE_URL;
+  if (apiKey) process.env.INKOS_LLM_API_KEY = apiKey;
+  else delete process.env.INKOS_LLM_API_KEY;
+  process.env.INKOS_DEFAULT_LANGUAGE = language;
+}
+
+async function initializeProjectAtRoot(root: string, options: {
+  readonly name?: string;
+  readonly language?: StudioLanguage;
+}): Promise<void> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+
+  const language = resolveStudioLanguage(options.language, "ko");
+  const projectName = String(options.name ?? basename(root)).trim() || basename(root);
+  const globalConfig = await readGlobalConfigSummary();
+
+  await mkdir(join(root, "books"), { recursive: true });
+  await mkdir(join(root, "radar"), { recursive: true });
+
+  const config = {
+    name: projectName,
+    version: "0.1.0",
+    language,
+    llm: {
+      provider: globalConfig.provider || "openai",
+      baseUrl: isCliOAuthProvider(globalConfig.provider) ? "" : globalConfig.baseUrl,
+      model: globalConfig.model || defaultModelForProvider(globalConfig.provider),
+    },
+    notify: [],
+    daemon: {
+      schedule: {
+        radarCron: "0 */6 * * *",
+        writeCron: "*/15 * * * *",
+      },
+      maxConcurrentBooks: 3,
+    },
+  };
+
+  await writeFile(join(root, "inkos.json"), JSON.stringify(config, null, 2), "utf-8");
+  await writeFile(join(root, ".nvmrc"), "22\n", "utf-8");
+  await writeFile(join(root, ".node-version"), "22\n", "utf-8");
+
+  const envLines = globalConfig.exists
+    ? [
+        "# Project-level LLM overrides (optional)",
+        "# Global config at ~/.inkos/.env will be used by default.",
+        "# Uncomment below to override for this project only:",
+        "# INKOS_LLM_PROVIDER=openai          # or gemini-cli / codex-cli",
+        "# INKOS_LLM_BASE_URL=",
+        "# INKOS_LLM_API_KEY=",
+        "# INKOS_LLM_MODEL=",
+        "",
+        "# Web search (optional):",
+        "# TAVILY_API_KEY=tvly-xxxxx",
+      ]
+    : [
+        "# LLM Configuration",
+        "# Tip: Configure global access in Studio Settings or with 'inkos config set-global'.",
+        "# Provider: openai / anthropic / custom / gemini-cli / codex-cli",
+        "# Uncomment the lines below to use project-specific overrides:",
+        "# INKOS_LLM_PROVIDER=openai",
+        "# INKOS_LLM_BASE_URL=",
+        "# INKOS_LLM_API_KEY=",
+        "# INKOS_LLM_MODEL=",
+      ];
+  await writeFile(join(root, ".env"), `${envLines.join("\n")}\n`, "utf-8");
+  await writeFile(join(root, ".gitignore"), [".env", "node_modules/", ".DS_Store"].join("\n"), "utf-8");
+}
+
+function summarizeAuthSession(session: AuthSessionRecord): AuthSessionPayload {
+  return {
+    id: session.id,
+    provider: session.provider,
+    status: session.status,
+    url: session.url ?? null,
+    verificationCode: session.verificationCode ?? null,
+    error: session.error ?? null,
+    logs: session.logs.slice(-20),
+  };
+}
+
+function appendAuthLog(session: AuthSessionRecord, chunk: Buffer | string): void {
+  const text = stripAnsi(String(chunk));
+  if (!text) return;
+  session.logs.push(text);
+
+  if (!session.url) {
+    const urlMatch = text.match(/https:\/\/[^\s)]+/);
+    if (urlMatch) session.url = urlMatch[0];
+  }
+
+  if (session.provider === "codex-cli" && !session.verificationCode) {
+    const codeMatch = text.match(/\b[A-Z0-9]{4,}-[A-Z0-9]{4,}\b/);
+    if (codeMatch) session.verificationCode = codeMatch[0];
+  }
+
+  if (session.provider === "gemini-cli") {
+    if (text.includes("Enter the authorization code:")) {
+      session.status = "awaiting-code";
+      return;
+    }
+    if (session.url || /authentication/i.test(text)) {
+      session.status = "waiting-browser";
+    }
+    return;
+  }
+
+  if (session.url || session.verificationCode) {
+    session.status = "waiting-browser";
+  }
+}
+
+function attachAuthSessionListeners(session: AuthSessionRecord): void {
+  if (!session.child) return;
+
+  const consume = (chunk: Buffer | string) => {
+    appendAuthLog(session, chunk);
+  };
+
+  const stdout = session.child.stdout;
+  if (stdout) {
+    stdout.on("data", consume);
+  }
+  const stderr = session.child.stderr;
+  if (stderr) {
+    stderr.on("data", consume);
+  }
+  session.child.on("error", (error) => {
+    session.status = "failed";
+    session.error = error.message;
+  });
+  session.child.on("exit", (code) => {
+    void (async () => {
+      if (code === 0) {
+        const auth = await getAuthStatus();
+        const key: keyof Awaited<ReturnType<typeof getAuthStatus>> =
+          session.provider === "gemini-cli" ? "geminiCli" : "codexCli";
+        if (auth[key].authenticated) {
+          session.status = "succeeded";
+          return;
+        }
+      }
+      if (session.status !== "succeeded") {
+        session.status = "failed";
+        session.error = session.error ?? `Authentication exited with code ${code ?? 1}.`;
+      }
+    })();
+  });
+}
+
+async function resolveGeminiCliPackageRoot(commandPath: string): Promise<string> {
+  const realCommandPath = await realpath(commandPath);
+  return dirname(dirname(realCommandPath));
+}
+
+async function runGeminiOAuthSession(session: AuthSessionRecord, commandPath: string): Promise<void> {
+  const geminiCliHome = resolveGeminiCliHomeForAuth();
+  const previousGeminiCliHome = process.env.GEMINI_CLI_HOME;
+  try {
+    const packageRoot = await resolveGeminiCliPackageRoot(commandPath);
+    const coreRoot = join(packageRoot, "node_modules", "@google", "gemini-cli-core", "dist", "src");
+
+    const [{ getOauthClient, clearOauthClientCache }, { AuthType }, { coreEvents, CoreEvent }] = await Promise.all([
+      import(pathToFileURL(join(coreRoot, "code_assist", "oauth2.js")).href),
+      import(pathToFileURL(join(coreRoot, "core", "contentGenerator.js")).href),
+      import(pathToFileURL(join(coreRoot, "utils", "events.js")).href),
+    ]);
+
+    const handleFeedback = (payload: { readonly message?: string; readonly severity?: string }) => {
+      appendAuthLog(session, payload.message ?? "");
+      if (payload.severity === "error" && payload.message && !session.error) {
+        session.error = payload.message;
+      }
+    };
+    const handleConsent = (payload: { readonly prompt?: string; readonly onConfirm?: (confirmed: boolean) => void }) => {
+      appendAuthLog(session, payload.prompt ?? "Gemini CLI login requested.");
+      session.status = "waiting-browser";
+      payload.onConfirm?.(true);
+    };
+
+    process.env.GEMINI_CLI_HOME = geminiCliHome;
+    coreEvents.on(CoreEvent.UserFeedback, handleFeedback);
+    coreEvents.on(CoreEvent.ConsentRequest, handleConsent);
+
+    session.status = "authorizing";
+    try {
+      await getOauthClient(AuthType.LOGIN_WITH_GOOGLE, {
+        getProxy: () => undefined,
+        isBrowserLaunchSuppressed: () => false,
+      });
+
+      if (!existsSync(getGeminiAuthPath())) {
+        throw new Error(`Gemini CLI did not write credentials to ${getGeminiAuthPath()}.`);
+      }
+
+      appendAuthLog(session, "Gemini CLI authentication completed.");
+      session.status = "succeeded";
+    } finally {
+      clearOauthClientCache();
+      coreEvents.off(CoreEvent.UserFeedback, handleFeedback);
+      coreEvents.off(CoreEvent.ConsentRequest, handleConsent);
+    }
+  } catch (error) {
+    session.status = "failed";
+    session.error = error instanceof Error ? error.message : String(error);
+    appendAuthLog(session, session.error);
+  } finally {
+    if (previousGeminiCliHome) {
+      process.env.GEMINI_CLI_HOME = previousGeminiCliHome;
+    } else {
+      delete process.env.GEMINI_CLI_HOME;
+    }
+  }
+}
+
+async function startOAuthSession(provider: CliOAuthProvider): Promise<AuthSessionRecord> {
+  const id = `${provider}-${Date.now().toString(36)}`;
+  const session: AuthSessionRecord = {
+    id,
+    provider,
+    status: "starting",
+    logs: [],
+  };
+  authSessions.set(id, session);
+
+  if (provider === "codex-cli") {
+    const commandPath = await resolveCommandPath("codex");
+    if (!commandPath) {
+      authSessions.delete(id);
+      throw new ApiError(400, "AUTH_COMMAND_NOT_FOUND", "codex CLI is not installed or not in PATH.");
+    }
+    session.child = spawn(commandPath, ["login", "--device-auth"], {
+      env: {
+        ...process.env,
+        CODEX_HOME: process.env.INKOS_CODEX_CLI_SOURCE_HOME
+          ?? process.env.CODEX_HOME
+          ?? join(homedir(), ".codex"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    attachAuthSessionListeners(session);
+    return session;
+  }
+
+  const commandPath = await resolveCommandPath("gemini");
+  if (!commandPath) {
+    authSessions.delete(id);
+    throw new ApiError(400, "AUTH_COMMAND_NOT_FOUND", "gemini CLI is not installed or not in PATH.");
+  }
+  appendAuthLog(session, `Using Gemini CLI at ${commandPath}`);
+  void runGeminiOAuthSession(session, commandPath);
+  return session;
+}
+
+function resolveGeminiCliHomeForAuth(): string {
+  return process.env.INKOS_GEMINI_CLI_SOURCE_HOME
+    ?? process.env.GEMINI_CLI_HOME
+    ?? homedir();
+}
+
+function submitOAuthCode(sessionId: string, code: string): AuthSessionPayload {
+  const session = authSessions.get(sessionId);
+  if (!session) {
+    throw new ApiError(404, "AUTH_SESSION_NOT_FOUND", `Auth session "${sessionId}" not found.`);
+  }
+  if (session.provider !== "gemini-cli") {
+    throw new ApiError(400, "AUTH_CODE_UNSUPPORTED", "Only gemini-cli requires manual code submission.");
+  }
+  if (session.status !== "awaiting-code") {
+    throw new ApiError(400, "AUTH_CODE_NOT_READY", `Gemini auth session is not waiting for a code (status=${session.status}).`);
+  }
+  if (!session.child?.stdin) {
+    throw new ApiError(400, "AUTH_CODE_UNSUPPORTED", "This gemini-cli auth flow does not accept manual verification codes.");
+  }
+  session.status = "authorizing";
+  const stdin = session.child.stdin;
+  stdin?.write(`${code.trim()}\n`);
+  return summarizeAuthSession(session);
+}
 
 function broadcast(event: string, data: unknown): void {
   for (const handler of subscribers) {
@@ -34,7 +579,7 @@ function broadcast(event: string, data: unknown): void {
 
 // --- Server factory ---
 
-export function createStudioServer(initialConfig: ProjectConfig, root: string) {
+export function createStudioServer(initialConfig: ProjectConfig | null, root: string) {
   const app = new Hono();
   const state = new StateManager(root);
   let cachedConfig = initialConfig;
@@ -78,21 +623,33 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
   async function loadCurrentProjectConfig(
     options?: { readonly requireApiKey?: boolean },
   ): Promise<ProjectConfig> {
+    try {
+      await access(join(root, "inkos.json"));
+    } catch {
+      throw new ApiError(
+        409,
+        "PROJECT_NOT_INITIALIZED",
+        `No InkOS project found in ${root}. Initialize one from Studio first.`,
+      );
+    }
     const freshConfig = await loadProjectConfig(root, options);
     cachedConfig = freshConfig;
     return freshConfig;
   }
 
-  async function buildPipelineConfig(): Promise<PipelineConfig> {
-    const currentConfig = await loadCurrentProjectConfig();
+  async function buildPipelineConfig(currentConfig?: ProjectConfig): Promise<PipelineConfig> {
+    const resolvedConfig = currentConfig ?? await loadCurrentProjectConfig();
     const logger = createLogger({ tag: "studio", sinks: [sseSink] });
     return {
-      client: createLLMClient(currentConfig.llm),
-      model: currentConfig.llm.model,
+      client: createLLMClient({
+        ...resolvedConfig.llm,
+        extra: { ...(resolvedConfig.llm.extra ?? {}), projectRoot: root },
+      }),
+      model: resolvedConfig.llm.model,
       projectRoot: root,
-      defaultLLMConfig: currentConfig.llm,
-      modelOverrides: currentConfig.modelOverrides,
-      notifyChannels: currentConfig.notify,
+      defaultLLMConfig: resolvedConfig.llm,
+      modelOverrides: resolvedConfig.modelOverrides,
+      notifyChannels: resolvedConfig.notify,
       logger,
       onStreamProgress: (progress) => {
         if (progress.status === "streaming") {
@@ -141,9 +698,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       rawGenres.map(async (g) => {
         try {
           const { profile } = await readGenreProfile(root, g.id);
-          return { ...g, language: profile.language ?? "zh" };
+          return { ...g, language: resolveStudioLanguage(profile.language) };
         } catch {
-          return { ...g, language: "zh" };
+          return { ...g, language: "ko" };
         }
       }),
     );
@@ -156,7 +713,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
     const body = await c.req.json<{
       title: string;
       genre: string;
-      language?: string;
+      language?: StudioLanguage;
       platform?: string;
       chapterWordCount?: number;
       targetChapters?: number;
@@ -381,15 +938,102 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
     });
   });
 
+  // --- Bootstrap / onboarding ---
+
+  app.get("/api/bootstrap", async (c) => {
+    const projectInitialized = existsSync(join(root, "inkos.json"));
+    const globalConfig = await readGlobalConfigSummary();
+    const payload: BootstrapPayload = {
+      root,
+      suggestedProjectName: basename(root),
+      projectInitialized,
+      globalConfig,
+    };
+    return c.json(payload);
+  });
+
+  app.post("/api/project/init", async (c) => {
+    const body = await c.req.json<{ name?: string; language?: StudioLanguage }>().catch(() => ({}));
+    if (existsSync(join(root, "inkos.json"))) {
+      throw new ApiError(409, "PROJECT_ALREADY_EXISTS", `inkos.json already exists in ${root}`);
+    }
+    await initializeProjectAtRoot(root, body);
+    cachedConfig = await loadProjectConfig(root, { requireApiKey: false });
+    return c.json({ ok: true, root, name: cachedConfig.name });
+  });
+
+  app.get("/api/global-config", async (c) => {
+    return c.json(await readGlobalConfigSummary());
+  });
+
+  app.put("/api/global-config", async (c) => {
+    const body = await c.req.json<{
+      language?: StudioLanguage;
+      provider: string;
+      model: string;
+      baseUrl?: string;
+      apiKey?: string;
+    }>();
+    await writeGlobalConfig(body);
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/auth/:sessionId", async (c) => {
+    const session = authSessions.get(c.req.param("sessionId"));
+    if (!session) {
+      throw new ApiError(404, "AUTH_SESSION_NOT_FOUND", `Auth session "${c.req.param("sessionId")}" not found.`);
+    }
+    return c.json(summarizeAuthSession(session));
+  });
+
+  app.post("/api/auth/:provider/login", async (c) => {
+    const provider = c.req.param("provider");
+    if (provider !== "gemini-cli" && provider !== "codex-cli") {
+      throw new ApiError(400, "INVALID_PROVIDER", `Unsupported auth provider: "${provider}"`);
+    }
+    return c.json(summarizeAuthSession(await startOAuthSession(provider)));
+  });
+
+  app.post("/api/auth/:sessionId/submit", async (c) => {
+    const body = await c.req.json<{ code?: string }>().catch((): { code?: string } => ({ code: undefined }));
+    const code = body.code;
+    if (!code?.trim()) {
+      throw new ApiError(400, "AUTH_CODE_REQUIRED", "code is required.");
+    }
+    return c.json(submitOAuthCode(c.req.param("sessionId"), code));
+  });
+
   // --- Project info ---
 
   app.get("/api/project", async (c) => {
+    const projectInitialized = existsSync(join(root, "inkos.json"));
+    if (!projectInitialized) {
+      const globalConfig = await readGlobalConfigSummary();
+      return c.json({
+        initialized: false,
+        projectRoot: root,
+        suggestedProjectName: basename(root),
+        name: basename(root),
+        language: globalConfig.language,
+        languageExplicit: false,
+        model: globalConfig.model,
+        provider: globalConfig.provider,
+        baseUrl: globalConfig.baseUrl,
+        stream: true,
+        temperature: 0.7,
+        maxTokens: 8192,
+      });
+    }
+
     const currentConfig = await loadCurrentProjectConfig({ requireApiKey: false });
     // Check if language was explicitly set in inkos.json (not just the schema default)
     const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
     const languageExplicit = "language" in raw && raw.language !== "";
 
     return c.json({
+      initialized: true,
+      projectRoot: root,
+      suggestedProjectName: basename(root),
       name: currentConfig.name,
       language: currentConfig.language,
       languageExplicit,
@@ -420,7 +1064,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       if (updates.stream !== undefined) {
         existing.llm.stream = updates.stream;
       }
-      if (updates.language === "zh" || updates.language === "en") {
+      if (updates.language === "zh" || updates.language === "en" || updates.language === "ko") {
         existing.language = updates.language;
       }
       const { writeFile: writeFileFs } = await import("node:fs/promises");
@@ -467,10 +1111,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       return c.json({ error: "Daemon already running" }, 400);
     }
     try {
-      const { Scheduler } = await import("@actalk/inkos-core");
       const currentConfig = await loadCurrentProjectConfig();
       const scheduler = new Scheduler({
-        ...(await buildPipelineConfig()),
+        ...(await buildPipelineConfig(currentConfig)),
         radarCron: currentConfig.daemon.schedule.radarCron,
         writeCron: currentConfig.daemon.schedule.writeCron,
         maxConcurrentBooks: currentConfig.daemon.maxConcurrentBooks,
@@ -558,12 +1201,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
   // --- Language setup ---
 
   app.post("/api/project/language", async (c) => {
-    const { language } = await c.req.json<{ language: "zh" | "en" }>();
+    const { language } = await c.req.json<{ language: StudioLanguage }>();
     const configPath = join(root, "inkos.json");
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
-      existing.language = language;
+      existing.language = resolveStudioLanguage(language);
       const { writeFile: writeFileFs } = await import("node:fs/promises");
       await writeFileFs(configPath, JSON.stringify(existing, null, 2), "utf-8");
       return c.json({ ok: true, language });
@@ -907,7 +1550,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       chapterWordCount?: number;
       targetChapters?: number;
       status?: string;
-      language?: string;
+      language?: StudioLanguage;
     }>();
     try {
       const book = await state.loadBookConfig(id);
@@ -916,9 +1559,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
         ...(updates.chapterWordCount !== undefined ? { chapterWordCount: Number(updates.chapterWordCount) } : {}),
         ...(updates.targetChapters !== undefined ? { targetChapters: Number(updates.targetChapters) } : {}),
         ...(updates.status !== undefined ? { status: updates.status as typeof book.status } : {}),
-        ...(updates.language !== undefined ? { language: updates.language as "zh" | "en" } : {}),
-        updatedAt: new Date().toISOString(),
-      };
+      ...(updates.language !== undefined ? { language: resolveStudioLanguage(updates.language) } : {}),
+      updatedAt: new Date().toISOString(),
+    };
       await state.saveBookConfig(id, updated);
       return c.json({ ok: true, book: updated });
     } catch (e) {
@@ -1017,7 +1660,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       "---",
       `name: ${body.name}`,
       `id: ${body.id}`,
-      `language: ${body.language ?? "zh"}`,
+      `language: ${resolveStudioLanguage(body.language)}`,
       `chapterTypes: ${JSON.stringify(body.chapterTypes ?? [])}`,
       `fatigueWords: ${JSON.stringify(body.fatigueWords ?? [])}`,
       `numericalSystem: ${body.numericalSystem ?? false}`,
@@ -1053,7 +1696,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
       "---",
       `name: ${p.name ?? genreId}`,
       `id: ${p.id ?? genreId}`,
-      `language: ${p.language ?? "zh"}`,
+      `language: ${resolveStudioLanguage(p.language)}`,
       `chapterTypes: ${JSON.stringify(p.chapterTypes ?? [])}`,
       `fatigueWords: ${JSON.stringify(p.fatigueWords ?? [])}`,
       `numericalSystem: ${p.numericalSystem ?? false}`,
@@ -1176,18 +1819,24 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
     }
 
     const now = new Date().toISOString();
-    const bookId = body.title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "-").replace(/-+/g, "-").slice(0, 30);
+    const language = resolveStudioLanguage(body.language);
+    const bookId = body.title
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fff가-힣]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 30);
 
     const bookConfig = {
       id: bookId,
       title: body.title,
       platform: (body.platform ?? "other") as "other",
-      genre: (body.genre ?? "other") as "xuanhuan",
+      genre: body.genre ?? defaultFanficGenreForLanguage(language),
       status: "outlining" as const,
       targetChapters: body.targetChapters ?? 100,
       chapterWordCount: body.chapterWordCount ?? 3000,
       fanficMode: (body.mode ?? "canon") as "canon",
-      ...(body.language ? { language: body.language as "zh" | "en" } : {}),
+      language,
       createdAt: now,
       updatedAt: now,
     };
@@ -1293,7 +1942,12 @@ export async function startStudioServer(
   port = 4567,
   options?: { readonly staticDir?: string },
 ): Promise<void> {
-  const config = await loadProjectConfig(root);
+  let config: ProjectConfig | null = null;
+  try {
+    config = await loadProjectConfig(root);
+  } catch {
+    config = null;
+  }
 
   const app = createStudioServer(config, root);
 

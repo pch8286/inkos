@@ -65,8 +65,19 @@ describe("agent pipeline tools", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(root, { recursive: true, force: true });
   });
+
+  function mockCreateBookInit() {
+    return vi.spyOn(pipeline, "initBook").mockImplementation(async (book) => {
+      const bookDir = state.bookDir(book.id);
+      await mkdir(join(bookDir, "story"), { recursive: true });
+      await mkdir(join(bookDir, "chapters"), { recursive: true });
+      await writeFile(join(bookDir, "chapters", "index.json"), "[]", "utf-8");
+      await state.saveBookConfig(book.id, book);
+    });
+  }
 
   it("registers the input governance tools", () => {
     const toolNames = AGENT_TOOLS.map((tool) => tool.name);
@@ -208,5 +219,89 @@ describe("agent pipeline tools", () => {
     ));
 
     expect(result.error).toContain("章节进度");
+  });
+
+  it("creates a Korean default book with Hangul-safe bookId", async () => {
+    mockCreateBookInit();
+
+    const result = JSON.parse(await executeAgentTool(
+      pipeline,
+      state,
+      config,
+      "create_book",
+      {
+        title: "별빛 서약",
+      },
+    ));
+
+    expect(result.status).toBe("created");
+    expect(result.bookId).toBe("별빛-서약");
+
+    const bookConfig = await state.loadBookConfig("별빛-서약");
+    expect(bookConfig.language).toBe("ko");
+    expect(bookConfig.platform).toBe("naver-series");
+    expect(bookConfig.genre).toBe("modern-fantasy");
+  });
+
+  it("supports explicit Korean overrides and slug sanitization", async () => {
+    mockCreateBookInit();
+
+    const result = JSON.parse(await executeAgentTool(
+      pipeline,
+      state,
+      config,
+      "create_book",
+      {
+        title: "무협: 불꽃의 검(第1장)",
+        language: "ko",
+        platform: "kakao-page",
+        genre: "murim",
+      },
+    ));
+
+    expect(result.bookId).toBe("무협-불꽃의-검-第1장");
+    const bookConfig = await state.loadBookConfig(result.bookId);
+    expect(bookConfig.platform).toBe("kakao-page");
+    expect(bookConfig.genre).toBe("murim");
+  });
+
+  it("keeps non-Korean defaults language-aware", async () => {
+    mockCreateBookInit();
+
+    const result = JSON.parse(await executeAgentTool(
+      pipeline,
+      state,
+      config,
+      "create_book",
+      {
+        title: "武侠之路",
+        language: "zh",
+      },
+    ));
+
+    const bookConfig = await state.loadBookConfig(result.bookId);
+    expect(bookConfig.language).toBe("zh");
+    expect(bookConfig.platform).toBe("tomato");
+    expect(bookConfig.genre).toBe("xuanhuan");
+  });
+
+  it("keeps English defaults aligned with CLI defaults", async () => {
+    mockCreateBookInit();
+
+    const result = JSON.parse(await executeAgentTool(
+      pipeline,
+      state,
+      config,
+      "create_book",
+      {
+        title: "Harbor of Ash",
+        language: "en",
+      },
+    ));
+
+    const bookConfig = await state.loadBookConfig(result.bookId);
+    expect(bookConfig.language).toBe("en");
+    expect(bookConfig.platform).toBe("other");
+    expect(bookConfig.genre).toBe("progression");
   });
 });

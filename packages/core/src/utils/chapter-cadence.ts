@@ -1,3 +1,4 @@
+import type { WritingLanguage } from "../models/language.js";
 import {
   CADENCE_PRESSURE_THRESHOLDS,
   CADENCE_WINDOW_DEFAULTS,
@@ -42,6 +43,8 @@ const HIGH_TENSION_KEYWORDS = [
   "紧张", "冷硬", "压抑", "逼仄", "肃杀", "沉重", "凝重",
   "冷峻", "压迫", "阴沉", "焦灼", "窒息", "凛冽", "锋利",
   "克制", "危机", "对峙", "绷紧", "僵持", "杀意",
+  "긴장", "차가움", "냉랭", "억압", "무거움", "숨막힘", "위기",
+  "대치", "팽팽", "살기", "불길", "소름", "서늘",
   "tense", "cold", "oppressive", "grim", "ominous", "dark",
   "bleak", "hostile", "threatening", "heavy", "suffocating",
 ];
@@ -53,7 +56,7 @@ const ENGLISH_STOP_WORDS = new Set([
 
 export function analyzeChapterCadence(params: {
   readonly rows: ReadonlyArray<CadenceSummaryRow>;
-  readonly language: "zh" | "en";
+  readonly language: WritingLanguage;
 }): ChapterCadenceAnalysis {
   const recentRows = [...params.rows]
     .sort((left, right) => left.chapter - right.chapter)
@@ -142,7 +145,7 @@ function analyzeMoodPressure(
 
 function analyzeTitlePressure(
   rows: ReadonlyArray<CadenceSummaryRow>,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): TitleCadencePressure | undefined {
   const titles = rows
     .map((row) => row.title.trim())
@@ -179,7 +182,7 @@ function analyzeTitlePressure(
   return undefined;
 }
 
-function extractTitleTokens(title: string, language: "zh" | "en"): string[] {
+function extractTitleTokens(title: string, language: WritingLanguage): string[] {
   if (language === "en") {
     const words = title.match(/[a-z]{4,}/gi) ?? [];
     return [...new Set(
@@ -189,7 +192,9 @@ function extractTitleTokens(title: string, language: "zh" | "en"): string[] {
     )];
   }
 
-  const segments = title.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
+  const segments = language === "ko"
+    ? title.match(/[가-힣]{2,}/g) ?? []
+    : title.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
   const tokens = new Set<string>();
   for (const segment of segments) {
     for (let size = 2; size <= Math.min(4, segment.length); size += 1) {

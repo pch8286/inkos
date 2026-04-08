@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseWriterOutput, parseCreativeOutput, type ParsedWriterOutput } from "../agents/writer-parser.js";
 import type { GenreProfile } from "../models/genre-profile.js";
 import { countChapterLength } from "../utils/length-metrics.js";
+import type { LengthCountingMode } from "../models/length-governance.js";
 
 const defaultGenreProfile: GenreProfile = {
   name: "测试",
@@ -17,11 +18,18 @@ const defaultGenreProfile: GenreProfile = {
   auditDimensions: [],
 };
 
+const koreanGenreProfile: GenreProfile = {
+  ...defaultGenreProfile,
+  name: "현대판타지",
+  id: "modern-fantasy",
+  language: "ko",
+};
+
 function callParseOutput(
   chapterNumber: number,
   content: string,
   genreProfile: GenreProfile = defaultGenreProfile,
-  countingMode: "zh_chars" | "en_words" = "zh_chars",
+  countingMode?: LengthCountingMode,
 ): ParsedWriterOutput {
   return parseWriterOutput(chapterNumber, content, genreProfile, countingMode);
 }
@@ -103,6 +111,16 @@ describe("WriterAgent parseOutput", () => {
     expect(result.title).toBe("第42章");
   });
 
+  it("returns Korean default title when CHAPTER_TITLE is missing in Korean mode", () => {
+    const output = [
+      "=== CHAPTER_CONTENT ===",
+      "본문이 여기에 들어갑니다.",
+    ].join("\n");
+
+    const result = callParseOutput(5, output, koreanGenreProfile);
+    expect(result.title).toBe("제5장");
+  });
+
   it("returns an English default title when CHAPTER_TITLE is missing in English mode", () => {
     const output = [
       "=== CHAPTER_CONTENT ===",
@@ -137,6 +155,21 @@ describe("WriterAgent parseOutput", () => {
     expect(result.updatedState).toBe("(状态卡未更新)");
     expect(result.updatedLedger).toBe("(账本未更新)");
     expect(result.updatedHooks).toBe("(伏笔池未更新)");
+  });
+
+  it("returns Korean fallback strings for missing state sections in Korean mode", () => {
+    const output = [
+      "=== CHAPTER_TITLE ===",
+      "Title",
+      "",
+      "=== CHAPTER_CONTENT ===",
+      "본문이 여기에 들어갑니다.",
+    ].join("\n");
+
+    const result = callParseOutput(1, output, koreanGenreProfile);
+    expect(result.updatedState).toBe("(상태 카드가 아직 갱신되지 않음)");
+    expect(result.updatedLedger).toBe("(원장 정보가 아직 갱신되지 않음)");
+    expect(result.updatedHooks).toBe("(떡밥 풀이 아직 갱신되지 않음)");
   });
 
   it("returns English fallback strings for missing state sections in English mode", () => {
@@ -333,6 +366,19 @@ ${prose}`;
     const result = parseCreativeOutput(1, raw);
     expect(result.title).toBe("正常标题");
     expect(result.content).toBe("正常的章节内容，这里是完整的正文。");
+  });
+
+  it("extracts chapter content and title from Korean fallback heading", () => {
+    const raw = `# 제1장 떠오르는 달빛
+
+${"주인공은 밤길을 조용히 걸었다. ".repeat(30)}
+`;
+
+    const result = parseCreativeOutput(1, raw);
+    expect(result.title).toBe("떠오르는 달빛");
+    expect(result.content.length).toBeGreaterThan(100);
+    expect(result.content).toContain("주인공은");
+    expect(result.wordCount).toBe(countChapterLength(result.content, "ko_chars"));
   });
 
   it("counts creative output with the shared helper when a counting mode is supplied", () => {

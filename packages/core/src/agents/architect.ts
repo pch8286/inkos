@@ -1,6 +1,7 @@
 import { BaseAgent } from "./base.js";
 import type { BookConfig, FanficMode } from "../models/book.js";
 import type { GenreProfile } from "../models/genre-profile.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import { readGenreProfile } from "./rules-reader.js";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,7 +27,7 @@ export class ArchitectAgent extends BaseAgent {
   ): Promise<ArchitectOutput> {
     const { profile: gp, body: genreBody } =
       await readGenreProfile(this.ctx.projectRoot, book.genre);
-    const resolvedLanguage = book.language ?? gp.language;
+    const resolvedLanguage = resolveWritingLanguage(book.language ?? gp.language);
 
     const contextBlock = externalContext
       ? `\n\n## 外部指令\n以下是来自外部系统的创作指令，请将其融入设定中：\n\n${externalContext}\n`
@@ -288,7 +289,7 @@ ${finalRequirementsPrompt}`;
     bookDir: string,
     output: ArchitectOutput,
     numericalSystem: boolean = true,
-    language: "zh" | "en" = "zh",
+    language: WritingLanguage = "ko",
   ): Promise<void> {
     const storyDir = join(bookDir, "story");
     await mkdir(storyDir, { recursive: true });
@@ -689,7 +690,10 @@ ${keyPrinciplesPrompt}`;
   ): Promise<ArchitectOutput> {
     const { profile: gp, body: genreBody } =
       await readGenreProfile(this.ctx.projectRoot, book.genre);
-    const reviewFeedbackBlock = this.buildReviewFeedbackBlock(reviewFeedback, book.language ?? "zh");
+    const reviewFeedbackBlock = this.buildReviewFeedbackBlock(
+      reviewFeedback,
+      resolveWritingLanguage(book.language ?? gp.language),
+    );
 
     const MODE_INSTRUCTIONS: Record<FanficMode, string> = {
       canon: "剧情发生在原作空白期或未详述的角度。不可改变原作已确立的事实。",
@@ -772,7 +776,7 @@ prohibitions:
 
   private buildReviewFeedbackBlock(
     reviewFeedback: string | undefined,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     const trimmed = reviewFeedback?.trim();
     if (!trimmed) return "";
@@ -866,12 +870,20 @@ ${trimmed}\n`;
       return section;
     }
 
-    const language: "zh" | "en" = /[\u4e00-\u9fff]/.test(section) ? "zh" : "en";
+    const language: WritingLanguage = /[가-힣]/u.test(section)
+      ? "ko"
+      : /[\u4e00-\u9fff]/u.test(section)
+        ? "zh"
+        : "en";
     const normalizedHooks = dataRows.map((row, index) => {
       const rawProgress = row[4] ?? "";
       const normalizedProgress = this.parseHookChapterNumber(rawProgress);
       const seedNote = normalizedProgress === 0 && this.hasNarrativeProgress(rawProgress)
-        ? (language === "zh" ? `初始线索：${rawProgress}` : `initial signal: ${rawProgress}`)
+        ? language === "zh"
+          ? `初始线索：${rawProgress}`
+          : language === "ko"
+            ? `초기 단서: ${rawProgress}`
+            : `initial signal: ${rawProgress}`
         : "";
       const notes = this.mergeHookNotes(row[6] ?? "", seedNote, language);
 
@@ -902,7 +914,7 @@ ${trimmed}\n`;
     return !["0", "none", "n/a", "na", "-", "无", "未推进"].includes(normalized);
   }
 
-  private mergeHookNotes(notes: string, seedNote: string, language: "zh" | "en"): string {
+  private mergeHookNotes(notes: string, seedNote: string, language: WritingLanguage): string {
     const trimmedNotes = notes.trim();
     const trimmedSeed = seedNote.trim();
     if (!trimmedSeed) {

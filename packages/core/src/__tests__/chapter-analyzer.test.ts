@@ -192,6 +192,210 @@ describe("ChapterAnalyzerAgent", () => {
     }
   });
 
+  it("uses Korean prompts for Korean-language analysis", async () => {
+    const bookDir = await mkdtemp(join(tmpdir(), "inkos-chapter-analyzer-ko-"));
+    const koreanContent = "하늘은 먹구름으로 가득했고, 그는 천천히 문을 열었다.";
+    const agent = new ChapterAnalyzerAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const book: BookConfig = {
+      id: "korean-book",
+      title: "한국 웹소설",
+      platform: "other",
+      genre: "other",
+      status: "active",
+      targetChapters: 10,
+      chapterWordCount: 1800,
+      language: "ko" as const,
+      createdAt: "2026-03-22T00:00:00.000Z",
+      updatedAt: "2026-03-22T00:00:00.000Z",
+    };
+
+    const chat = vi.spyOn(agent as unknown as { chat: (...args: unknown[]) => Promise<unknown> }, "chat")
+      .mockResolvedValue({
+        content: [
+          "=== CHAPTER_TITLE ===",
+          "구름 아래의 결심",
+          "",
+          "=== CHAPTER_CONTENT ===",
+          koreanContent,
+          "",
+          "=== PRE_WRITE_CHECK ===",
+          "",
+          "=== POST_SETTLEMENT ===",
+          "",
+          "=== UPDATED_STATE ===",
+          "| Field | Value |",
+          "| --- | --- |",
+          "| Current Chapter | 1 |",
+          "",
+          "=== UPDATED_LEDGER ===",
+          "",
+          "=== UPDATED_HOOKS ===",
+          "| hook_id | status |",
+          "| --- | --- |",
+          "| h1 | open |",
+          "",
+          "=== CHAPTER_SUMMARY ===",
+          "| 1 | 구름 아래의 결심 |",
+          "",
+          "=== UPDATED_SUBPLOTS ===",
+          "",
+          "=== UPDATED_EMOTIONAL_ARCS ===",
+          "",
+          "=== UPDATED_CHARACTER_MATRIX ===",
+          "",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    try {
+      await agent.analyzeChapter({
+        book,
+        bookDir,
+        chapterNumber: 1,
+        chapterContent: koreanContent,
+        chapterTitle: "구름 아래의 결심",
+      });
+
+      const messages = chat.mock.calls[0]?.[0] as Array<{ role: string; content: string }>;
+      const systemPrompt = messages[0]?.content ?? "";
+      const userPrompt = messages[1]?.content ?? "";
+
+      expect(systemPrompt).toContain("한국어로");
+      expect(systemPrompt).not.toContain("请分析");
+      expect(userPrompt).toContain("제1화를 분석해 추적 파일을 갱신하세요.");
+      expect(userPrompt).toContain("## 챕터 본문");
+      expect(userPrompt).toContain("## 현재 상태 카드");
+      expect(userPrompt).not.toContain("请严格按照 === TAG === 格式输出分析结果");
+    } finally {
+      await rm(bookDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses Korean placeholders, headings, and chapter titles", () => {
+    const agent = new ChapterAnalyzerAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const analyzer = agent as unknown as {
+      missingFilePlaceholder: (language: string) => string;
+      defaultChapterTitle: (chapter: number, language: string) => string;
+      renderSummarySnapshot: (
+        summaries: ReadonlyArray<{
+          chapter: number;
+          title: string;
+          characters: string;
+          events: string;
+          stateChanges: string;
+          hookActivity: string;
+          mood: string;
+          chapterType: string;
+        }>,
+        language: string,
+      ) => string;
+      findOutlineNode: (outline: string, chapter: number, language: string) => string | undefined;
+      buildReducedControlBlock: (
+        chapterIntent: string,
+        contextPackage: {
+          readonly selectedContext: ReadonlyArray<{
+            source: string;
+            reason: string;
+            excerpt?: string;
+          }>;
+          readonly selectedContextScore?: number;
+          readonly selectedHookIds?: ReadonlyArray<string>;
+        },
+        ruleStack: {
+          readonly sections: {
+            hard: ReadonlyArray<string>;
+            soft: ReadonlyArray<string>;
+            diagnostic: ReadonlyArray<string>;
+          };
+          readonly activeOverrides: ReadonlyArray<{
+            from: string;
+            to: string;
+            reason: string;
+            target: string;
+          }>;
+        } & { readonly layers?: ReadonlyArray<unknown>; readonly overrideEdges?: ReadonlyArray<unknown> },
+        language: string,
+      ) => string;
+    };
+
+    expect(analyzer.missingFilePlaceholder("ko")).toBe("(파일이 아직 생성되지 않았습니다)");
+    expect(analyzer.defaultChapterTitle(3, "ko")).toBe("제3화");
+    expect(analyzer.renderSummarySnapshot([], "ko")).toBe("(파일이 아직 생성되지 않았습니다)");
+    expect(analyzer.renderSummarySnapshot([{
+      chapter: 1,
+      title: "첫 장면",
+      characters: "주인공",
+      events: "도시를 벗어남",
+      stateChanges: "정신이 맑아짐",
+      hookActivity: "비밀 단서 확보",
+      mood: "긴장",
+      chapterType: "전개",
+    }], "ko")).toContain("| 화 | 제목 | 등장인물 | 핵심 사건 | 상태 변화 | 훅 활동 | 분위기 | 챕터 타입 |");
+    expect(analyzer.findOutlineNode("# 볼륨 아웃라인\n\n## 제1화\n오프닝은 도시를 떠난다", 1, "ko")).toBe("오프닝은 도시를 떠난다");
+
+    expect(analyzer.findOutlineNode("# 卷纲\n\n## 第1章\n오프닝은 도시를 떠난다", 1, "en")).toBe("오프닝은 도시를 떠난다");
+    expect(analyzer.findOutlineNode("# 卷纲\n\n## 第1章\n오프닝은 도시를 떠난다", 1, "zh")).toBe("오프닝은 도시를 떠난다");
+    expect(analyzer.findOutlineNode("", 1, "ko")).toBeUndefined();
+
+    expect(analyzer.buildReducedControlBlock(
+      "# Chapter Intent\n\n- 권선책을 유지한다.",
+      {
+        selectedContext: [
+          {
+            source: "story/current_state.md",
+            reason: "주요 진행 상태",
+          },
+        ],
+      },
+      {
+        sections: {
+          hard: ["story_bible"],
+          soft: ["author_intent"],
+          diagnostic: ["clarity"],
+        },
+        activeOverrides: [
+          {
+            from: "brief",
+            to: "current_focus",
+            reason: "긴장 유지",
+            target: "focus",
+          },
+        ],
+      } as never,
+      "ko",
+    )).toContain("본문 제어 입력");
+  });
+
   it("uses a retrieved summary snapshot instead of full long-history chapter summaries", async () => {
     const bookDir = await mkdtemp(join(tmpdir(), "inkos-chapter-analyzer-memory-"));
     const storyDir = join(bookDir, "story");

@@ -1,4 +1,5 @@
 import type { Fact, StoredHook, StoredSummary } from "../state/memory-db.js";
+import type { WritingLanguage } from "../models/language.js";
 import {
   localizeHookPayoffTiming,
   normalizeHookPayoffTiming,
@@ -7,7 +8,7 @@ import {
 
 export function renderSummarySnapshot(
   summaries: ReadonlyArray<StoredSummary>,
-  language: "zh" | "en" = "zh",
+  language: WritingLanguage = "ko",
 ): string {
   if (summaries.length === 0) return "- none";
 
@@ -16,10 +17,15 @@ export function renderSummarySnapshot(
       "| chapter | title | characters | events | stateChanges | hookActivity | mood | chapterType |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    : [
+    : language === "ko"
+      ? [
+        "| 화 | 제목 | 등장인물 | 사건 | 상태 변화 | 떡밥 동향 | 분위기 | 화 타입 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ]
+      : [
       "| 章节 | 标题 | 出场人物 | 关键事件 | 状态变化 | 伏笔动态 | 情绪基调 | 章节类型 |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ];
+      ];
 
   return [
     ...headers,
@@ -38,7 +44,7 @@ export function renderSummarySnapshot(
 
 export function renderHookSnapshot(
   hooks: ReadonlyArray<StoredHook>,
-  language: "zh" | "en" = "zh",
+  language: WritingLanguage = "ko",
 ): string {
   if (hooks.length === 0) return "- none";
 
@@ -47,10 +53,15 @@ export function renderHookSnapshot(
       "| hook_id | start_chapter | type | status | last_advanced | expected_payoff | payoff_timing | notes |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    : [
+    : language === "ko"
+      ? [
+        "| hook_id | 시작 화수 | 유형 | 상태 | 최근 진전 | 예상 회수 | 회수 템포 | 비고 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ]
+      : [
       "| hook_id | 起始章节 | 类型 | 状态 | 最近推进 | 预期回收 | 回收节奏 | 备注 |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ];
+      ];
 
   return [
     ...headers,

@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { WritingLanguage } from "../models/language.js";
 import { analyzeChapterCadence } from "./chapter-cadence.js";
 import {
   CADENCE_WINDOW_DEFAULTS,
@@ -18,7 +19,7 @@ export interface AnalyzeLongSpanFatigueInput {
   readonly chapterNumber: number;
   readonly chapterContent: string;
   readonly chapterSummary?: string;
-  readonly language?: "zh" | "en";
+  readonly language?: WritingLanguage;
 }
 
 export interface EnglishVarianceBrief {
@@ -88,7 +89,7 @@ export async function buildEnglishVarianceBrief(params: {
 export async function analyzeLongSpanFatigue(
   input: AnalyzeLongSpanFatigueInput,
 ): Promise<{ readonly issues: ReadonlyArray<LongSpanFatigueIssue> }> {
-  const language = input.language ?? "zh";
+  const language = input.language ?? "ko";
   const issues: LongSpanFatigueIssue[] = [];
 
   const summaryRows = await loadSummaryRows(join(input.bookDir, "story", "chapter_summaries.md"));
@@ -208,7 +209,7 @@ function parseSummaryRow(line: string): SummaryRow | null {
 
 function buildChapterTypeIssue(
   cadence: ReturnType<typeof analyzeChapterCadence>,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): LongSpanFatigueIssue | null {
   if (cadence.scenePressure?.pressure !== "high") {
     return null;
@@ -234,7 +235,7 @@ function buildChapterTypeIssue(
 
 function buildMoodIssue(
   cadence: ReturnType<typeof analyzeChapterCadence>,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): LongSpanFatigueIssue | null {
   if (cadence.moodPressure?.pressure !== "high") {
     return null;
@@ -260,7 +261,7 @@ function buildMoodIssue(
 
 function buildTitleIssue(
   cadence: ReturnType<typeof analyzeChapterCadence>,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): LongSpanFatigueIssue | null {
   if (cadence.titlePressure?.pressure !== "high") {
     return null;
@@ -315,7 +316,7 @@ async function loadRecentChapterBodies(
 function buildSentencePatternIssue(
   chapterBodies: ReadonlyArray<string>,
   boundary: "opening" | "ending",
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): LongSpanFatigueIssue | null {
   if (chapterBodies.length < LONG_SPAN_FATIGUE_THRESHOLDS.boundaryPatternMinBodies) return null;
 
@@ -458,7 +459,7 @@ function extractBoundarySentence(content: string, boundary: "opening" | "ending"
   return boundary === "opening" ? sentences[0]! : sentences[sentences.length - 1]!;
 }
 
-function normalizeSentence(sentence: string, language: "zh" | "en"): string {
+function normalizeSentence(sentence: string, language: WritingLanguage): string {
   if (language === "en") {
     return sentence
       .toLowerCase()
@@ -471,7 +472,7 @@ function normalizeSentence(sentence: string, language: "zh" | "en"): string {
     .toLowerCase();
 }
 
-function summarizeSentence(sentence: string, language: "zh" | "en"): string {
+function summarizeSentence(sentence: string, language: WritingLanguage): string {
   if (language === "en") {
     const words = sentence
       .toLowerCase()

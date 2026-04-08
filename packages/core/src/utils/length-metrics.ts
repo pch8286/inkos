@@ -1,6 +1,7 @@
 import type { LengthCountingMode, LengthNormalizeMode, LengthSpec } from "../models/length-governance.js";
+import type { WritingLanguage } from "../models/language.js";
 
-export type LengthLanguage = "zh" | "en";
+export type LengthLanguage = WritingLanguage;
 
 const REFERENCE_TARGET = 2200;
 const SOFT_RANGE_DELTA = 300;
@@ -21,21 +22,25 @@ export function countChapterLength(
 }
 
 export function resolveLengthCountingMode(
-  language: LengthLanguage = "zh",
+  language: LengthLanguage = "ko",
 ): LengthCountingMode {
-  return language === "en" ? "en_words" : "zh_chars";
+  if (language === "en") return "en_words";
+  if (language === "zh") return "zh_chars";
+  return "ko_chars";
 }
 
 export function formatLengthCount(
   count: number,
   countingMode: LengthCountingMode,
 ): string {
-  return countingMode === "en_words" ? `${count} words` : `${count}字`;
+  if (countingMode === "en_words") return `${count} words`;
+  if (countingMode === "ko_chars") return `${count}자`;
+  return `${count}字`;
 }
 
 export function buildLengthSpec(
   target: number,
-  language: LengthLanguage = "zh",
+  language: LengthLanguage = "ko",
 ): LengthSpec {
   const softDelta = scaleRangeDelta(target, SOFT_RANGE_DELTA);
   const hardDelta = Math.max(softDelta, scaleRangeDelta(target, HARD_RANGE_DELTA));

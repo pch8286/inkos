@@ -1,4 +1,5 @@
 import { BaseAgent } from "./base.js";
+import type { WritingLanguage } from "../models/language.js";
 
 export interface ValidationWarning {
   readonly category: string;
@@ -30,7 +31,7 @@ export class StateValidatorAgent extends BaseAgent {
     newState: string,
     oldHooks: string,
     newHooks: string,
-    language: "zh" | "en" = "zh",
+    language: WritingLanguage = "ko",
   ): Promise<ValidationResult> {
     const stateDiff = this.computeDiff(oldState, newState, "State Card");
     const hooksDiff = this.computeDiff(oldHooks, newHooks, "Hooks Pool");

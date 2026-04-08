@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useI18n } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
+import type { StudioLanguage } from "../shared/language";
 import { FileInput, BookCopy, Feather } from "lucide-react";
 
 interface BookSummary {
@@ -14,6 +15,36 @@ interface BookSummary {
 interface Nav { toDashboard: () => void }
 
 type Tab = "chapters" | "canon" | "fanfic";
+
+function defaultFanficGenreForLanguage(language: StudioLanguage): string {
+  return language === "ko" ? "korean-other" : "other";
+}
+
+function fanficGenresForLanguage(language: StudioLanguage): ReadonlyArray<{ value: string; label: string }> {
+  if (language === "en") {
+    return [
+      { value: "other", label: "Other" },
+      { value: "fantasy", label: "Fantasy" },
+      { value: "romantasy", label: "Romantasy" },
+      { value: "isekai", label: "Isekai" },
+    ];
+  }
+  if (language === "zh") {
+    return [
+      { value: "other", label: "通用" },
+      { value: "xuanhuan", label: "玄幻" },
+      { value: "urban", label: "都市" },
+      { value: "xianxia", label: "仙侠" },
+    ];
+  }
+  return [
+    { value: "korean-other", label: "일반" },
+    { value: "modern-fantasy", label: "현대판타지" },
+    { value: "fantasy", label: "판타지" },
+    { value: "murim", label: "무협" },
+    { value: "romance-fantasy", label: "로맨스판타지" },
+  ];
+}
 
 export function ImportManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
@@ -36,8 +67,16 @@ export function ImportManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TF
   const [ffTitle, setFfTitle] = useState("");
   const [ffText, setFfText] = useState("");
   const [ffMode, setFfMode] = useState("canon");
-  const [ffGenre, setFfGenre] = useState("other");
-  const [ffLang, setFfLang] = useState(lang);
+  const [ffLang, setFfLang] = useState<StudioLanguage>(lang);
+  const [ffGenre, setFfGenre] = useState(defaultFanficGenreForLanguage(lang));
+  const fanficGenres = fanficGenresForLanguage(ffLang);
+
+  useEffect(() => {
+    setFfGenre((current) => {
+      const available = fanficGenresForLanguage(ffLang).map((genre) => genre.value);
+      return available.includes(current) ? current : (available[0] ?? "");
+    });
+  }, [ffLang]);
 
   const handleImportChapters = async () => {
     if (!chText.trim() || !chBookId) return;
@@ -183,13 +222,13 @@ export function ImportManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TF
               </select>
               <select value={ffGenre} onChange={(e) => setFfGenre(e.target.value)}
                 className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
-                <option value="other">Other</option>
-                <option value="xuanhuan">玄幻</option>
-                <option value="urban">都市</option>
-                <option value="xianxia">仙侠</option>
+                {fanficGenres.map((genre) => (
+                  <option key={genre.value} value={genre.value}>{genre.label}</option>
+                ))}
               </select>
-              <select value={ffLang} onChange={(e) => setFfLang(e.target.value as "zh" | "en")}
+              <select value={ffLang} onChange={(e) => setFfLang(e.target.value as StudioLanguage)}
                 className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                <option value="ko">한국어</option>
                 <option value="zh">中文</option>
                 <option value="en">English</option>
               </select>

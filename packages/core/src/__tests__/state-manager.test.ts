@@ -717,7 +717,7 @@ describe("StateManager", () => {
   // -------------------------------------------------------------------------
 
   describe("ensureControlDocuments", () => {
-    it("creates author intent, current focus, and runtime directory", async () => {
+    it("creates Korean author intent, current focus, and runtime directory by default", async () => {
       await manager.ensureControlDocuments(
         "control-book",
         "# Initial Brief\n\nKeep the focus on mentor conflict.\n",
@@ -735,11 +735,11 @@ describe("StateManager", () => {
       const runtimeStat = await stat(join(storyDir, "runtime"));
 
       expect(authorIntent).toContain("mentor conflict");
-      expect(currentFocus).toContain("Current Focus");
+      expect(currentFocus).toContain("# 현재 포커스");
       expect(runtimeStat.isDirectory()).toBe(true);
     });
 
-    it("bootstraps and returns safe defaults for legacy books", async () => {
+    it("bootstraps and returns Korean defaults for legacy books without a language", async () => {
       const storyDir = join(manager.bookDir("legacy-book"), "story");
       await mkdir(storyDir, { recursive: true });
       await writeFile(
@@ -750,8 +750,8 @@ describe("StateManager", () => {
 
       const controlDocs = await manager.loadControlDocuments("legacy-book");
 
-      expect(controlDocs.authorIntent).toContain("# Author Intent");
-      expect(controlDocs.currentFocus).toContain("# Current Focus");
+      expect(controlDocs.authorIntent).toContain("# 작가 의도");
+      expect(controlDocs.currentFocus).toContain("# 현재 포커스");
       expect(controlDocs.runtimeDir).toBe(join(storyDir, "runtime"));
     });
 

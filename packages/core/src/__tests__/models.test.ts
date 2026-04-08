@@ -30,6 +30,13 @@ import {
   ChapterSummariesStateSchema,
   CurrentStateStateSchema,
 } from "../models/runtime-state.js";
+import {
+  WritingLanguageSchema,
+  isEnglishLanguage,
+  isKoreanLanguage,
+  isChineseLanguage,
+  resolveWritingLanguage,
+} from "../models/language.js";
 
 // ---------------------------------------------------------------------------
 // BookConfig
@@ -53,6 +60,16 @@ describe("BookConfigSchema", () => {
     expect(result.id).toBe("test-book-1");
     expect(result.title).toBe("Test Novel");
     expect(result.platform).toBe("tomato");
+  });
+
+  it("accepts Korean book language", () => {
+    const config = BookConfigSchema.parse({ ...validBook, language: "ko" });
+    expect(config.language).toBe("ko");
+  });
+
+  it("accepts English book language", () => {
+    const config = BookConfigSchema.parse({ ...validBook, language: "en" });
+    expect(config.language).toBe("en");
   });
 
   it("applies default targetChapters and chapterWordCount", () => {
@@ -85,6 +102,12 @@ describe("BookConfigSchema", () => {
   it("rejects invalid platform", () => {
     expect(() =>
       BookConfigSchema.parse({ ...validBook, platform: "kindle" }),
+    ).toThrow();
+  });
+
+  it("rejects invalid language", () => {
+    expect(() =>
+      BookConfigSchema.parse({ ...validBook, language: "jp" }),
     ).toThrow();
   });
 
@@ -125,7 +148,16 @@ describe("BookConfigSchema", () => {
 });
 
 describe("PlatformSchema", () => {
-  it.each(["tomato", "feilu", "qidian", "other"] as const)(
+  it.each([
+    "tomato",
+    "feilu",
+    "qidian",
+    "naver-series",
+    "kakao-page",
+    "munpia",
+    "novelpia",
+    "other",
+  ] as const)(
     "accepts '%s'",
     (value) => {
       expect(PlatformSchema.parse(value)).toBe(value);
@@ -350,6 +382,11 @@ describe("ProjectConfigSchema", () => {
     expect(result.inputGovernanceMode).toBe("v2");
   });
 
+  it("defaults project language to Korean", () => {
+    const result = ProjectConfigSchema.parse(validProject);
+    expect(result.language).toBe("ko");
+  });
+
   it("rejects wrong version", () => {
     expect(() =>
       ProjectConfigSchema.parse({ ...validProject, version: "1.0.0" }),
@@ -366,6 +403,28 @@ describe("ProjectConfigSchema", () => {
     expect(() =>
       ProjectConfigSchema.parse({ name: "p", version: "0.1.0" }),
     ).toThrow();
+  });
+});
+
+describe("WritingLanguage", () => {
+  it("accepts ko, zh, and en", () => {
+    expect(WritingLanguageSchema.parse("ko")).toBe("ko");
+    expect(WritingLanguageSchema.parse("zh")).toBe("zh");
+    expect(WritingLanguageSchema.parse("en")).toBe("en");
+    expect(() => WritingLanguageSchema.parse("ja")).toThrow();
+  });
+
+  it("resolves a language with fallback", () => {
+    expect(resolveWritingLanguage("ko")).toBe("ko");
+    expect(resolveWritingLanguage("ja", "zh")).toBe("zh");
+    expect(resolveWritingLanguage(undefined, "en")).toBe("en");
+  });
+
+  it("classifies writing language helpers", () => {
+    expect(isKoreanLanguage("ko")).toBe(true);
+    expect(isEnglishLanguage("en")).toBe(true);
+    expect(isChineseLanguage("zh")).toBe(true);
+    expect(isKoreanLanguage("zh")).toBe(false);
   });
 });
 

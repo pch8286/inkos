@@ -1,6 +1,7 @@
 ---
 name: 都市
 id: urban
+language: zh
 chapterTypes: ["商战章", "社交章", "布局章", "过渡章", "回收章"]
 fatigueWords: ["冷笑", "不可思议", "震惊", "难以置信", "深吸一口气", "眼中闪过一丝", "仿佛", "不禁", "宛如", "竟然", "核心动机", "信息边界"]
 numericalSystem: false

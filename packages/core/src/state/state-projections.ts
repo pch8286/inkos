@@ -3,6 +3,7 @@ import type {
   CurrentStateState,
   HooksState,
 } from "../models/runtime-state.js";
+import type { WritingLanguage } from "../models/language.js";
 import {
   localizeHookPayoffTiming,
   resolveHookPayoffTiming,
@@ -10,18 +11,23 @@ import {
 
 export function renderHooksProjection(
   state: HooksState,
-  language: "zh" | "en" = "zh",
+  language: WritingLanguage = "ko",
 ): string {
-  const title = language === "en" ? "# Pending Hooks" : "# 伏笔池";
+  const title = language === "en" ? "# Pending Hooks" : language === "ko" ? "# 떡밥 풀" : "# 伏笔池";
   const headers = language === "en"
     ? [
       "| hook_id | start_chapter | type | status | last_advanced_chapter | expected_payoff | payoff_timing | notes |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    : [
-      "| hook_id | 起始章节 | 类型 | 状态 | 最近推进 | 预期回收 | 回收节奏 | 备注 |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ];
+    : language === "ko"
+      ? [
+        "| hook_id | 시작 화수 | 유형 | 상태 | 최근 진전 | 예상 회수 | 회수 템포 | 비고 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ]
+      : [
+        "| hook_id | 起始章节 | 类型 | 状态 | 最近推进 | 预期回收 | 回收节奏 | 备注 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ];
 
   const rows = [...state.hooks]
     .sort((left, right) => (
@@ -47,18 +53,23 @@ export function renderHooksProjection(
 
 export function renderChapterSummariesProjection(
   state: ChapterSummariesState,
-  language: "zh" | "en" = "zh",
+  language: WritingLanguage = "ko",
 ): string {
-  const title = language === "en" ? "# Chapter Summaries" : "# 章节摘要";
+  const title = language === "en" ? "# Chapter Summaries" : language === "ko" ? "# 화별 요약" : "# 章节摘要";
   const headers = language === "en"
     ? [
       "| Chapter | Title | Characters | Key Events | State Changes | Hook Activity | Mood | Chapter Type |",
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    : [
-      "| 章节 | 标题 | 出场人物 | 关键事件 | 状态变化 | 伏笔动态 | 情绪基调 | 章节类型 |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ];
+    : language === "ko"
+      ? [
+        "| 화 | 제목 | 등장인물 | 핵심 사건 | 상태 변화 | 떡밥 동향 | 분위기 | 화 타입 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ]
+      : [
+        "| 章节 | 标题 | 出场人物 | 关键事件 | 状态变化 | 伏笔动态 | 情绪基调 | 章节类型 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      ];
 
   const rows = [...state.rows]
     .sort((left, right) => left.chapter - right.chapter)
@@ -80,7 +91,7 @@ export function renderChapterSummariesProjection(
 
 export function renderCurrentStateProjection(
   state: CurrentStateState,
-  language: "zh" | "en" = "zh",
+  language: WritingLanguage = "ko",
 ): string {
   const layout = language === "en"
     ? {
@@ -98,7 +109,23 @@ export function renderCurrentStateProjection(
       placeholders: "(not set)",
       additionalTitle: "## Additional State",
     }
-    : {
+    : language === "ko"
+      ? {
+        title: "# 현재 상태",
+        tableHeader: "| 항목 | 값 |",
+        labels: {
+          chapter: "현재 화",
+          location: "현재 위치",
+          protagonistState: "주인공 상태",
+          goal: "현재 목표",
+          constraint: "현재 제약",
+          alliances: "현재 관계",
+          conflict: "현재 갈등",
+        },
+        placeholders: "(미설정)",
+        additionalTitle: "## 기타 상태",
+      }
+      : {
       title: "# 当前状态",
       tableHeader: "| 字段 | 值 |",
       labels: {
@@ -112,7 +139,7 @@ export function renderCurrentStateProjection(
       },
       placeholders: "（未设定）",
       additionalTitle: "## 其他状态",
-    };
+      };
 
   const slots = [
     {

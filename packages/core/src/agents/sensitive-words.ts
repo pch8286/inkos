@@ -6,6 +6,7 @@
  */
 
 import type { AuditIssue } from "./continuity.js";
+import { detectWritingLanguageFromText, type WritingLanguage } from "../models/language.js";
 
 export interface SensitiveWordMatch {
   readonly word: string;
@@ -18,7 +19,7 @@ export interface SensitiveWordResult {
   readonly found: ReadonlyArray<SensitiveWordMatch>;
 }
 
-type SensitiveWordLanguage = "zh" | "en";
+type SensitiveWordLanguage = WritingLanguage;
 
 // Political terms — severity "block"
 const POLITICAL_WORDS: ReadonlyArray<string> = [
@@ -69,12 +70,14 @@ const WORD_LISTS: ReadonlyArray<WordListEntry> = [
 export function analyzeSensitiveWords(
   content: string,
   customWords?: ReadonlyArray<string>,
-  language: SensitiveWordLanguage = "zh",
+  language?: SensitiveWordLanguage,
 ): SensitiveWordResult {
+  const resolvedLanguage = language ?? detectWritingLanguageFromText(content);
   const found: SensitiveWordMatch[] = [];
   const issues: AuditIssue[] = [];
-  const isEnglish = language === "en";
-  const joiner = isEnglish ? ", " : "、";
+  const isEnglish = resolvedLanguage === "en";
+  const isKorean = resolvedLanguage === "ko";
+  const joiner = isEnglish ? ", " : isKorean ? ", " : "、";
 
   // Check built-in word lists
   for (const list of WORD_LISTS) {
@@ -84,14 +87,20 @@ export function analyzeSensitiveWords(
       const wordSummary = matches.map((m) => `"${m.word}"×${m.count}`).join(joiner);
       issues.push({
         severity: list.severity === "block" ? "critical" : "warning",
-        category: isEnglish ? "Sensitive terms" : "敏感词",
+        category: isEnglish ? "Sensitive terms" : isKorean ? "민감어" : "敏感词",
         description: isEnglish
           ? `Detected ${list.englishLabel}: ${wordSummary}`
+          : isKorean
+            ? `${list.label}이(가) 감지됐습니다: ${wordSummary}`
           : `检测到${list.label}：${wordSummary}`,
         suggestion: isEnglish
           ? (list.severity === "block"
               ? "You must remove or replace these blocked terms before publication"
               : `Replace or soften these ${list.englishLabel} to reduce moderation risk`)
+          : isKorean
+            ? (list.severity === "block"
+                ? "출시 전에 차단 대상 민감어를 반드시 삭제하거나 바꿔야 합니다"
+                : `${list.label}을 완화하거나 대체해 검수 리스크를 줄이세요`)
           : (list.severity === "block"
               ? "必须删除或替换政治敏感词，否则无法发布"
               : `建议替换或弱化${list.label}，避免平台审核问题`),
@@ -107,12 +116,16 @@ export function analyzeSensitiveWords(
       const wordSummary = customMatches.map((m) => `"${m.word}"×${m.count}`).join(joiner);
       issues.push({
         severity: "warning",
-        category: isEnglish ? "Sensitive terms" : "敏感词",
+        category: isEnglish ? "Sensitive terms" : isKorean ? "민감어" : "敏感词",
         description: isEnglish
           ? `Detected custom sensitive term(s): ${wordSummary}`
+          : isKorean
+            ? `사용자 정의 민감어가 감지됐습니다: ${wordSummary}`
           : `检测到自定义敏感词：${wordSummary}`,
         suggestion: isEnglish
           ? "Replace or remove these terms according to project rules"
+          : isKorean
+            ? "프로젝트 규칙에 따라 해당 표현을 삭제하거나 바꾸세요"
           : "根据项目规则替换或删除这些词语",
       });
     }

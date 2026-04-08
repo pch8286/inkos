@@ -7,6 +7,7 @@ import {
   StateManifestSchema,
   type RuntimeStateDelta,
 } from "../models/runtime-state.js";
+import type { WritingLanguage } from "../models/language.js";
 import type { Fact, StoredHook, StoredSummary } from "./memory-db.js";
 import { bootstrapStructuredStateFromMarkdown, parseCurrentStateFacts } from "./state-bootstrap.js";
 import { renderChapterSummariesProjection, renderCurrentStateProjection, renderHooksProjection } from "./state-projections.js";
@@ -59,7 +60,7 @@ export async function loadRuntimeStateSnapshot(bookDir: string): Promise<Runtime
 export async function buildRuntimeStateArtifacts(params: {
   readonly bookDir: string;
   readonly delta: RuntimeStateDelta;
-  readonly language: "zh" | "en";
+  readonly language: WritingLanguage;
   readonly allowReapply?: boolean;
 }): Promise<RuntimeStateArtifacts> {
   const snapshot = await loadRuntimeStateSnapshot(params.bookDir);

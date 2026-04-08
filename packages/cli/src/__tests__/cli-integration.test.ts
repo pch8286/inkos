@@ -26,13 +26,18 @@ function run(args: string[], options?: { env?: Record<string, string> }): string
   });
 }
 
-function runStderr(args: string[], options?: { env?: Record<string, string> }): { stdout: string; stderr: string; exitCode: number } {
+type CliRunOptions = {
+  readonly env?: Record<string, string>;
+  readonly timeoutMs?: number;
+};
+
+function runStderr(args: string[], options?: CliRunOptions): { stdout: string; stderr: string; exitCode: number } {
   try {
     const stdout = execFileSync("node", [cliEntry, ...args], {
       cwd: projectDir,
       encoding: "utf-8",
       env: { ...process.env, HOME: projectDir, ...options?.env },
-      timeout: 10_000,
+      timeout: options?.timeoutMs ?? 10_000,
     });
     return { stdout, stderr: "", exitCode: 0 };
   } catch (e: unknown) {
@@ -75,9 +80,14 @@ describe("CLI integration", () => {
   });
 
   describe("inkos init", () => {
-    it("initializes project in current directory", () => {
+    it("initializes project in current directory", async () => {
       const output = run(["init"]);
       expect(output).toContain("Project initialized");
+      expect(output).toContain("내 소설");
+
+      const raw = await readFile(join(projectDir, "inkos.json"), "utf-8");
+      const config = JSON.parse(raw);
+      expect(config.language).toBe("ko");
     });
 
     it("creates inkos.json with correct structure", async () => {
@@ -191,6 +201,46 @@ describe("CLI integration", () => {
     });
   });
 
+  describe("inkos config set-global", () => {
+    it("allows gemini-cli without base-url or api-key", async () => {
+      const output = run([
+        "config",
+        "set-global",
+        "--provider",
+        "gemini-cli",
+        "--model",
+        "auto-gemini-3",
+      ]);
+
+      expect(output).toContain("Global config saved");
+
+      const envContent = await readFile(join(projectDir, ".inkos", ".env"), "utf-8");
+      expect(envContent).toContain("INKOS_LLM_PROVIDER=gemini-cli");
+      expect(envContent).toContain("INKOS_LLM_MODEL=auto-gemini-3");
+      expect(envContent).not.toContain("INKOS_LLM_API_KEY=");
+      expect(envContent).not.toContain("INKOS_LLM_BASE_URL=");
+    });
+
+    it("allows codex-cli without base-url or api-key", async () => {
+      const output = run([
+        "config",
+        "set-global",
+        "--provider",
+        "codex-cli",
+        "--model",
+        "gpt-5.4",
+      ]);
+
+      expect(output).toContain("Global config saved");
+
+      const envContent = await readFile(join(projectDir, ".inkos", ".env"), "utf-8");
+      expect(envContent).toContain("INKOS_LLM_PROVIDER=codex-cli");
+      expect(envContent).toContain("INKOS_LLM_MODEL=gpt-5.4");
+      expect(envContent).not.toContain("INKOS_LLM_API_KEY=");
+      expect(envContent).not.toContain("INKOS_LLM_BASE_URL=");
+    });
+  });
+
   describe("inkos config set-model", () => {
     it("rejects raw API keys passed to --api-key-env", async () => {
       const { exitCode, stderr } = runStderr([
@@ -229,6 +279,38 @@ describe("CLI integration", () => {
   });
 
   describe("inkos book create", () => {
+    it("defaults to Korean book-create messaging when project language is default", async () => {
+      const bookTitle = "Korean Branch Smoke";
+      const bookId = "korean-branch-smoke";
+      const originalEnv = await readFile(join(projectDir, ".env"), "utf-8");
+      await writeFile(join(projectDir, ".env"), [
+        "INKOS_LLM_PROVIDER=openai",
+        "INKOS_LLM_BASE_URL=http://127.0.0.1:9/v1",
+        "INKOS_LLM_API_KEY=test-key",
+        "INKOS_LLM_MODEL=test-model",
+        "",
+      ].join("\n"), "utf-8");
+
+      try {
+        const { exitCode, stderr, stdout } = runStderr([
+          "book",
+          "create",
+          "--title",
+          bookTitle,
+          "--genre",
+          "modern-fantasy",
+          "--platform",
+          "naver-series",
+        ], { timeoutMs: 2_000 });
+
+        expect(exitCode).not.toBe(0);
+        expect(`${stdout}${stderr}`).toContain(`책 "${bookTitle}" (modern-fantasy / naver-series) 생성 중...`);
+        await rm(join(projectDir, "books", bookId), { recursive: true, force: true });
+      } finally {
+        await writeFile(join(projectDir, ".env"), originalEnv);
+      }
+    });
+
     it("removes stale incomplete book directories before retrying create", async () => {
       try {
         await stat(join(projectDir, "inkos.json"));
@@ -316,6 +398,47 @@ describe("CLI integration", () => {
       const output = run(["status", "english-status", "--chapters"]);
       expect(output).toContain('Ch.1 "A Quiet Sky" | 7 words | ready-for-review');
       expect(output).not.toContain("7字");
+    });
+
+    it("shows Korean character counts for ko-book chapter rows", async () => {
+      const bookDir = join(projectDir, "books", "korean-status");
+      await mkdir(join(bookDir, "chapters"), { recursive: true });
+      await writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-status",
+          title: "한국어 상태 책",
+          platform: "naver-series",
+          genre: "modern-fantasy",
+          status: "active",
+          targetChapters: 10,
+          chapterWordCount: 3000,
+          language: "ko",
+          createdAt: "2026-03-22T00:00:00.000Z",
+          updatedAt: "2026-03-22T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      );
+      await writeFile(
+        join(bookDir, "chapters", "index.json"),
+        JSON.stringify([
+          {
+            number: 1,
+            title: "첫 장",
+            status: "ready-for-review",
+            wordCount: 7,
+            createdAt: "2026-03-22T00:00:00.000Z",
+            updatedAt: "2026-03-22T00:00:00.000Z",
+            auditIssues: [],
+            lengthWarnings: [],
+          },
+        ], null, 2),
+        "utf-8",
+      );
+
+      const output = run(["status", "korean-status", "--chapters"]);
+      expect(output).toContain('Ch.1 "첫 장" | 7자 | ready-for-review');
+      expect(output).not.toContain("7 words");
     });
 
     it("shows degraded chapter counts and issues explicitly", async () => {

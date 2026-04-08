@@ -1,11 +1,12 @@
 import type { AuditIssue } from "../agents/continuity.js";
+import type { WritingLanguage } from "../models/language.js";
 import type { HookRecord, RuntimeStateDelta } from "../models/runtime-state.js";
 import { classifyHookDisposition, collectStaleHookDebt } from "./hook-governance.js";
 import { describeHookLifecycle, localizeHookPayoffTiming } from "./hook-lifecycle.js";
 import { HOOK_HEALTH_DEFAULTS } from "./hook-policy.js";
 
 export function analyzeHookHealth(params: {
-  readonly language: "zh" | "en";
+  readonly language: WritingLanguage;
   readonly chapterNumber: number;
   readonly targetChapters?: number;
   readonly hooks: ReadonlyArray<HookRecord>;
@@ -129,7 +130,7 @@ export function analyzeHookHealth(params: {
 }
 
 function buildPressureDescription(params: {
-  readonly language: "zh" | "en";
+  readonly language: WritingLanguage;
   readonly entries: ReadonlyArray<{
     readonly hook: HookRecord;
     readonly lifecycle: ReturnType<typeof describeHookLifecycle>;
@@ -164,7 +165,7 @@ function buildPressureDescription(params: {
 
 function localizePressureLabel(
   lifecycle: ReturnType<typeof describeHookLifecycle>,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): string {
   if (lifecycle.overdue) {
     return language === "en" ? "overdue" : "已逾期";
@@ -176,7 +177,7 @@ function localizePressureLabel(
 }
 
 function warning(
-  language: "zh" | "en",
+  language: WritingLanguage,
   description: string,
   suggestion: string,
 ): AuditIssue {

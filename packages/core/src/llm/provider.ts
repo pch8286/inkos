@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import type { LLMConfig } from "../models/project.js";
+import { chatCompletionCodexCli, chatWithToolsCodexCli } from "./codex-cli.js";
+import { chatCompletionGeminiCli, chatWithToolsGeminiCli } from "./gemini-cli.js";
 
 // === Streaming Monitor Types ===
 
@@ -70,7 +72,7 @@ export interface LLMMessage {
 }
 
 export interface LLMClient {
-  readonly provider: "openai" | "anthropic";
+  readonly provider: "openai" | "anthropic" | "gemini-cli" | "codex-cli";
   readonly apiFormat: "chat" | "responses";
   readonly stream: boolean;
   readonly _openai?: OpenAI;
@@ -122,6 +124,15 @@ export function createLLMClient(config: LLMConfig): LLMClient {
 
   const apiFormat = config.apiFormat ?? "chat";
   const stream = config.stream ?? true;
+
+  if (config.provider === "gemini-cli" || config.provider === "codex-cli") {
+    return {
+      provider: config.provider,
+      apiFormat,
+      stream,
+      defaults,
+    };
+  }
 
   if (config.provider === "anthropic") {
     // Anthropic SDK appends /v1/ internally — strip if user included it
@@ -278,9 +289,24 @@ export async function chatCompletion(
     extra: client.defaults.extra,
   };
   const onStreamProgress = options?.onStreamProgress;
-  const errorCtx = { baseUrl: client._openai?.baseURL ?? "(anthropic)", model };
+  const errorCtx = {
+    baseUrl: client.provider === "anthropic"
+      ? "(anthropic)"
+      : client.provider === "gemini-cli"
+        ? "(gemini-cli)"
+        : client.provider === "codex-cli"
+          ? "(codex-cli)"
+        : client._openai?.baseURL ?? "(openai)",
+    model,
+  };
 
   try {
+    if (client.provider === "gemini-cli") {
+      return await chatCompletionGeminiCli(client, model, messages, onStreamProgress);
+    }
+    if (client.provider === "codex-cli") {
+      return await chatCompletionCodexCli(client, model, messages, onStreamProgress);
+    }
     if (client.provider === "anthropic") {
       return client.stream
         ? await chatCompletionAnthropic(client._anthropic!, model, messages, resolved, client.defaults.thinkingBudget, onStreamProgress)
@@ -304,7 +330,7 @@ export async function chatCompletion(
     }
 
     // Auto-fallback: if streaming failed, retry with sync (many proxies don't support SSE)
-    if (client.stream) {
+    if (client.stream && client.provider !== "gemini-cli" && client.provider !== "codex-cli") {
       const isStreamRelated = isLikelyStreamError(error);
       if (isStreamRelated) {
         try {
@@ -365,6 +391,7 @@ export async function chatWithTools(
   options?: {
     readonly temperature?: number;
     readonly maxTokens?: number;
+    readonly projectRoot?: string;
   },
 ): Promise<ChatWithToolsResult> {
   try {
@@ -373,6 +400,19 @@ export async function chatWithTools(
       maxTokens: options?.maxTokens ?? client.defaults.maxTokens,
     };
     // Tool-calling always uses streaming (only used by agent loop, not by writer/auditor)
+    if (client.provider === "gemini-cli") {
+      return await chatWithToolsGeminiCli(
+        client,
+        model,
+        messages,
+        tools,
+        options?.projectRoot
+          ?? (typeof client.defaults.extra.projectRoot === "string" ? client.defaults.extra.projectRoot : undefined),
+      );
+    }
+    if (client.provider === "codex-cli") {
+      return await chatWithToolsCodexCli(client, model, messages, tools);
+    }
     if (client.provider === "anthropic") {
       return await chatWithToolsAnthropic(client._anthropic!, model, messages, tools, resolved, client.defaults.thinkingBudget);
     }

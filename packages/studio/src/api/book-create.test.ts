@@ -50,6 +50,23 @@ describe("buildStudioBookConfig", () => {
     expect(config.language).toBe("en");
     expect(config.id).toBe("english-book");
   });
+
+  it("preserves korean language in project config when provided", () => {
+    const config = buildStudioBookConfig(
+      {
+        title: "한국어 테스트",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      },
+      "2026-03-30T00:00:00.000Z",
+    );
+
+    expect(config).toMatchObject({
+      language: "ko",
+      platform: "naver-series",
+    });
+  });
 });
 
 describe("waitForStudioBookReady", () => {

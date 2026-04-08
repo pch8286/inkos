@@ -134,4 +134,35 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("English Variance Brief");
     expect(prompt).toContain("resistance-bearing exchange");
   });
+
+  it("uses Korean contract branch for Korean mode and avoids non-Korean guidance headers", () => {
+    const prompt = buildWriterSystemPrompt(
+      {
+        ...BOOK,
+        language: "ko",
+      },
+      {
+        ...GENRE,
+        language: "ko",
+        name: "현대판타지",
+      },
+      null,
+      "# Book Rules",
+      "# Genre Body",
+      "# Style Guide\n\nKeep the prose restrained.",
+      undefined,
+      3,
+      "creative",
+      undefined,
+      "ko",
+      "governed",
+    );
+
+    expect(prompt).toContain("## 분량 가이드");
+    expect(prompt).toContain("## 입력 거버넌스 계약");
+    expect(prompt).toContain("## 핵심 규칙");
+    expect(prompt).not.toContain("## Input Governance Contract");
+    expect(prompt).not.toContain("## Length Guidance");
+    expect(prompt).not.toContain("## 输入治理契约");
+  });
 });

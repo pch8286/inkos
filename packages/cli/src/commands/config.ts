@@ -87,26 +87,53 @@ configCommand
 configCommand
   .command("set-global")
   .description("Set global LLM config (~/.inkos/.env), shared by all projects")
-  .requiredOption("--provider <provider>", "LLM provider (openai / anthropic)")
-  .requiredOption("--base-url <url>", "API base URL")
-  .requiredOption("--api-key <key>", "API key")
-  .requiredOption("--model <model>", "Model name")
+  .requiredOption("--provider <provider>", "LLM provider (openai / anthropic / custom / gemini-cli / codex-cli)")
+  .option("--base-url <url>", "API base URL")
+  .option("--api-key <key>", "API key")
+  .option("--model <model>", "Model name")
   .option("--temperature <n>", "Temperature")
   .option("--max-tokens <n>", "Max output tokens")
   .option("--thinking-budget <n>", "Anthropic thinking budget")
   .option("--api-format <format>", "API format (chat / responses)")
-  .option("--lang <language>", "Default writing language: zh (Chinese) or en (English)")
-  .action(async (opts) => {
+  .option("--lang <language>", "Default writing language: ko (Korean), zh (Chinese), or en (English)")
+  .action(async (opts: {
+    provider: string;
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+    temperature?: string;
+    maxTokens?: string;
+    thinkingBudget?: string;
+    apiFormat?: string;
+    lang?: string;
+  }) => {
     try {
       await mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
 
+      const provider = opts.provider.trim();
+      const isCliOAuthProvider = provider === "gemini-cli" || provider === "codex-cli";
+      if (!isCliOAuthProvider) {
+        if (!opts.baseUrl) {
+          throw new Error("--base-url is required unless --provider gemini-cli or codex-cli is used.");
+        }
+        if (!opts.apiKey) {
+          throw new Error("--api-key is required unless --provider gemini-cli or codex-cli is used.");
+        }
+      }
+
       const lines = [
         "# InkOS Global LLM Configuration",
-        `INKOS_LLM_PROVIDER=${opts.provider}`,
-        `INKOS_LLM_BASE_URL=${opts.baseUrl}`,
-        `INKOS_LLM_API_KEY=${opts.apiKey}`,
-        `INKOS_LLM_MODEL=${opts.model}`,
+        `INKOS_LLM_PROVIDER=${provider}`,
       ];
+      if (opts.baseUrl) lines.push(`INKOS_LLM_BASE_URL=${opts.baseUrl}`);
+      if (opts.apiKey) lines.push(`INKOS_LLM_API_KEY=${opts.apiKey}`);
+      lines.push(`INKOS_LLM_MODEL=${opts.model ?? (
+        provider === "gemini-cli"
+          ? "auto-gemini-3"
+          : provider === "codex-cli"
+            ? "gpt-5.4"
+            : ""
+      )}`);
       if (opts.temperature) lines.push(`INKOS_LLM_TEMPERATURE=${opts.temperature}`);
       if (opts.maxTokens) lines.push(`INKOS_LLM_MAX_TOKENS=${opts.maxTokens}`);
       if (opts.thinkingBudget) lines.push(`INKOS_LLM_THINKING_BUDGET=${opts.thinkingBudget}`);
@@ -177,7 +204,7 @@ configCommand
   .argument("<agent>", `Agent name (${KNOWN_AGENTS.join(", ")})`)
   .argument("<model>", "Model name")
   .option("--base-url <url>", "API base URL (for different provider)")
-  .option("--provider <provider>", "Provider type (openai / anthropic / custom)")
+  .option("--provider <provider>", "Provider type (openai / anthropic / custom / gemini-cli / codex-cli)")
   .option("--api-key-env <envVar>", "Env variable name for API key (e.g., PACKYAPI_KEY)")
   .option("--stream", "Enable streaming (default)")
   .option("--no-stream", "Disable streaming")

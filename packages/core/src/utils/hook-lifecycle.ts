@@ -1,4 +1,5 @@
 import type { HookPayoffTiming } from "../models/runtime-state.js";
+import type { WritingLanguage } from "../models/language.js";
 import {
   HOOK_ACTIVITY_THRESHOLDS,
   HOOK_PHASE_THRESHOLDS,
@@ -8,13 +9,20 @@ import {
   type HookPhase,
 } from "./hook-policy.js";
 
-const LABELS: Record<"zh" | "en", Record<HookPayoffTiming, string>> = {
+const LABELS: Record<WritingLanguage, Record<HookPayoffTiming, string>> = {
   en: {
     immediate: "immediate",
     "near-term": "near-term",
     "mid-arc": "mid-arc",
     "slow-burn": "slow-burn",
     endgame: "endgame",
+  },
+  ko: {
+    immediate: "즉시",
+    "near-term": "근시일",
+    "mid-arc": "중반부",
+    "slow-burn": "장기 누적",
+    endgame: "종막",
   },
   zh: {
     immediate: "立即",
@@ -87,7 +95,7 @@ export function resolveHookPayoffTiming(params: {
 
 export function localizeHookPayoffTiming(
   timing: HookPayoffTiming,
-  language: "zh" | "en",
+  language: WritingLanguage,
 ): string {
   return LABELS[language][timing];
 }

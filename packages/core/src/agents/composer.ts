@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import yaml from "js-yaml";
 import { BaseAgent } from "./base.js";
 import type { BookConfig } from "../models/book.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import {
   ChapterTraceSchema,
   ContextPackageSchema,
@@ -46,7 +47,7 @@ export class ComposerAgent extends BaseAgent {
     const selectedContext = await this.collectSelectedContext(
       storyDir,
       input.plan,
-      input.book.language ?? "zh",
+      resolveWritingLanguage(input.book.language),
     );
     const contextPackage = ContextPackageSchema.parse({
       chapter: input.chapterNumber,
@@ -110,7 +111,7 @@ export class ComposerAgent extends BaseAgent {
   private async collectSelectedContext(
     storyDir: string,
     plan: PlanChapterOutput,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): Promise<ContextPackage["selectedContext"]> {
     const entries = await Promise.all([
       this.maybeContextSource(storyDir, "current_focus.md", "Current task focus for this chapter."),
@@ -305,7 +306,7 @@ export class ComposerAgent extends BaseAgent {
       readonly payoffTiming?: string;
       readonly notes: string;
     }>,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): Promise<ContextPackage["selectedContext"]> {
     const targetHookIds = [
       ...new Set([
@@ -411,7 +412,7 @@ export class ComposerAgent extends BaseAgent {
   private describeHookAgendaRole(
     plan: PlanChapterOutput,
     hookId: string,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     if (plan.intent.hookAgenda.eligibleResolve.includes(hookId)) {
       return language === "en" ? "payoff-ready debt" : "可兑现旧债";

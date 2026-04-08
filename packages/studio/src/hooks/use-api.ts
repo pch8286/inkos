@@ -28,6 +28,18 @@ export function deriveInvalidationPaths(path: string): ReadonlyArray<string> {
     return ["/api/project"];
   }
 
+  if (normalized === "/api/project/init") {
+    return ["/api/bootstrap", "/api/project", "/api/books"];
+  }
+
+  if (normalized === "/api/global-config") {
+    return ["/api/bootstrap", "/api/global-config", "/api/project"];
+  }
+
+  if (normalized.startsWith("/api/auth/")) {
+    return ["/api/bootstrap", "/api/global-config"];
+  }
+
   if (normalized.startsWith("/api/project/")) {
     return ["/api/project", normalized];
   }

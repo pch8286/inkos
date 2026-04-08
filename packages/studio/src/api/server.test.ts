@@ -10,6 +10,7 @@ const createLLMClientMock = vi.fn(() => ({}));
 const chatCompletionMock = vi.fn();
 const loadProjectConfigMock = vi.fn();
 const pipelineConfigs: unknown[] = [];
+const globalEnvPath = join(tmpdir(), "inkos-global.env");
 
 const logger = {
   child: () => logger,
@@ -80,7 +81,8 @@ vi.mock("@actalk/inkos-core", () => {
     computeAnalytics: vi.fn(() => ({})),
     chatCompletion: chatCompletionMock,
     loadProjectConfig: loadProjectConfigMock,
-    GLOBAL_ENV_PATH: join(tmpdir(), "inkos-global.env"),
+    GLOBAL_CONFIG_DIR: tmpdir(),
+    GLOBAL_ENV_PATH: globalEnvPath,
   };
 });
 
@@ -124,6 +126,7 @@ describe("createStudioServer daemon lifecycle", () => {
     await writeFile(join(root, "inkos.json"), JSON.stringify(projectConfig, null, 2), "utf-8");
     schedulerStartMock.mockReset();
     initBookMock.mockReset();
+    initBookMock.mockResolvedValue(undefined);
     runRadarMock.mockReset();
     runRadarMock.mockResolvedValue({
       marketSummary: "Fresh market summary",
@@ -159,6 +162,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+    await rm(globalEnvPath, { force: true });
   });
 
   it("returns from /api/daemon/start before the first write cycle finishes", async () => {
@@ -175,7 +179,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const responseOrTimeout = await Promise.race([
       app.request("http://localhost/api/daemon/start", { method: "POST" }),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 30)),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 120)),
     ]);
 
     expect(responseOrTimeout).not.toBe("timeout");
@@ -326,6 +330,196 @@ describe("createStudioServer daemon lifecycle", () => {
       language: "en",
       languageExplicit: true,
     });
+  });
+
+  it("supports bootstrap mode before inkos.json exists", async () => {
+    await rm(join(root, "inkos.json"), { force: true });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(null, root);
+
+    const bootstrapResponse = await app.request("http://localhost/api/bootstrap");
+    expect(bootstrapResponse.status).toBe(200);
+    await expect(bootstrapResponse.json()).resolves.toMatchObject({
+      projectInitialized: false,
+      suggestedProjectName: expect.any(String),
+      globalConfig: {
+        exists: false,
+        provider: "",
+      },
+    });
+
+    const projectResponse = await app.request("http://localhost/api/project");
+    expect(projectResponse.status).toBe(200);
+    await expect(projectResponse.json()).resolves.toMatchObject({
+      initialized: false,
+      projectRoot: root,
+      suggestedProjectName: expect.any(String),
+      languageExplicit: false,
+    });
+  });
+
+  it("initializes a project from the bootstrap endpoint", async () => {
+    await rm(join(root, "inkos.json"), { force: true });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(null, root);
+
+    const initResponse = await app.request("http://localhost/api/project/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "studio-init", language: "ko" }),
+    });
+    expect(initResponse.status).toBe(200);
+
+    const rawConfig = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
+    expect(rawConfig.name).toBe("studio-init");
+    expect(rawConfig.language).toBe("ko");
+
+    const envContent = await readFile(join(root, ".env"), "utf-8");
+    expect(envContent).toContain("# INKOS_LLM_PROVIDER=openai");
+
+    const bootstrapResponse = await app.request("http://localhost/api/bootstrap");
+    await expect(bootstrapResponse.json()).resolves.toMatchObject({
+      projectInitialized: true,
+    });
+  });
+
+  it("edits global config through the studio API", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const saveResponse = await app.request("http://localhost/api/global-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        language: "ko",
+        provider: "codex-cli",
+        model: "gpt-5.4",
+      }),
+    });
+    expect(saveResponse.status).toBe(200);
+
+    const savedEnv = await readFile(globalEnvPath, "utf-8");
+    expect(savedEnv).toContain("INKOS_LLM_PROVIDER=codex-cli");
+    expect(savedEnv).toContain("INKOS_LLM_MODEL=gpt-5.4");
+    expect(savedEnv).toContain("INKOS_DEFAULT_LANGUAGE=ko");
+
+    const fetchResponse = await app.request("http://localhost/api/global-config");
+    await expect(fetchResponse.json()).resolves.toMatchObject({
+      exists: true,
+      language: "ko",
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      apiKeySet: false,
+    });
+  });
+
+  it("preserves the stored api key when updating the same provider with a blank apiKey", async () => {
+    await writeFile(globalEnvPath, [
+      "INKOS_LLM_PROVIDER=openai",
+      "INKOS_LLM_BASE_URL=https://api.example.com/v1",
+      "INKOS_LLM_API_KEY=sk-existing",
+      "INKOS_LLM_MODEL=gpt-5.4",
+      "INKOS_DEFAULT_LANGUAGE=ko",
+    ].join("\n"), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const saveResponse = await app.request("http://localhost/api/global-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        language: "ko",
+        provider: "openai",
+        model: "gpt-5.4-mini",
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "",
+      }),
+    });
+    expect(saveResponse.status).toBe(200);
+
+    const savedEnv = await readFile(globalEnvPath, "utf-8");
+    expect(savedEnv).toContain("INKOS_LLM_API_KEY=sk-existing");
+    expect(savedEnv).toContain("INKOS_LLM_MODEL=gpt-5.4-mini");
+  });
+
+  it("initializes a project with the saved global provider and model", async () => {
+    await rm(join(root, "inkos.json"), { force: true });
+    await writeFile(globalEnvPath, [
+      "INKOS_LLM_PROVIDER=gemini-cli",
+      "INKOS_LLM_MODEL=gemini-2.5-pro",
+      "INKOS_DEFAULT_LANGUAGE=ko",
+    ].join("\n"), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(null, root);
+
+    const initResponse = await app.request("http://localhost/api/project/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "global-defaults", language: "ko" }),
+    });
+    expect(initResponse.status).toBe(200);
+
+    const rawConfig = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as {
+      llm: { provider: string; model: string; baseUrl: string };
+    };
+    expect(rawConfig.llm.provider).toBe("gemini-cli");
+    expect(rawConfig.llm.model).toBe("gemini-2.5-pro");
+    expect(rawConfig.llm.baseUrl).toBe("");
+  });
+
+  it("accepts korean language through the first-run language endpoint", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const save = await app.request("http://localhost/api/project/language", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "ko" }),
+    });
+
+    expect(save.status).toBe(200);
+
+    const project = await app.request("http://localhost/api/project");
+    await expect(project.json()).resolves.toMatchObject({
+      language: "ko",
+      languageExplicit: true,
+    });
+  });
+
+  it("creates Korean books with Korean platform and genre through the API", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "korean-smoke-book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "korean-smoke-book",
+    });
+    await Promise.resolve();
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+    expect(initBookMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "korean-smoke-book",
+        language: "ko",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+      }),
+    );
   });
 
   it("rejects create requests when a complete book with the same id already exists", async () => {

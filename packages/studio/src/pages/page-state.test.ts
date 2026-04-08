@@ -22,6 +22,7 @@ describe("defaultChapterWordsForLanguage", () => {
   it("uses 3000 for chinese projects and 2000 for english projects", () => {
     expect(defaultChapterWordsForLanguage("zh")).toBe("3000");
     expect(defaultChapterWordsForLanguage("en")).toBe("2000");
+    expect(defaultChapterWordsForLanguage("ko")).toBe("3000");
   });
 });
 
@@ -30,6 +31,12 @@ describe("platformOptionsForLanguage", () => {
     const values = platformOptionsForLanguage("en").map((option) => option.value);
     expect(new Set(values).size).toBe(values.length);
     expect(values).toEqual(["royal-road", "kindle-unlimited", "scribble-hub", "other"]);
+  });
+
+  it("adds korean platform presets including local services", () => {
+    const values = platformOptionsForLanguage("ko").map((option) => option.value);
+    expect(new Set(values).size).toBe(values.length);
+    expect(values).toEqual(["naver-series", "kakao-page", "munpia", "novelpia", "other"]);
   });
 });
 

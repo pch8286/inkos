@@ -67,19 +67,27 @@ export function formatImportCompletionLines(
   },
 ): string[] {
   return [
-    language === "en" ? "Import complete:" : "导入完成：",
+    language === "en" ? "Import complete:" : language === "zh" ? "导入完成：" : "가져오기 완료:",
     language === "en"
       ? `  Chapters imported: ${result.importedCount}`
-      : `  已导入章节：${result.importedCount}`,
+      : language === "zh"
+        ? `  已导入章节：${result.importedCount}`
+        : `  가져온 화수: ${result.importedCount}`,
     language === "en"
       ? `  Total length: ${result.totalCountLabel}`
-      : `  总长度：${result.totalCountLabel}`,
+      : language === "zh"
+        ? `  总长度：${result.totalCountLabel}`
+        : `  총 분량: ${result.totalCountLabel}`,
     language === "en"
       ? `  Next chapter number: ${result.nextChapter}`
-      : `  下一章编号：${result.nextChapter}`,
+      : language === "zh"
+        ? `  下一章编号：${result.nextChapter}`
+        : `  다음 화 번호: ${result.nextChapter}`,
     "",
     language === "en"
       ? `Run "inkos write next ${result.bookId}" to continue writing.`
-      : `运行 "inkos write next ${result.bookId}" 继续写作。`,
+      : language === "zh"
+        ? `运行 "inkos write next ${result.bookId}" 继续写作。`
+        : `"inkos write next ${result.bookId}"를 실행해 이어서 집필하세요.`,
   ];
 }

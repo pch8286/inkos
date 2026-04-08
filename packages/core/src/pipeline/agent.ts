@@ -2,73 +2,74 @@ import { chatWithTools, type AgentMessage, type ToolDefinition } from "../llm/pr
 import { PipelineRunner, type PipelineConfig } from "./runner.js";
 import type { Platform, Genre } from "../models/book.js";
 import { DEFAULT_REVISE_MODE, type ReviseMode } from "../agents/reviser.js";
+import { isWritingLanguage, type WritingLanguage } from "../models/language.js";
 
 /** Tool definitions for the agent loop. */
 const TOOLS: ReadonlyArray<ToolDefinition> = [
   {
     name: "write_draft",
-    description: "写【下一章】草稿。只能续写最新章之后的下一章，不能指定章节号，不能补历史空章。生成正文、更新状态卡/账本/伏笔池、保存章节文件。",
+    description: "Write the next chapter draft only. Continue strictly from the latest chapter; do not fill historical gaps or choose an arbitrary chapter number.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        guidance: { type: "string", description: "本章创作指导（可选，自然语言）" },
+        bookId: { type: "string", description: "Book ID" },
+        guidance: { type: "string", description: "Optional chapter guidance in natural language" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "plan_chapter",
-    description: "为下一章生成 chapter intent（章节目标、必须保留、冲突说明）。适合在正式写作前检查当前控制输入是否正确。",
+    description: "Generate the next chapter intent before writing. Use this to inspect goals, required beats, and conflicts.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        guidance: { type: "string", description: "本章额外指导（可选，自然语言）" },
+        bookId: { type: "string", description: "Book ID" },
+        guidance: { type: "string", description: "Optional extra guidance for this chapter" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "compose_chapter",
-    description: "为下一章生成 context/rule-stack/trace 运行时产物。适合在写作前确认系统实际会带哪些上下文和优先级。",
+    description: "Build runtime context, rule stack, and trace artifacts for the next chapter before drafting.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        guidance: { type: "string", description: "本章额外指导（可选，自然语言）" },
+        bookId: { type: "string", description: "Book ID" },
+        guidance: { type: "string", description: "Optional extra guidance for this chapter" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "audit_chapter",
-    description: "审计指定章节。检查连续性、OOC、数值、伏笔等问题。",
+    description: "Audit a chapter for continuity, characterization, numerical consistency, hooks, and related issues.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        chapterNumber: { type: "number", description: "章节号（不填则审计最新章）" },
+        bookId: { type: "string", description: "Book ID" },
+        chapterNumber: { type: "number", description: "Chapter number; audits the latest chapter when omitted" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "revise_chapter",
-    description: "修订指定章节的文字质量。根据审计问题做局部修正，不改变剧情走向。默认 spot-fix（定点修复最小改动）；也支持 polish(润色)、rewrite(改写)、rework(重写)、anti-detect。注意：不能用来补缺失章节、不能改章节号、不能替代 write_draft。",
+    description: "Revise an existing chapter for prose quality without changing plot direction. This is not for filling missing chapters or changing chapter numbers.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        chapterNumber: { type: "number", description: "章节号（不填则修订最新章）" },
-        mode: { type: "string", enum: ["polish", "rewrite", "rework", "spot-fix", "anti-detect"], description: `修订模式（默认${DEFAULT_REVISE_MODE}）` },
+        bookId: { type: "string", description: "Book ID" },
+        chapterNumber: { type: "number", description: "Chapter number; revises the latest chapter when omitted" },
+        mode: { type: "string", enum: ["polish", "rewrite", "rework", "spot-fix", "anti-detect"], description: `Revision mode (default ${DEFAULT_REVISE_MODE})` },
       },
       required: ["bookId"],
     },
   },
   {
     name: "scan_market",
-    description: "扫描市场趋势。从平台排行榜获取实时数据并分析。",
+    description: "Scan live market trends from platform rankings and analyze the results.",
     parameters: {
       type: "object",
       properties: {},
@@ -76,67 +77,72 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "create_book",
-    description: "创建一本新书。生成世界观、卷纲、文风指南等基础设定。",
+    description: "Create a new book and generate its foundation, including story bible, volume outline, and book rules.",
     parameters: {
       type: "object",
       properties: {
-        title: { type: "string", description: "书名" },
-        genre: { type: "string", enum: ["xuanhuan", "xianxia", "urban", "horror", "other"], description: "题材" },
-        platform: { type: "string", enum: ["tomato", "feilu", "qidian", "other"], description: "目标平台" },
-        brief: { type: "string", description: "创作简述/需求（自然语言）" },
+        title: { type: "string", description: "Book title" },
+        genre: { type: "string", description: "Genre ID; uses language defaults when omitted" },
+        platform: { type: "string", description: "Platform ID; uses language defaults when omitted" },
+        language: {
+          type: "string",
+          enum: ["ko", "zh", "en"],
+          description: "Writing language; defaults to ko",
+        },
+        brief: { type: "string", description: "Creative brief or requirements in natural language" },
       },
-      required: ["title", "genre", "platform"],
+      required: ["title"],
     },
   },
   {
     name: "update_author_intent",
-    description: "更新书级长期意图文档 author_intent.md。用于修改这本书长期想成为什么。",
+    description: "Replace the long-term book intent document `author_intent.md`.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        content: { type: "string", description: "author_intent.md 的完整新内容" },
+        bookId: { type: "string", description: "Book ID" },
+        content: { type: "string", description: "Full new content for author_intent.md" },
       },
       required: ["bookId", "content"],
     },
   },
   {
     name: "update_current_focus",
-    description: "更新当前关注点文档 current_focus.md。用于把最近几章的注意力拉回某条主线或冲突。",
+    description: "Replace the short-horizon steering document `current_focus.md` for the next few chapters.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        content: { type: "string", description: "current_focus.md 的完整新内容" },
+        bookId: { type: "string", description: "Book ID" },
+        content: { type: "string", description: "Full new content for current_focus.md" },
       },
       required: ["bookId", "content"],
     },
   },
   {
     name: "get_book_status",
-    description: "获取书籍状态概览：章数、字数、最近章节审计情况。",
+    description: "Return a book status overview, including chapter count, total words, and recent audit state.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
+        bookId: { type: "string", description: "Book ID" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "read_truth_files",
-    description: "读取书籍的长期记忆（状态卡、资源账本、伏笔池）+ 世界观和卷纲。",
+    description: "Read the book's long-term memory files plus story bible and volume outline.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
+        bookId: { type: "string", description: "Book ID" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "list_books",
-    description: "列出所有书籍。",
+    description: "List all books in the project.",
     parameters: {
       type: "object",
       properties: {},
@@ -144,74 +150,74 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "write_full_pipeline",
-    description: "完整管线：写草稿 → 审计 → 自动修订（如需要）。一键完成。",
+    description: "Run the full pipeline: write draft, audit it, and auto-revise if needed.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        count: { type: "number", description: "连续写几章（默认1）" },
+        bookId: { type: "string", description: "Book ID" },
+        count: { type: "number", description: "How many consecutive chapters to generate (default 1)" },
       },
       required: ["bookId"],
     },
   },
   {
     name: "web_fetch",
-    description: "抓取指定URL的文本内容。用于读取搜索结果中的详细页面。",
+    description: "Fetch readable text content from a URL.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "要抓取的URL" },
-        maxChars: { type: "number", description: "最大返回字符数（默认8000）" },
+        url: { type: "string", description: "URL to fetch" },
+        maxChars: { type: "number", description: "Maximum characters to return (default 8000)" },
       },
       required: ["url"],
     },
   },
   {
     name: "import_style",
-    description: "从参考文本生成文风指南（统计 + LLM定性分析）。生成 style_profile.json 和 style_guide.md。",
+    description: "Generate a style guide from reference text and save `style_profile.json` plus `style_guide.md`.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "目标书籍ID" },
-        referenceText: { type: "string", description: "参考文本（至少2000字）" },
+        bookId: { type: "string", description: "Target book ID" },
+        referenceText: { type: "string", description: "Reference text (at least 2000 characters)" },
       },
       required: ["bookId", "referenceText"],
     },
   },
   {
     name: "import_canon",
-    description: "从正传导入正典参照，生成 parent_canon.md，启用番外写作和审计模式。",
+    description: "Import canon from a parent book into `parent_canon.md` for spinoff writing and audit modes.",
     parameters: {
       type: "object",
       properties: {
-        targetBookId: { type: "string", description: "番外书籍ID" },
-        parentBookId: { type: "string", description: "正传书籍ID" },
+        targetBookId: { type: "string", description: "Spinoff book ID" },
+        parentBookId: { type: "string", description: "Parent canon book ID" },
       },
       required: ["targetBookId", "parentBookId"],
     },
   },
   {
     name: "import_chapters",
-    description: "【整书重导】导入已有章节。从完整文本中自动分割所有章节，逐章分析并重建全部真相文件。这是整书级操作，不是补某一章的工具。导入后可用 write_draft 续写。",
+    description: "Whole-book reimport. Split an existing manuscript into chapters, analyze them, and rebuild truth files. Not for patching a single missing chapter.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "目标书籍ID" },
-        text: { type: "string", description: "包含多章的完整文本" },
-        splitPattern: { type: "string", description: "章节分割正则（可选，默认匹配'第X章'）" },
+        bookId: { type: "string", description: "Target book ID" },
+        text: { type: "string", description: "Full manuscript text containing multiple chapters" },
+        splitPattern: { type: "string", description: "Optional chapter split regex" },
       },
       required: ["bookId", "text"],
     },
   },
   {
     name: "write_truth_file",
-    description: "【整文件覆盖】直接替换书的真相文件内容。用于扩展大纲、修改世界观、调整规则。注意：这是整文件覆盖写入，不是追加；不要用来改 current_state.md 的章节进度指针或 hack 章节号；不要用来补空章节。",
+    description: "Replace a truth file with full new content. Use for planned rule or outline edits, not for hacking progress or filling missing chapters.",
     parameters: {
       type: "object",
       properties: {
-        bookId: { type: "string", description: "书籍ID" },
-        fileName: { type: "string", description: "文件名（如 volume_outline.md、story_bible.md、book_rules.md、current_state.md、pending_hooks.md）" },
-        content: { type: "string", description: "新的完整文件内容" },
+        bookId: { type: "string", description: "Book ID" },
+        fileName: { type: "string", description: "Truth file name, such as volume_outline.md or story_bible.md" },
+        content: { type: "string", description: "Full replacement content" },
       },
       required: ["bookId", "fileName", "content"],
     },
@@ -237,70 +243,70 @@ export async function runAgentLoop(
   const messages: AgentMessage[] = [
     {
       role: "system",
-      content: `你是 InkOS 小说写作 Agent。用户是小说作者，你帮他管理从建书到成稿的全过程。
+      content: `You are the InkOS fiction-writing agent. The user is a novelist, and you manage the workflow from book creation to finished chapters.
 
-## 工具
+## Tools
 
-| 工具 | 作用 |
-|------|------|
-| list_books | 列出所有书 |
-| get_book_status | 查看书的章数、字数、审计状态 |
-| read_truth_files | 读取长期记忆（状态卡、资源账本、伏笔池）和设定（世界观、卷纲、本书规则） |
-| create_book | 建书，生成世界观、卷纲、本书规则（自动加载题材 genre profile） |
-| plan_chapter | 先生成 chapter intent，确认本章目标/冲突/优先级 |
-| compose_chapter | 再生成 runtime context/rule stack，确认实际输入 |
-| write_draft | 写【下一章】草稿（只能续写最新章之后，不能补历史章） |
-| audit_chapter | 审计章节（32维度，按题材条件启用，含AI痕迹+敏感词检测） |
-| revise_chapter | 修订章节文字质量（不能补空章/改章号，五种模式） |
-| update_author_intent | 更新书级长期意图 author_intent.md |
-| update_current_focus | 更新当前关注点 current_focus.md |
-| write_full_pipeline | 完整管线：写 → 审 → 改（如需要） |
-| scan_market | 扫描平台排行榜，分析市场趋势 |
-| web_fetch | 抓取指定URL的文本内容 |
-| import_style | 从参考文本生成文风指南（统计+LLM分析） |
-| import_canon | 从正传导入正典参照，启用番外模式 |
-| import_chapters | 【整书重导】导入全部已有章节并重建真相文件 |
-| write_truth_file | 【整文件覆盖】替换真相文件内容，不能用来改章节进度 |
+| Tool | Purpose |
+|------|---------|
+| list_books | List all books |
+| get_book_status | Inspect chapter count, word count, and audit state |
+| read_truth_files | Read long-term memory plus story bible, outline, and book rules |
+| create_book | Create a new book and generate its foundation from the genre profile |
+| plan_chapter | Generate the next chapter intent before drafting |
+| compose_chapter | Build runtime context and rule stack before drafting |
+| write_draft | Write only the next chapter after the latest existing chapter |
+| audit_chapter | Audit a chapter across continuity, heuristics, and quality dimensions |
+| revise_chapter | Revise an existing chapter without changing plot direction |
+| update_author_intent | Replace the long-term book intent document |
+| update_current_focus | Replace the short-horizon steering document |
+| write_full_pipeline | Run write → audit → revise in one step |
+| scan_market | Analyze live platform market trends |
+| web_fetch | Fetch readable text from a URL |
+| import_style | Build a style guide from reference text |
+| import_canon | Import canon from a parent book for spinoff mode |
+| import_chapters | Reimport a full manuscript and rebuild truth files |
+| write_truth_file | Replace a truth file in full |
 
-## 长期记忆
+## Long-Term Memory
 
-每本书有两层控制面：
-- **author_intent.md** — 这本书长期想成为什么
-- **current_focus.md** — 最近 1-3 章要把注意力拉回哪里
+Each book has two steering documents:
+- **author_intent.md** — what this book wants to become over the long run
+- **current_focus.md** — where the next 1-3 chapters should focus
 
-以及七个长期记忆文件，是 Agent 写作和审计的事实依据：
-- **current_state.md** — 角色位置、关系、已知信息、当前冲突
-- **particle_ledger.md** — 物品/资源账本，每笔增减有据可查
-- **pending_hooks.md** — 已埋伏笔、推进状态、预期回收时机
-- **chapter_summaries.md** — 每章压缩摘要（人物、事件、伏笔、情绪）
-- **subplot_board.md** — 支线进度板
-- **emotional_arcs.md** — 角色情感弧线
-- **character_matrix.md** — 角色交互矩阵与信息边界
+Seven long-term memory files provide the factual basis for writing and auditing:
+- **current_state.md** — current locations, relationships, known facts, and conflicts
+- **particle_ledger.md** — items and resources with accountable deltas
+- **pending_hooks.md** — planted hooks, progress, and expected payoff cadence
+- **chapter_summaries.md** — compressed per-chapter summaries
+- **subplot_board.md** — subplot progress board
+- **emotional_arcs.md** — character emotional arcs
+- **character_matrix.md** — interaction matrix and information boundaries
 
-## 管线逻辑
+## Pipeline Logic
 
-- audit 返回 passed=true → 不需要 revise
-- audit 返回 passed=false 且有 critical → 调 revise，改完可以再 audit
-- write_full_pipeline 会自动走完 写→审→改，适合不需要中间干预的场景
+- If audit_chapter returns passed=true, revision is unnecessary.
+- If audit_chapter returns passed=false with critical issues, use revise_chapter, then optionally audit again.
+- write_full_pipeline automatically runs write → audit → revise and is best when no manual intervention is needed.
 
-## 规则
+## Rules
 
-- 用户提供了题材/创意但没说要扫描市场 → 跳过 scan_market，直接 create_book
-- 用户说了书名/bookId → 直接操作，不需要先 list_books
-- 每完成一步，简要汇报进展
-- 当用户要求“先把注意力拉回某条线”时，优先 update_current_focus，然后 plan_chapter / compose_chapter，再决定是否 write_draft 或 write_full_pipeline
-- 仿写流程：用户提供参考文本 → import_style → 生成 style_guide.md，后续写作自动参照
-- 番外流程：先 create_book 建番外书 → import_canon 导入正传正典 → 然后正常 write_draft
-- 续写流程：用户提供已有章节 → import_chapters → 然后 write_draft 续写
+- If the user provides a concept or genre without explicitly asking for market scanning, skip scan_market and go straight to create_book.
+- If the user already gave a title or bookId, act directly instead of calling list_books first.
+- Briefly report progress after each major step.
+- If the user wants to pull focus back to a specific thread, prefer update_current_focus, then plan_chapter or compose_chapter, then decide whether to draft.
+- Style imitation flow: reference text → import_style → future drafting uses the generated style guide.
+- Spinoff flow: create_book → import_canon → normal drafting.
+- Continuation flow from existing manuscript: import_chapters → write_draft.
 
-## 禁止事项（严格遵守）
+## Hard Constraints
 
-- 不要用 write_draft 补历史中间章节。write_draft 只能写【当前最新章之后的下一章】
-- 不要用 import_chapters 修补某一个空章。import_chapters 是整书级重导工具
-- 不要用 write_truth_file 修改 current_state.md 的章节进度来"骗"系统跳到某一章
-- 不要用 revise_chapter 补缺失章节或改章节号。revise 只做文字质量修订
-- 用户说"补第 N 章"或"第 N 章是空的"时，先用 get_book_status 和 read_truth_files 判断真实状态，再决定用哪个工具
-- 不要在没有确认书籍状态的情况下直接调用写作工具`,
+- Never use write_draft to fill historical gaps. It can only write the next chapter after the latest existing chapter.
+- Never use import_chapters to patch a single missing chapter. It is a whole-book reimport tool.
+- Never use write_truth_file to hack current_state.md progress and force the system to jump chapters.
+- Never use revise_chapter to create missing chapters or change chapter numbers.
+- If the user asks to fill chapter N or says chapter N is empty, inspect real state first with get_book_status and read_truth_files.
+- Do not call writing tools before you have confirmed the book state.`,
     },
     { role: "user", content: instruction },
   ];
@@ -309,7 +315,9 @@ export async function runAgentLoop(
   let lastAssistantMessage = "";
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const result = await chatWithTools(config.client, config.model, messages, TOOLS);
+    const result = await chatWithTools(config.client, config.model, messages, TOOLS, {
+      projectRoot: config.projectRoot,
+    });
 
     // Push assistant message to history
     messages.push({
@@ -420,17 +428,15 @@ export async function executeAgentTool(
     case "create_book": {
       const now = new Date().toISOString();
       const title = args.title as string;
-      const bookId = title
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fff]/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 30);
+      const language = resolveCreateBookLanguage(args.language);
+      const bookId = slugifyBookId(title);
 
       const book = {
         id: bookId,
         title,
-        platform: ((args.platform as string) ?? "tomato") as Platform,
-        genre: ((args.genre as string) ?? "xuanhuan") as Genre,
+        platform: resolveCreateBookPlatform(args.platform, language),
+        genre: resolveCreateBookGenre(args.genre, language),
+        language,
         status: "outlining" as const,
         targetChapters: 200,
         chapterWordCount: 3000,
@@ -634,6 +640,73 @@ function containsProgressManipulation(content: string): boolean {
     /进度\s*[:：]\s*\d+/,
   ];
   return patterns.some((pattern) => pattern.test(content));
+}
+
+const CREATE_BOOK_DEFAULTS: Record<WritingLanguage, { platform: Platform; genre: Genre }> = {
+  ko: {
+    platform: "naver-series",
+    genre: "modern-fantasy",
+  },
+  zh: {
+    platform: "tomato",
+    genre: "xuanhuan",
+  },
+  en: {
+    platform: "other",
+    genre: "progression",
+  },
+};
+
+function resolveCreateBookLanguage(language: unknown): WritingLanguage {
+  const value = typeof language === "string" ? language : undefined;
+  return isWritingLanguage(value)
+    ? value
+    : "ko";
+}
+
+function resolveCreateBookPlatform(platform: unknown, language: WritingLanguage): Platform {
+  if (typeof platform === "string") {
+    switch (platform) {
+      case "tomato":
+      case "feilu":
+      case "qidian":
+      case "naver-series":
+      case "kakao-page":
+      case "munpia":
+      case "novelpia":
+      case "other":
+        return platform;
+      default:
+        break;
+    }
+  }
+
+  return CREATE_BOOK_DEFAULTS[language].platform;
+}
+
+function resolveCreateBookGenre(genre: unknown, language: WritingLanguage): Genre {
+  if (typeof genre === "string" && genre.trim()) {
+    return genre;
+  }
+  return CREATE_BOOK_DEFAULTS[language].genre;
+}
+
+function slugifyBookId(title: string): string {
+  const slug = title
+    .normalize("NFKC")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\u4e00-\u9fff\u3130-\u318f\u1100-\u11ff\uac00-\ud7a3]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 64);
+
+  if (slug) {
+    return slug;
+  }
+
+  return `book-${Date.now().toString(36)}`;
 }
 
 /** Export tool definitions so external systems can reference them. */

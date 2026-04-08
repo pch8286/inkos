@@ -1,4 +1,5 @@
 import type { HookAgenda } from "../models/input-governance.js";
+import type { WritingLanguage } from "../models/language.js";
 import type { HookRecord, HookStatus } from "../models/runtime-state.js";
 import type { StoredHook } from "../state/memory-db.js";
 import { resolveHookPayoffTiming } from "./hook-lifecycle.js";
@@ -14,7 +15,7 @@ export function buildPlannerHookAgenda(params: {
   readonly hooks: ReadonlyArray<StoredHook>;
   readonly chapterNumber: number;
   readonly targetChapters?: number;
-  readonly language?: "zh" | "en";
+  readonly language?: WritingLanguage;
   readonly maxMustAdvance?: number;
   readonly maxEligibleResolve?: number;
   readonly maxStaleDebt?: number;

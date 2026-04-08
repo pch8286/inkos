@@ -1,6 +1,7 @@
 ---
 name: 通用
 id: other
+language: zh
 chapterTypes: ["推进章", "布局章", "过渡章", "回收章"]
 fatigueWords: ["震惊", "不可思议", "难以置信", "深吸一口气", "仿佛", "不禁", "宛如", "竟然"]
 numericalSystem: false

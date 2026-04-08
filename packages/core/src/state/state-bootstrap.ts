@@ -10,6 +10,7 @@ import {
   type HookStatus,
   type StateManifest,
 } from "../models/runtime-state.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import type { Fact, StoredHook } from "./memory-db.js";
 import { normalizeHookPayoffTiming } from "../utils/hook-lifecycle.js";
 import {
@@ -380,13 +381,13 @@ function parseCurrentStateStateMarkdown(
   });
 }
 
-async function resolveRuntimeLanguage(bookDir: string): Promise<"zh" | "en"> {
+async function resolveRuntimeLanguage(bookDir: string): Promise<WritingLanguage> {
   try {
     const raw = await readFile(join(bookDir, "book.json"), "utf-8");
     const parsed = JSON.parse(raw) as { language?: unknown };
-    return parsed.language === "zh" ? "zh" : "en";
+    return resolveWritingLanguage(typeof parsed.language === "string" ? parsed.language : undefined);
   } catch {
-    return "en";
+    return "ko";
   }
 }
 

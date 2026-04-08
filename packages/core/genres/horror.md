@@ -1,6 +1,7 @@
 ---
 name: 恐怖
 id: horror
+language: zh
 chapterTypes: ["氛围章", "事件章", "揭示章", "过渡章", "回收章"]
 fatigueWords: ["毛骨悚然", "不寒而栗", "浑身发冷", "头皮发麻", "鸡皮疙瘩", "心跳加速", "仿佛", "不禁", "宛如", "竟然"]
 numericalSystem: false

@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
+import { resolveStudioLanguage, type StudioLanguage } from "../shared/language";
+import { GlobalConfigPanel } from "../components/GlobalConfigPanel";
+import { MODEL_SUGGESTIONS, PROVIDER_OPTIONS, isCliOAuthProvider } from "../shared/llm";
 
 const ROUTING_AGENTS = [
   "writer",
@@ -23,7 +26,7 @@ type OverridesMap = Record<string, AgentOverride>;
 
 interface ProjectInfo {
   readonly name: string;
-  readonly language: string;
+  readonly language: StudioLanguage;
   readonly model: string;
   readonly provider: string;
   readonly baseUrl: string;
@@ -94,7 +97,7 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
         <span className="text-border">/</span>
@@ -105,10 +108,12 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         <h1 className="font-serif text-3xl">{t("config.title")}</h1>
         {!editing && (
           <button onClick={startEdit} className={`px-3 py-2 text-xs rounded-md ${c.btnSecondary}`}>
-            Edit
+            {t("config.edit")}
           </button>
         )}
       </div>
+
+      <GlobalConfigPanel theme={theme} t={t} />
 
       <div className={`border ${c.cardStatic} rounded-lg divide-y divide-border/40`}>
         <Row label={t("config.project")} value={data.name} />
@@ -123,7 +128,11 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
               value={form.language as string}
               onChange={(v) => setForm({ ...form, language: v })}
               type="select"
-              options={[{ value: "zh", label: t("config.chinese") }, { value: "en", label: t("config.english") }]}
+              options={[
+                { value: "ko", label: t("config.korean") },
+                { value: "zh", label: t("config.chinese") },
+                { value: "en", label: t("config.english") },
+              ]}
               c={c}
             />
             <EditRow
@@ -151,7 +160,11 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           </>
         ) : (
           <>
-            <Row label={t("config.language")} value={data.language === "en" ? t("config.english") : t("config.chinese")} />
+            <Row label={t("config.language")} value={resolveStudioLanguage(data.language) === "ko"
+              ? t("config.korean")
+              : resolveStudioLanguage(data.language) === "en"
+                ? t("config.english")
+                : t("config.chinese")} />
             <Row label={t("config.temperature")} value={String(data.temperature)} mono />
             <Row label={t("config.maxTokens")} value={String(data.maxTokens)} mono />
             <Row label={t("config.stream")} value={data.stream ? t("config.enabled") : t("config.disabled")} />
@@ -235,26 +248,45 @@ function ModelRoutingSection({ theme, t }: { theme: Theme; t: TFunction }) {
           <tbody>
             {ROUTING_AGENTS.map((agent) => {
               const row = overrides[agent] ?? emptyOverride();
+              const modelOptions = row.provider && row.provider in MODEL_SUGGESTIONS
+                ? MODEL_SUGGESTIONS[row.provider as keyof typeof MODEL_SUGGESTIONS]
+                : [];
+              const modelListId = `routing-model-${agent}`;
               return (
                 <tr key={agent} className="border-b border-border/40 last:border-b-0">
                   <td className="px-4 py-2 font-mono text-foreground/80">{agent}</td>
                   <td className="px-4 py-2">
                     <input
                       type="text"
+                      list={modelListId}
                       value={row.model}
                       onChange={(e) => updateAgent(agent, "model", e.target.value)}
                       placeholder={t("config.default")}
                       className={`${c.input} rounded px-2 py-1 text-sm w-full`}
                     />
+                    <datalist id={modelListId}>
+                      {modelOptions.map((model) => (
+                        <option key={model} value={model} />
+                      ))}
+                    </datalist>
                   </td>
                   <td className="px-4 py-2">
-                    <input
-                      type="text"
+                    <select
                       value={row.provider}
-                      onChange={(e) => updateAgent(agent, "provider", e.target.value)}
-                      placeholder={t("config.optional")}
+                      onChange={(e) => {
+                        const provider = e.target.value;
+                        updateAgent(agent, "provider", provider);
+                        if (isCliOAuthProvider(provider) && row.baseUrl) {
+                          updateAgent(agent, "baseUrl", "");
+                        }
+                      }}
                       className={`${c.input} rounded px-2 py-1 text-sm w-full`}
-                    />
+                    >
+                      <option value="">{t("config.optional")}</option>
+                      {PROVIDER_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-4 py-2">
                     <input
@@ -262,7 +294,8 @@ function ModelRoutingSection({ theme, t }: { theme: Theme; t: TFunction }) {
                       value={row.baseUrl}
                       onChange={(e) => updateAgent(agent, "baseUrl", e.target.value)}
                       placeholder={t("config.optional")}
-                      className={`${c.input} rounded px-2 py-1 text-sm w-full`}
+                      disabled={isCliOAuthProvider(row.provider)}
+                      className={`${c.input} rounded px-2 py-1 text-sm w-full disabled:opacity-50`}
                     />
                   </td>
                 </tr>

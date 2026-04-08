@@ -18,6 +18,7 @@ import { analyzeAITells } from "./ai-tells.js";
 import type { ChapterTrace, ContextPackage, RuleStack } from "../models/input-governance.js";
 import type { LengthSpec } from "../models/length-governance.js";
 import type { RuntimeStateDelta } from "../models/runtime-state.js";
+import { resolveWritingLanguage, type WritingLanguage } from "../models/language.js";
 import { buildLengthSpec, countChapterLength } from "../utils/length-metrics.js";
 import { filterHooks, filterSummaries, filterSubplots, filterEmotionalArcs, filterCharacterMatrix } from "../utils/context-filter.js";
 import { buildGovernedMemoryEvidenceBlocks } from "../utils/governed-context.js";
@@ -31,7 +32,7 @@ import { extractPOVFromOutline, filterMatrixByPOV, filterHooksByPOV } from "../u
 import { parseCreativeOutput } from "./writer-parser.js";
 import { buildRuntimeStateArtifacts, saveRuntimeStateSnapshot, type RuntimeStateArtifacts } from "../state/runtime-state-store.js";
 import type { RuntimeStateSnapshot } from "../state/state-reducer.js";
-import { parsePendingHooksMarkdown } from "../utils/memory-retrieval.js";
+import { parsePendingHooksMarkdown, renderHookSnapshot } from "../utils/memory-retrieval.js";
 import { analyzeHookHealth } from "../utils/hook-health.js";
 import { buildEnglishVarianceBrief } from "../utils/long-span-fatigue.js";
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
@@ -103,15 +104,17 @@ export class WriterAgent extends BaseAgent {
     return "writer";
   }
 
-  private localize(language: "zh" | "en", messages: { zh: string; en: string }): string {
-    return language === "en" ? messages.en : messages.zh;
+  private localize(language: WritingLanguage, messages: { zh: string; en: string; ko?: string }): string {
+    if (language === "en") return messages.en;
+    if (language === "ko") return messages.ko ?? messages.zh;
+    return messages.zh;
   }
 
-  private logInfo(language: "zh" | "en", messages: { zh: string; en: string }): void {
+  private logInfo(language: WritingLanguage, messages: { zh: string; en: string; ko?: string }): void {
     this.ctx.logger?.info(this.localize(language, messages));
   }
 
-  private logWarn(language: "zh" | "en", messages: { zh: string; en: string }): void {
+  private logWarn(language: WritingLanguage, messages: { zh: string; en: string; ko?: string }): void {
     this.ctx.logger?.warn(this.localize(language, messages));
   }
 
@@ -555,6 +558,7 @@ export class WriterAgent extends BaseAgent {
       zh: "阶段 2b：把观察结果回写到真相文件",
       en: "Phase 2b: reflecting observations into truth files",
     });
+    const normalizedHooks = renderHookSnapshot(parsePendingHooksMarkdown(params.hooks), resolvedLang);
     const settlerSystem = buildSettlerSystemPrompt(
       params.book, params.genreProfile, params.bookRules, resolvedLang,
     );
@@ -573,7 +577,7 @@ export class WriterAgent extends BaseAgent {
       content: params.content,
       currentState: params.currentState,
       ledger: params.ledger,
-      hooks: params.hooks,
+      hooks: normalizedHooks,
       chapterSummaries: params.chapterSummaries,
       subplotBoard: params.subplotBoard,
       emotionalArcs: params.emotionalArcs,
@@ -642,7 +646,7 @@ export class WriterAgent extends BaseAgent {
     bookDir: string,
     output: WriteChapterOutput,
     numericalSystem: boolean = true,
-    language: "zh" | "en" = "zh",
+    language: WritingLanguage = "ko",
   ): Promise<void> {
     const chaptersDir = join(bookDir, "chapters");
     const storyDir = join(bookDir, "story");
@@ -707,7 +711,7 @@ export class WriterAgent extends BaseAgent {
     readonly dialogueFingerprints?: string;
     readonly relevantSummaries?: string;
     readonly parentCanon?: string;
-    readonly language?: "zh" | "en";
+    readonly language?: WritingLanguage;
   }): string {
     const contextBlock = params.externalContext
       ? `\n## 外部指令\n以下是来自外部系统的创作指令，请在本章中融入：\n\n${params.externalContext}\n`
@@ -746,7 +750,10 @@ export class WriterAgent extends BaseAgent {
 本书是番外作品。以下正典约束不可违反，角色不得引用超出其信息边界的信息。
 ${params.parentCanon}\n`
       : "";
-    const lengthRequirementBlock = this.buildLengthRequirementBlock(params.lengthSpec, params.language ?? "zh");
+    const lengthRequirementBlock = this.buildLengthRequirementBlock(
+      params.lengthSpec,
+      resolveWritingLanguage(params.language),
+    );
 
     if (params.language === "en") {
       return `Write chapter ${params.chapterNumber}.
@@ -812,7 +819,7 @@ ${lengthRequirementBlock}
     readonly ruleStack: RuleStack;
     readonly trace?: ChapterTrace;
     readonly lengthSpec: LengthSpec;
-    readonly language?: "zh" | "en";
+    readonly language?: WritingLanguage;
     readonly varianceBrief?: string;
     readonly selectedEvidenceBlock?: string;
   }): string {
@@ -837,7 +844,10 @@ ${lengthRequirementBlock}
     const traceNotes = params.trace && params.trace.notes.length > 0
       ? params.trace.notes.map((note) => `- ${note}`).join("\n")
       : "- none";
-    const lengthRequirementBlock = this.buildLengthRequirementBlock(params.lengthSpec, params.language ?? "zh");
+    const lengthRequirementBlock = this.buildLengthRequirementBlock(
+      params.lengthSpec,
+      resolveWritingLanguage(params.language),
+    );
     const varianceBlock = params.varianceBrief
       ? `\n${params.varianceBrief}\n`
       : "";
@@ -953,7 +963,7 @@ ${lengthRequirementBlock}
     chapterIntent: string,
     contextPackage: ContextPackage,
     ruleStack: RuleStack,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): string {
     const selectedContext = contextPackage.selectedContext
       .map((entry) => `- ${entry.source}: ${entry.reason}${entry.excerpt ? ` | ${entry.excerpt}` : ""}`)
@@ -995,7 +1005,7 @@ ${selectedContext || "- none"}
 ${overrides}\n`;
   }
 
-  private buildLengthRequirementBlock(lengthSpec: LengthSpec, language: "zh" | "en"): string {
+  private buildLengthRequirementBlock(lengthSpec: LengthSpec, language: WritingLanguage): string {
     if (language === "en") {
       return `Requirements:
 - Target length: ${lengthSpec.target} words
@@ -1047,7 +1057,7 @@ ${overrides}\n`;
   async saveNewTruthFiles(
     bookDir: string,
     output: WriteChapterOutput,
-    language: "zh" | "en" = "zh",
+    language: WritingLanguage = "ko",
   ): Promise<void> {
     const storyDir = join(bookDir, "story");
     const writes: Array<Promise<void>> = [];
@@ -1151,7 +1161,7 @@ ${overrides}\n`;
   private async buildRuntimeStateArtifactsIfPresent(
     bookDir: string,
     delta: RuntimeStateDelta | undefined,
-    language: "zh" | "en",
+    language: WritingLanguage,
     authoritativeChapterNumber?: number,
     allowReapply?: boolean,
   ): Promise<RuntimeStateArtifacts | null> {
@@ -1170,7 +1180,7 @@ ${overrides}\n`;
   private async resolveRuntimeStateArtifactsForOutput(
     bookDir: string,
     output: WriteChapterOutput,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): Promise<RuntimeStateArtifacts | null> {
     if (!output.runtimeStateDelta) return null;
     const safeDelta = this.normalizeRuntimeStateDeltaChapter(
@@ -1203,7 +1213,7 @@ ${overrides}\n`;
   private async appendChapterSummary(
     storyDir: string,
     summary: string,
-    language: "zh" | "en",
+    language: WritingLanguage,
   ): Promise<void> {
     const summaryPath = join(storyDir, "chapter_summaries.md");
     let existing = "";

@@ -1,6 +1,7 @@
 ---
 name: 玄幻
 id: xuanhuan
+language: zh
 chapterTypes: ["战斗章", "布局章", "过渡章", "回收章"]
 fatigueWords: ["冷笑", "蝼蚁", "倒吸凉气", "瞳孔骤缩", "不可置信", "轰然炸裂", "满场死寂", "难以置信", "仿佛", "不禁", "宛如", "竟然"]
 numericalSystem: true

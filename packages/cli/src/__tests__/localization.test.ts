@@ -11,10 +11,11 @@ import {
   formatWriteNextComplete,
   formatWriteNextProgress,
   formatWriteNextResultLines,
+  resolveCliLanguage,
 } from "../localization.js";
 
 describe("CLI localization", () => {
-  it("formats book-create summaries in both languages", () => {
+  it("formats book-create summaries in all languages", () => {
     expect(formatBookCreateCreating("zh", "山河", "xuanhuan", "tomato"))
       .toBe('创建书籍 "山河"（xuanhuan / tomato）...');
     expect(formatBookCreateCreated("zh", "shan-he")).toBe("已创建书籍：shan-he");
@@ -24,9 +25,14 @@ describe("CLI localization", () => {
       .toBe('Creating book "Harbor" (other / other)...');
     expect(formatBookCreateCreated("en", "harbor")).toBe("Book created: harbor");
     expect(formatBookCreateNextStep("en", "harbor")).toBe("Next: inkos write next harbor");
+
+    expect(formatBookCreateCreating("ko", "내 이야기", "modern-fantasy", "naver-series"))
+      .toBe('책 "내 이야기" (modern-fantasy / naver-series) 생성 중...');
+    expect(formatBookCreateCreated("ko", "k-story")).toBe("책 생성 완료: k-story");
+    expect(formatBookCreateNextStep("ko", "k-story")).toBe("다음 단계: inkos write next k-story");
   });
 
-  it("formats write-next progress and result summaries in both languages", () => {
+  it("formats write-next progress and result summaries in all languages", () => {
     expect(formatWriteNextProgress("zh", 1, 2, "shan-he"))
       .toBe('[1/2] 为「shan-he」撰写章节...');
     expect(formatWriteNextComplete("zh")).toBe("完成。");
@@ -65,6 +71,23 @@ describe("CLI localization", () => {
       "  Issues:",
       "    [critical] continuity: Mismatch",
     ]);
+
+    expect(formatWriteNextProgress("ko", 2, 3, "k-story"))
+      .toBe('[2/3] "k-story" 다음 화 집필 중...');
+    expect(formatWriteNextResultLines("ko", {
+      chapterNumber: 2,
+      title: "첫 번째 화",
+      wordCount: 1300,
+      status: "approved",
+      revised: false,
+      issues: [],
+      auditPassed: true,
+    })).toEqual([
+      "  2화: 첫 번째 화",
+      "  분량: 1300자",
+      "  감사: 통과",
+      "  상태: approved",
+    ]);
   });
 
   it("formats import summaries with language-specific units and action hints", () => {
@@ -101,6 +124,23 @@ describe("CLI localization", () => {
       "",
       'Run "inkos write next harbor" to continue writing.',
     ]);
+
+    expect(formatImportChaptersDiscovery("ko", 8, "k-story"))
+      .toBe('8화를 발견했습니다. "k-story"에 가져올 준비를 합니다.');
+    expect(formatImportChaptersResume("ko", 4)).toBe("4화부터 다시 가져옵니다.");
+    expect(formatImportChaptersComplete("ko", {
+      importedCount: 8,
+      totalWords: 10234,
+      nextChapter: 9,
+      continueBookId: "k-story",
+    })).toEqual([
+      "가져오기 완료:",
+      "  가져온 화수: 8",
+      "  총 분량: 10234자",
+      "  다음 화 번호: 9",
+      "",
+      '"inkos write next k-story"를 실행해 이어서 집필하세요.',
+    ]);
   });
 
   it("formats import-canon prompts in both languages", () => {
@@ -117,5 +157,10 @@ describe("CLI localization", () => {
       "Canon imported: story/parent_canon.md",
       "Writer and auditor will auto-detect this file for spinoff mode.",
     ]);
+  });
+
+  it("defaults to Korean for unknown language inputs", () => {
+    expect(resolveCliLanguage(undefined)).toBe("ko");
+    expect(resolveCliLanguage("unknown")).toBe("ko");
   });
 });

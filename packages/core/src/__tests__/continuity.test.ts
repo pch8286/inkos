@@ -289,4 +289,267 @@ describe("ContinuityAuditor", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("localizes Korean continuity prompts, including reduced control block", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-ko-prompt-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-book",
+          title: "Korean Book",
+          genre: "korean-other",
+          platform: "royalroad",
+          chapterWordCount: 800,
+          targetChapters: 60,
+          status: "active",
+          language: "ko",
+          createdAt: "2026-03-23T00:00:00.000Z",
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- The key was hidden at the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# Subplot Board\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# Emotional Arcs\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# Character Matrix\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nReturn to the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Maintain concise sentence rhythm.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: JSON.stringify({
+        passed: true,
+        issues: [],
+        summary: "ok",
+      }),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await auditor.auditChapter(
+        bookDir,
+        "Chapter body.",
+        1,
+        "korean-other",
+        {
+          chapterIntent: "# Chapter Intent\n\nFocus on the key.",
+          contextPackage: {
+            chapter: 1,
+            selectedContext: [
+              {
+                source: "story/current_state.md",
+                reason: "Current status anchor",
+                excerpt: "key hidden",
+              },
+            ],
+          },
+          ruleStack: {
+            layers: [{ id: "L4", name: "current_task", precedence: 70, scope: "local" }],
+            sections: {
+              hard: ["current_state"],
+              soft: ["continuity"],
+              diagnostic: ["continuity_audit"],
+            },
+            overrideEdges: [],
+            activeOverrides: [],
+          },
+        },
+      );
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+      const userPrompt = messages?.[1]?.content ?? "";
+
+      expect(systemPrompt).toContain("감사 차원:");
+      expect(systemPrompt).toContain("캐릭터 붕괴 검사");
+      expect(systemPrompt).toContain("표시하세요.");
+      expect(systemPrompt).not.toContain("Hook Check");
+      expect(systemPrompt).not.toContain("伏笔检查");
+
+      expect(userPrompt).toContain("제1화를 감사하세요.");
+      expect(userPrompt).toContain("## 현재 상태 카드");
+      expect(userPrompt).toContain("## 본문 통제 입력");
+      expect(userPrompt).toContain("### 선택된 근거");
+      expect(userPrompt).toContain("### 규칙 스택");
+      expect(userPrompt).not.toContain("请审查第1章");
+      expect(userPrompt).not.toContain("## 当前状态卡");
+      expect(userPrompt).not.toContain("### 规则栈");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses Korean parse-failure messages when model output is not valid JSON", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-ko-parse-failure-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-book",
+          title: "Korean Book",
+          genre: "korean-other",
+          platform: "royalroad",
+          chapterWordCount: 800,
+          targetChapters: 60,
+          status: "active",
+          language: "ko",
+          createdAt: "2026-03-23T00:00:00.000Z",
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- The key was hidden at the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# Subplot Board\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# Emotional Arcs\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# Character Matrix\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nReturn to the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Maintain concise sentence rhythm.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: "bad output",
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      const result = await auditor.auditChapter(
+        bookDir,
+        "Chapter body.",
+        1,
+        "korean-other",
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.summary).toBe("감사 출력 파싱 실패");
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0]?.category).toBe("시스템 오류");
+      expect(result.issues[0]?.description).toContain("유효한 JSON이 아니어서");
+      expect(result.issues[0]?.suggestion).toContain("더 강한 모델");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults missing issue category to Korean in parsed JSON", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-ko-missing-category-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-book",
+          title: "Korean Book",
+          genre: "korean-other",
+          platform: "royalroad",
+          chapterWordCount: 800,
+          targetChapters: 60,
+          status: "active",
+          language: "ko",
+          createdAt: "2026-03-23T00:00:00.000Z",
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- The key was hidden at the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# Subplot Board\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# Emotional Arcs\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# Character Matrix\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nReturn to the shrine.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Maintain concise sentence rhythm.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: JSON.stringify({
+        passed: false,
+        issues: [{ severity: "warning", description: "설명", suggestion: "수정" }],
+        summary: "요약",
+      }),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      const result = await auditor.auditChapter(
+        bookDir,
+        "Chapter body.",
+        1,
+        "korean-other",
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.summary).toBe("요약");
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0]?.category).toBe("미분류");
+      expect(result.issues[0]?.description).toBe("설명");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

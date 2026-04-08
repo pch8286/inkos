@@ -22,7 +22,9 @@ Open-source CLI AI Agent that autonomously writes, audits, and revises novels �
 
 **InkOS Studio is here!** — run `inkos studio` to launch a local web workbench. Book management, chapter review & editing, real-time writing progress, market radar, analytics, AI detection, style analysis, genre management, daemon control, truth file editing — everything the CLI does, now visual.
 
-**Native English novel writing now supported！** — 10 built-in English genre profiles with dedicated pacing rules, fatigue word lists, and audit dimensions. Set `--lang en` and go.
+**Korean is the default writing language now.** `ko` is the default when no `--lang` is specified, and `--lang en` and `--lang zh` are also supported. English and Chinese genre profiles remain available.
+Current supported writing languages: `ko`, `zh`, `en`.  
+Korean platform presets: `naver-series`, `kakao-page`, `munpia`, `novelpia`.
 
 ## Quick Start
 
@@ -50,19 +52,34 @@ Once installed, Claw can invoke InkOS atomic commands and control-surface operat
 
 ```bash
 inkos config set-global \
-  --lang en \
-  --provider <openai|anthropic|custom> \
+  --lang ko \
+  --provider <openai|anthropic|custom|gemini-cli|codex-cli> \
   --base-url <API endpoint> \
   --api-key <your API key> \
   --model <model name>
 
-# provider: openai / anthropic / custom (use custom for OpenAI-compatible proxies)
+# provider: openai / anthropic / custom / gemini-cli / codex-cli
+# gemini-cli: OAuth-backed local Gemini CLI, so --base-url and --api-key are not required
+# codex-cli: OAuth-backed local Codex CLI, so --base-url and --api-key are not required
 # base-url: your API provider URL
 # api-key: your API key
 # model: your model name
 ```
 
-`--lang en` sets English as the default writing language for all projects. Saved to `~/.inkos/.env`. New projects just work without extra config.
+Gemini CLI OAuth example:
+
+```bash
+inkos config set-global --lang ko --provider gemini-cli --model auto-gemini-3
+```
+
+Codex CLI OAuth example:
+
+```bash
+codex login
+inkos config set-global --lang ko --provider codex-cli --model gpt-5.4
+```
+
+`--lang ko` sets Korean as the default writing language for all projects. Saved to `~/.inkos/.env`. New projects just work without extra config.
 
 **Option 2: Per-project `.env`**
 
@@ -73,18 +90,19 @@ inkos init my-novel     # Initialize project
 
 ```bash
 # Required
-INKOS_LLM_PROVIDER=                               # openai / anthropic / custom (use custom for any OpenAI-compatible API)
-INKOS_LLM_BASE_URL=                               # API endpoint
+INKOS_LLM_PROVIDER=                               # openai / anthropic / custom / gemini-cli / codex-cli
+INKOS_LLM_BASE_URL=                               # API endpoint (leave blank for CLI OAuth providers)
 INKOS_LLM_API_KEY=                                 # API Key
-INKOS_LLM_MODEL=                                   # Model name
+INKOS_LLM_MODEL=                                   # Model name (for example auto-gemini-3 / gpt-5.4)
 
 # Language (defaults to global setting or genre default)
-# INKOS_DEFAULT_LANGUAGE=en                        # en or zh
+# INKOS_DEFAULT_LANGUAGE=                           # ko / zh / en
 
 # Optional
 # INKOS_LLM_TEMPERATURE=0.7                       # Temperature
 # INKOS_LLM_MAX_TOKENS=8192                        # Max output tokens
 # INKOS_LLM_THINKING_BUDGET=0                      # Anthropic extended thinking budget
+# INKOS_GEMINI_CLI_SOURCE_HOME=~                   # Optional: where Gemini CLI OAuth creds live
 ```
 
 Project `.env` overrides global config. Skip it if no override needed.
@@ -121,10 +139,10 @@ Addresses three systemic long-form writing problems: **context bloat after 20+ c
 
 ### Write Your First Book
 
-English is the default for English genre profiles. Pick a genre and go:
+Korean is default in this fork, while per-genre defaults and `--lang` overrides still apply:
 
 ```bash
-inkos book create --title "The Last Delver" --genre litrpg     # LitRPG novel (English by default)
+inkos book create --title "마지막 델버" --genre modern-fantasy --platform naver-series --lang ko  # Korean web-novel genre + platform example
 inkos write next my-book          # Write next chapter (full pipeline: draft → audit → revise)
 inkos status                      # Check status
 inkos review list my-book         # Review drafts
@@ -132,7 +150,7 @@ inkos review approve-all my-book  # Batch approve
 inkos export my-book --format epub  # Export EPUB (read on phone/Kindle)
 ```
 
-Language is set per-genre by default. Override explicitly with `--lang en` or `--lang zh`. Use `inkos genre list` to see all available genres and their default languages.
+Language defaults follow each genre and can be overridden explicitly with `--lang ko`, `--lang zh`, or `--lang en`. Use `inkos genre list` to inspect available defaults.
 
 <p align="center">
   <img src="assets/screenshot-terminal.png" width="700" alt="Terminal screenshot">
@@ -140,9 +158,9 @@ Language is set per-genre by default. Override explicitly with `--lang en` or `-
 
 ---
 
-## English Genre Profiles
+## Built-in Genre Profiles
 
-InkOS ships with 10 English-native genre profiles. Each includes genre-specific rules, pacing, fatigue word detection, and audit dimensions:
+InkOS ships with 10 English-native, 5 Chinese web novel, and 5 Korean genre profiles. Each includes genre-specific rules, pacing, fatigue word detection, and audit dimensions.
 
 | Genre | Key Mechanics |
 |-------|--------------|
@@ -158,6 +176,18 @@ InkOS ships with 10 English-native genre profiles. Each includes genre-specific 
 | **Cozy Fantasy** | Low-stakes pacing, comfort-first tone |
 
 Also supports 5 Chinese web novel genres (xuanhuan, xianxia, urban, horror, other) for bilingual creators.
+
+### Korean Genre Profiles
+
+`modern-fantasy`, `fantasy`, `murim`, `romance-fantasy`, `korean-other`
+
+| Genre | Key Mechanics |
+|-------|--------------|
+| **Modern Fantasy** | Hook-first chapter rhythm with rapid conflict escalation |
+| **Fantasy** | Flexible power/fantasy system with configurable world rules |
+| **Murim** | Martial progression beats, honor-based conflict escalation |
+| **Romance Fantasy** | Relationship pacing with emotional inversion and resolution cadence |
+| **Korean Other** | General Korean web novel fallback profile |
 
 Every genre includes a **fatigue word list** (e.g., "delve", "tapestry", "testament", "intricate", "pivotal" for LitRPG) — the auditor flags these automatically so your prose doesn't read like every other AI-generated novel.
 
@@ -200,7 +230,7 @@ This generates `story/runtime/chapter-XXXX.intent.md`, `context.json`, `rule-sta
 `draft`, `write next`, and `revise` now share the same conservative length governor:
 
 - `--words` sets a target band, not an exact hard promise
-- Chinese chapters default to `zh_chars`; English chapters default to `en_words`
+- Korean chapters default to `ko_chars` (no spaces), Chinese to `zh_chars`, English to `en_words`
 - If the chapter drifts outside the soft band, InkOS may run one corrective normalization pass (compress or expand) instead of hard-cutting prose
 - If the chapter still misses the hard range after that one pass, InkOS still saves it, but surfaces a visible length warning and telemetry in the result and chapter index
 
@@ -348,7 +378,7 @@ inkos agent "Create a progression fantasy about a mage who can only use one spel
 | Command | Description |
 |---------|-------------|
 | `inkos init [name]` | Initialize project (omit name to init current directory) |
-| `inkos book create` | Create a new book (`--genre`, `--chapter-words`, `--target-chapters`, `--brief <file>`, `--lang en/zh`) |
+| `inkos book create` | Create a new book (`--genre`, `--chapter-words`, `--target-chapters`, `--brief <file>`, `--lang ko/zh/en`) |
 | `inkos book update [id]` | Update book settings (`--chapter-words`, `--target-chapters`, `--status`, `--lang`) |
 | `inkos book list` | List all books |
 | `inkos book delete <id>` | Delete a book and all its data (`--force` to skip confirmation) |
