@@ -238,6 +238,15 @@ const strings = {
   "config.modelSummary": { zh: "当前模型", en: "Current model", ko: "현재 모델" },
   "config.authSummary": { zh: "连接状态", en: "Connection status", ko: "연결 상태" },
   "config.projectWillUse": { zh: "新项目将直接使用这组默认设置。", en: "New projects will use these defaults immediately.", ko: "새 프로젝트는 이 기본 설정을 바로 사용합니다." },
+  "config.activeLlmTitle": { zh: "当前项目 LLM", en: "Current Project LLM", ko: "현재 프로젝트 LLM" },
+  "config.activeLlmHint": { zh: "这里控制当前项目实际使用的 provider/model。Gemini/Codex 登录会复用上方保存的 CLI 认证。", en: "This controls the provider/model the current project actually uses. Gemini/Codex reuse the saved CLI auth above.", ko: "여기서 현재 프로젝트가 실제로 사용할 provider/model을 바꿉니다. Gemini/Codex는 위에 저장된 CLI 인증을 재사용합니다." },
+  "config.globalScopeHint": { zh: "上方保存的是认证与新项目默认值；当前项目切换请看下方。", en: "The panel above stores auth and defaults for new projects; switch the active LLM for this project below.", ko: "위 패널은 인증과 새 프로젝트 기본값을 저장합니다. 현재 프로젝트의 active LLM 전환은 아래에서 합니다." },
+  "config.providerRequired": { zh: "请选择提供方", en: "Provider is required", ko: "제공자를 선택하세요" },
+  "config.modelRequired": { zh: "请输入模型名称", en: "Model is required", ko: "모델을 입력하세요" },
+  "app.llmSettings": { zh: "LLM 设置", en: "LLM Settings", ko: "LLM 설정" },
+  "app.currentProjectLlm": { zh: "当前项目", en: "Current project", ko: "현재 프로젝트" },
+  "app.newProjectDefault": { zh: "新项目默认值", en: "New project default", ko: "새 프로젝트 기본값" },
+  "app.loginRequired": { zh: "需要登录", en: "Login required", ko: "로그인 필요" },
 
   // Bootstrap
   "boot.title": { zh: "先把工作台准备好", en: "Prepare Your Workspace", ko: "작업 공간부터 준비합니다" },

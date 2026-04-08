@@ -10,6 +10,10 @@ export const PROVIDER_OPTIONS = [
   { value: "codex-cli", label: "Codex CLI OAuth" },
 ] as const satisfies ReadonlyArray<{ readonly value: Exclude<LlmProvider, "">; readonly label: string }>;
 
+export function labelForProvider(provider: string): string {
+  return PROVIDER_OPTIONS.find((option) => option.value === provider)?.label ?? provider;
+}
+
 export const MODEL_SUGGESTIONS: Record<Exclude<LlmProvider, "">, ReadonlyArray<string>> = {
   "openai": ["gpt-5.4", "gpt-5.4-mini", "gpt-4.1"],
   "anthropic": ["claude-sonnet-4-0", "claude-3-7-sonnet-latest"],

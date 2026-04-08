@@ -5,7 +5,13 @@ import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { resolveStudioLanguage, type StudioLanguage } from "../shared/language";
 import { GlobalConfigPanel } from "../components/GlobalConfigPanel";
-import { MODEL_SUGGESTIONS, PROVIDER_OPTIONS, isCliOAuthProvider } from "../shared/llm";
+import {
+  MODEL_SUGGESTIONS,
+  PROVIDER_OPTIONS,
+  defaultModelForProvider,
+  isCliOAuthProvider,
+  labelForProvider,
+} from "../shared/llm";
 
 const ROUTING_AGENTS = [
   "writer",
@@ -75,6 +81,9 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
   const startEdit = () => {
     setForm({
+      provider: data.provider,
+      model: data.model,
+      baseUrl: data.baseUrl,
       temperature: data.temperature,
       maxTokens: data.maxTokens,
       stream: data.stream,
@@ -84,9 +93,27 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   };
 
   const handleSave = async () => {
+    const provider = String(form.provider ?? data.provider).trim();
+    const model = String(form.model ?? data.model).trim();
+    if (!provider) {
+      alert(t("config.providerRequired"));
+      return;
+    }
+    if (!model) {
+      alert(t("config.modelRequired"));
+      return;
+    }
+
+    const draft = {
+      ...form,
+      provider,
+      model,
+      baseUrl: isCliOAuthProvider(provider) ? "" : String(form.baseUrl ?? data.baseUrl).trim(),
+    };
+
     setSaving(true);
     try {
-      await saveProjectConfig(form);
+      await saveProjectConfig(draft);
       setEditing(false);
       refetch();
     } catch (e) {
@@ -115,14 +142,60 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
       <GlobalConfigPanel theme={theme} t={t} />
 
+      <div className={`border ${c.info} rounded-lg px-4 py-3 text-sm`}>
+        {t("config.globalScopeHint")}
+      </div>
+
+      <div className="space-y-1">
+        <h2 className="font-serif text-2xl">{t("config.activeLlmTitle")}</h2>
+        <p className="text-sm text-muted-foreground">{t("config.activeLlmHint")}</p>
+      </div>
+
       <div className={`border ${c.cardStatic} rounded-lg divide-y divide-border/40`}>
         <Row label={t("config.project")} value={data.name} />
-        <Row label={t("config.provider")} value={data.provider} />
+        <Row label={t("config.provider")} value={labelForProvider(data.provider)} />
         <Row label={t("config.model")} value={data.model} />
         <Row label={t("config.baseUrl")} value={data.baseUrl} mono />
 
         {editing ? (
           <>
+            <EditRow
+              label={t("config.provider")}
+              value={String(form.provider)}
+              onChange={(nextProvider) => {
+                const currentProvider = String(form.provider ?? data.provider);
+                const currentModel = String(form.model ?? data.model);
+                const nextDefault = defaultModelForProvider(nextProvider);
+                setForm({
+                  ...form,
+                  provider: nextProvider,
+                  model: currentModel && currentModel !== defaultModelForProvider(currentProvider)
+                    ? currentModel
+                    : (currentModel || nextDefault),
+                  baseUrl: isCliOAuthProvider(nextProvider) ? "" : String(form.baseUrl ?? data.baseUrl),
+                });
+              }}
+              type="select"
+              options={PROVIDER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              c={c}
+            />
+            <ModelEditRow
+              label={t("config.model")}
+              value={String(form.model)}
+              onChange={(value) => setForm({ ...form, model: value })}
+              suggestions={MODEL_SUGGESTIONS[String(form.provider ?? data.provider) as keyof typeof MODEL_SUGGESTIONS] ?? []}
+              placeholder={defaultModelForProvider(String(form.provider ?? data.provider))}
+              c={c}
+            />
+            <TextEditRow
+              label={t("config.baseUrl")}
+              value={String(form.baseUrl)}
+              onChange={(value) => setForm({ ...form, baseUrl: value })}
+              placeholder={isCliOAuthProvider(String(form.provider ?? data.provider)) ? t("config.optional") : "https://api.example.com/v1"}
+              disabled={isCliOAuthProvider(String(form.provider ?? data.provider))}
+              c={c}
+              mono
+            />
             <EditRow
               label={t("config.language")}
               value={form.language as string}
@@ -345,6 +418,62 @@ function EditRow({ label, value, onChange, type, options, c }: {
       ) : (
         <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={`${c.input} rounded px-2 py-1 text-sm w-32 text-right`} />
       )}
+    </div>
+  );
+}
+
+function TextEditRow({ label, value, onChange, placeholder, disabled = false, c, mono = false }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  c: ReturnType<typeof useColors>;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex justify-between items-center gap-4 px-4 py-2.5">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`${c.input} rounded px-2 py-1 text-sm w-56 disabled:opacity-50 ${mono ? "font-mono" : ""}`}
+      />
+    </div>
+  );
+}
+
+function ModelEditRow({ label, value, onChange, suggestions, placeholder, c }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  suggestions: ReadonlyArray<string>;
+  placeholder?: string;
+  c: ReturnType<typeof useColors>;
+}) {
+  const listId = `project-model-${label.replace(/\s+/g, "-").toLowerCase()}`;
+
+  return (
+    <div className="flex justify-between items-center gap-4 px-4 py-2.5">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <div className="w-56">
+        <input
+          type="text"
+          list={listId}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`${c.input} rounded px-2 py-1 text-sm w-full`}
+        />
+        <datalist id={listId}>
+          {suggestions.map((model) => (
+            <option key={model} value={model} />
+          ))}
+        </datalist>
+      </div>
     </div>
   );
 }

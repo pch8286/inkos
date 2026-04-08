@@ -23,6 +23,7 @@ import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
 import { Sun, Moon, Bell, MessageSquare } from "lucide-react";
 import type { BootstrapSummary } from "./shared/contracts";
+import { defaultModelForProvider, labelForProvider } from "./shared/llm";
 
 export type Route =
   | { page: "dashboard" }
@@ -46,13 +47,38 @@ export function deriveActiveBookId(route: Route): string | undefined {
     : undefined;
 }
 
+export function deriveActiveLlm(
+  bootstrap?: BootstrapSummary,
+  project?: { language: string; languageExplicit: boolean; provider: string; model: string; baseUrl?: string },
+): { provider: string; model: string; source: "project" | "global" } | null {
+  if (!bootstrap) return null;
+  if (bootstrap.projectInitialized && project) {
+    return {
+      provider: project.provider,
+      model: project.model,
+      source: "project",
+    };
+  }
+  return {
+    provider: bootstrap.globalConfig.provider,
+    model: bootstrap.globalConfig.model,
+    source: "global",
+  };
+}
+
 export function App() {
   const [route, setRoute] = useState<Route>({ page: "dashboard" });
   const sse = useSSE();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
   const { data: bootstrap, loading: bootstrapLoading, error: bootstrapError, refetch: refetchBootstrap } = useApi<BootstrapSummary>("/bootstrap");
-  const { data: project, refetch: refetchProject } = useApi<{ language: string; languageExplicit: boolean }>("/project");
+  const { data: project, refetch: refetchProject } = useApi<{
+    language: string;
+    languageExplicit: boolean;
+    provider: string;
+    model: string;
+    baseUrl: string;
+  }>("/project");
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -104,24 +130,14 @@ export function App() {
     activeBookId
       ? `book:${activeBookId}`
       : route.page;
-  const connectionStatus = bootstrap
-    ? (() => {
-      const provider = bootstrap.globalConfig.provider;
-      if (!provider) {
-        return "Configure provider";
-      }
-      if (provider === "gemini-cli" && !bootstrap.globalConfig.auth.geminiCli.authenticated) {
-        return "Gemini login required";
-      }
-      if (provider === "codex-cli" && !bootstrap.globalConfig.auth.codexCli.authenticated) {
-        return "Codex login required";
-      }
-      if ((provider === "openai" || provider === "anthropic" || provider === "custom") && !bootstrap.globalConfig.apiKeySet) {
-        return `${provider} API key missing`;
-      }
-      return `${provider} ready`;
-    })()
-    : null;
+  const activeLlm = deriveActiveLlm(bootstrap ?? undefined, project ?? undefined);
+  const activeLlmAuthMissing = activeLlm
+    ? activeLlm.provider === "gemini-cli"
+      ? !bootstrap?.globalConfig.auth.geminiCli.authenticated
+      : activeLlm.provider === "codex-cli"
+        ? !bootstrap?.globalConfig.auth.codexCli.authenticated
+        : false
+    : false;
 
   if (bootstrapError) {
     return (
@@ -181,13 +197,30 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {connectionStatus && (
+            {activeLlm && (
               <button
                 onClick={nav.toConfig}
-                className="rounded-full border border-border/60 bg-secondary/60 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                title="Open Studio settings"
+                className={`max-w-[18rem] rounded-2xl border px-3 py-2 text-left transition-colors ${
+                  route.page === "config"
+                    ? "border-primary/60 bg-primary/10"
+                    : "border-border/60 bg-secondary/60 hover:border-primary/40"
+                }`}
+                title={t("app.llmSettings")}
               >
-                {connectionStatus}
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${activeLlmAuthMissing ? "bg-amber-500" : "bg-emerald-500"}`} />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {t("app.llmSettings")}
+                  </span>
+                </div>
+                <div className="mt-1 truncate text-xs font-medium text-foreground">
+                  {labelForProvider(activeLlm.provider) || "Not configured"}
+                </div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {activeLlm.model || defaultModelForProvider(activeLlm.provider) || (activeLlmAuthMissing ? t("app.loginRequired") : "-")}
+                  {" · "}
+                  {activeLlm.source === "project" ? t("app.currentProjectLlm") : t("app.newProjectDefault")}
+                </div>
               </button>
             )}
 

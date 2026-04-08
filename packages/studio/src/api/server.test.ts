@@ -219,6 +219,9 @@ describe("createStudioServer daemon lifecycle", () => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        provider: "codex-cli",
+        model: "gpt-5.3-codex-spark",
+        baseUrl: "",
         language: "en",
         temperature: 0.2,
         maxTokens: 2048,
@@ -230,6 +233,9 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const project = await app.request("http://localhost/api/project");
     await expect(project.json()).resolves.toMatchObject({
+      provider: "codex-cli",
+      model: "gpt-5.3-codex-spark",
+      baseUrl: "",
       language: "en",
       temperature: 0.2,
       maxTokens: 2048,

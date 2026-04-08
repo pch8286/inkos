@@ -7,6 +7,9 @@ describe("saveProjectConfig", () => {
   it("persists project settings through putApi so project listeners invalidate immediately", async () => {
     const putApiMock = vi.fn(async () => undefined);
     const draft = {
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      baseUrl: "",
       language: "en",
       temperature: 0.2,
       maxTokens: 2048,

@@ -1054,6 +1054,20 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
+      existing.llm ??= {};
+
+      if (typeof updates.provider === "string" && updates.provider.trim().length > 0) {
+        existing.llm.provider = updates.provider.trim();
+      }
+      if (typeof updates.model === "string" && updates.model.trim().length > 0) {
+        existing.llm.model = updates.model.trim();
+      }
+      if (updates.baseUrl !== undefined) {
+        const provider = String(existing.llm.provider ?? "").trim();
+        existing.llm.baseUrl = isCliOAuthProvider(provider) ? "" : String(updates.baseUrl ?? "").trim();
+      } else if (isCliOAuthProvider(String(existing.llm.provider ?? "").trim())) {
+        existing.llm.baseUrl = "";
+      }
       // Merge LLM settings
       if (updates.temperature !== undefined) {
         existing.llm.temperature = updates.temperature;
@@ -1069,6 +1083,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       }
       const { writeFile: writeFileFs } = await import("node:fs/promises");
       await writeFileFs(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      cachedConfig = await loadProjectConfig(root, { requireApiKey: false });
       return c.json({ ok: true });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
