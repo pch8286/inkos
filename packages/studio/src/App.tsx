@@ -21,7 +21,7 @@ import { useSSE } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
-import { Sun, Moon, Bell, MessageSquare } from "lucide-react";
+import { Sun, Moon, Bell, MessageSquare, PanelLeftOpen } from "lucide-react";
 import type { BootstrapSummary } from "./shared/contracts";
 import { defaultModelForProvider, labelForProvider } from "./shared/llm";
 
@@ -82,6 +82,7 @@ export function App() {
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isDark = theme === "dark";
 
@@ -108,21 +109,62 @@ export function App() {
   }, [bootstrap, bootstrapLoading, project]);
 
   const nav = {
-    toDashboard: () => setRoute({ page: "dashboard" }),
-    toBook: (bookId: string) => setRoute({ page: "book", bookId }),
-    toBookCreate: () => setRoute({ page: "book-create" }),
-    toChapter: (bookId: string, chapterNumber: number) =>
-      setRoute({ page: "chapter", bookId, chapterNumber }),
-    toAnalytics: (bookId: string) => setRoute({ page: "analytics", bookId }),
-    toConfig: () => setRoute({ page: "config" }),
-    toTruth: (bookId: string) => setRoute({ page: "truth", bookId }),
-    toDaemon: () => setRoute({ page: "daemon" }),
-    toLogs: () => setRoute({ page: "logs" }),
-    toGenres: () => setRoute({ page: "genres" }),
-    toStyle: () => setRoute({ page: "style" }),
-    toImport: () => setRoute({ page: "import" }),
-    toRadar: () => setRoute({ page: "radar" }),
-    toDoctor: () => setRoute({ page: "doctor" }),
+    toDashboard: () => {
+      setRoute({ page: "dashboard" });
+      setSidebarOpen(false);
+    },
+    toBook: (bookId: string) => {
+      setRoute({ page: "book", bookId });
+      setSidebarOpen(false);
+    },
+    toBookCreate: () => {
+      setRoute({ page: "book-create" });
+      setSidebarOpen(false);
+    },
+    toChapter: (bookId: string, chapterNumber: number) => {
+      setRoute({ page: "chapter", bookId, chapterNumber });
+      setSidebarOpen(false);
+    },
+    toAnalytics: (bookId: string) => {
+      setRoute({ page: "analytics", bookId });
+      setSidebarOpen(false);
+    },
+    toConfig: () => {
+      setRoute({ page: "config" });
+      setSidebarOpen(false);
+    },
+    toTruth: (bookId: string) => {
+      setRoute({ page: "truth", bookId });
+      setSidebarOpen(false);
+    },
+    toDaemon: () => {
+      setRoute({ page: "daemon" });
+      setSidebarOpen(false);
+    },
+    toLogs: () => {
+      setRoute({ page: "logs" });
+      setSidebarOpen(false);
+    },
+    toGenres: () => {
+      setRoute({ page: "genres" });
+      setSidebarOpen(false);
+    },
+    toStyle: () => {
+      setRoute({ page: "style" });
+      setSidebarOpen(false);
+    },
+    toImport: () => {
+      setRoute({ page: "import" });
+      setSidebarOpen(false);
+    },
+    toRadar: () => {
+      setRoute({ page: "radar" });
+      setSidebarOpen(false);
+    },
+    toDoctor: () => {
+      setRoute({ page: "doctor" });
+      setSidebarOpen(false);
+    },
   };
 
   const activeBookId = deriveActiveBookId(route);
@@ -184,23 +226,38 @@ export function App() {
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden font-sans">
       {/* Left Sidebar */}
-      <Sidebar nav={nav} activePage={activePage} sse={sse} t={t} />
+      <Sidebar
+        nav={nav}
+        activePage={activePage}
+        sse={sse}
+        t={t}
+        mobileOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* Center Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-background/30 backdrop-blur-sm">
         {/* Header Strip */}
-        <header className="h-14 shrink-0 flex items-center justify-between px-8 border-b border-border/40">
-          <div className="flex items-center gap-2">
-             <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold">
+        <header className="h-14 shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 border-b border-border/40">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-secondary/60 text-muted-foreground transition-colors hover:text-foreground md:hidden"
+              aria-label="Open navigation"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold">
                InkOS Studio
              </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {activeLlm && (
               <button
                 onClick={nav.toConfig}
-                className={`max-w-[18rem] rounded-2xl border px-3 py-2 text-left transition-colors ${
+                className={`min-w-0 max-w-[10.75rem] rounded-2xl border px-2.5 py-1.5 text-left transition-colors sm:max-w-[18rem] sm:px-3 sm:py-2 ${
                   route.page === "config"
                     ? "border-primary/60 bg-primary/10"
                     : "border-border/60 bg-secondary/60 hover:border-primary/40"
@@ -209,17 +266,19 @@ export function App() {
               >
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${activeLlmAuthMissing ? "bg-amber-500" : "bg-emerald-500"}`} />
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <span className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     {t("app.llmSettings")}
                   </span>
                 </div>
-                <div className="mt-1 truncate text-xs font-medium text-foreground">
+                <div className="mt-1 truncate text-[11px] font-medium text-foreground sm:text-xs">
                   {labelForProvider(activeLlm.provider) || "Not configured"}
                 </div>
-                <div className="truncate text-[11px] text-muted-foreground">
+                <div className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
                   {activeLlm.model || defaultModelForProvider(activeLlm.provider) || (activeLlmAuthMissing ? t("app.loginRequired") : "-")}
-                  {" · "}
-                  {activeLlm.source === "project" ? t("app.currentProjectLlm") : t("app.newProjectDefault")}
+                  <span className="hidden sm:inline">
+                    {" · "}
+                    {activeLlm.source === "project" ? t("app.currentProjectLlm") : t("app.newProjectDefault")}
+                  </span>
                 </div>
               </button>
             )}
@@ -232,7 +291,7 @@ export function App() {
               {isDark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
 
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-all relative">
+            <button className="hidden sm:flex w-8 h-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-all relative">
               <Bell size={16} />
               <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full border-2 border-background" />
             </button>
@@ -254,7 +313,7 @@ export function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto scroll-smooth">
-          <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
+          <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 sm:py-10 md:px-12 lg:py-16 fade-in">
             {route.page === "dashboard" && <Dashboard nav={nav} sse={sse} theme={theme} t={t} />}
             {route.page === "book" && <BookDetail bookId={route.bookId} nav={nav} theme={theme} t={t} sse={sse} />}
             {route.page === "book-create" && <BookCreate nav={nav} theme={theme} t={t} />}

@@ -15,6 +15,7 @@ import {
   FileInput,
   TrendingUp,
   Stethoscope,
+  X,
 } from "lucide-react";
 
 interface BookSummary {
@@ -39,11 +40,13 @@ interface Nav {
   toDoctor: () => void;
 }
 
-export function Sidebar({ nav, activePage, sse, t }: {
+export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }: {
   nav: Nav;
   activePage: string;
   sse: { messages: ReadonlyArray<SSEMessage> };
   t: TFunction;
+  mobileOpen?: boolean;
+  onClose?: () => void;
 }) {
   const { data, refetch: refetchBooks } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
   const { data: daemon, refetch: refetchDaemon } = useApi<{ running: boolean }>("/daemon");
@@ -60,9 +63,20 @@ export function Sidebar({ nav, activePage, sse, t }: {
   }, [refetchBooks, refetchDaemon, sse.messages]);
 
   return (
-    <aside className="w-[260px] shrink-0 border-r border-border bg-background/80 backdrop-blur-md flex flex-col h-full overflow-hidden select-none">
+    <>
+      <button
+        type="button"
+        aria-label="Close navigation"
+        onClick={onClose}
+        className={`fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] transition-opacity md:hidden ${
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      />
+      <aside className={`fixed inset-y-0 left-0 z-50 flex h-full w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-border bg-background/92 backdrop-blur-md select-none transition-transform duration-300 md:static md:z-auto md:w-[260px] md:max-w-none md:translate-x-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
       {/* Logo Area */}
-      <div className="px-6 py-8">
+      <div className="flex items-center justify-between px-5 py-6 md:px-6 md:py-8">
         <button
           onClick={nav.toDashboard}
           className="group flex items-center gap-2 hover:opacity-80 transition-all duration-300"
@@ -74,6 +88,14 @@ export function Sidebar({ nav, activePage, sse, t }: {
             <span className="font-serif text-xl leading-none italic font-medium">InkOS</span>
             <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold mt-1">Studio</span>
           </div>
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground transition-colors hover:text-foreground md:hidden"
+          aria-label="Close navigation"
+        >
+          <X size={16} />
         </button>
       </div>
 
@@ -205,7 +227,8 @@ export function Sidebar({ nav, activePage, sse, t }: {
           </span>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
