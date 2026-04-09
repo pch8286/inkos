@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { PipelineRunner } from "@actalk/inkos-core";
 import { loadConfig, buildPipelineConfig, findProjectRoot, log, logError } from "../utils.js";
+import { formatRadarReportLines, formatRadarScanFailed, formatRadarScanStart, resolveCliLanguage } from "../localization.js";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -8,17 +9,19 @@ export const radarCommand = new Command("radar")
   .description("Market intelligence");
 
 radarCommand
-  .command("scan")
+.command("scan")
   .description("Scan market for opportunities")
   .option("--json", "Output JSON")
   .action(async (opts) => {
+    let language: ReturnType<typeof resolveCliLanguage> = "ko";
     try {
       const config = await loadConfig();
       const root = findProjectRoot();
+      language = resolveCliLanguage(config.language);
 
       const pipeline = new PipelineRunner(buildPipelineConfig(config, root));
 
-      if (!opts.json) log("Scanning market...");
+      if (!opts.json) log(formatRadarScanStart(language));
 
       const result = await pipeline.runRadar();
 
@@ -36,24 +39,16 @@ radarCommand
       if (opts.json) {
         log(JSON.stringify({ ...result, savedTo: filePath }, null, 2));
       } else {
-        log(`\nMarket Summary:\n${result.marketSummary}\n`);
-        log("Recommendations:");
-
-        for (const rec of result.recommendations) {
-          log(`  [${(rec.confidence * 100).toFixed(0)}%] ${rec.platform}/${rec.genre}`);
-          log(`    Concept: ${rec.concept}`);
-          log(`    Reasoning: ${rec.reasoning}`);
-          log(`    Benchmarks: ${rec.benchmarkTitles.join(", ")}`);
-          log("");
+        for (const line of formatRadarReportLines(language, result, `radar/scan-${timestamp}.json`)) {
+          log(line);
         }
-
-        log(`Radar result saved to radar/scan-${timestamp}.json`);
       }
     } catch (e) {
+      const message = formatRadarScanFailed(language, e);
       if (opts.json) {
-        log(JSON.stringify({ error: String(e) }));
+        log(JSON.stringify({ error: message }));
       } else {
-        logError(`Radar scan failed: ${e}`);
+        logError(message);
       }
       process.exit(1);
     }

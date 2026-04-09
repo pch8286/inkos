@@ -15,7 +15,7 @@ import { ChapterAnalyzerAgent } from "../agents/chapter-analyzer.js";
 import { ContinuityAuditor } from "../agents/continuity.js";
 import { ReviserAgent, DEFAULT_REVISE_MODE, type ReviseMode } from "../agents/reviser.js";
 import { StateValidatorAgent, type ValidationResult, type ValidationWarning } from "../agents/state-validator.js";
-import { RadarAgent } from "../agents/radar.js";
+import { RadarAgent, type RadarMode } from "../agents/radar.js";
 import type { RadarSource } from "../agents/radar-source.js";
 import { readGenreProfile } from "../agents/rules-reader.js";
 import { analyzeAITells } from "../agents/ai-tells.js";
@@ -63,10 +63,12 @@ export interface PipelineConfig {
   readonly client: LLMClient;
   readonly model: string;
   readonly projectRoot: string;
+  readonly language?: WritingLanguage;
   readonly defaultLLMConfig?: LLMConfig;
   readonly notifyChannels?: ReadonlyArray<NotifyChannel>;
   readonly radarSources?: ReadonlyArray<RadarSource>;
   readonly externalContext?: string;
+  readonly radarMode?: RadarMode;
   readonly modelOverrides?: Record<string, string | AgentLLMOverride>;
   readonly inputGovernanceMode?: InputGovernanceMode;
   readonly logger?: Logger;
@@ -370,6 +372,7 @@ export class PipelineRunner {
       override.baseUrl
       || override.provider
       || override.apiKeyEnv
+      || override.reasoningEffort
       || override.stream !== undefined,
     );
     if (!needsDedicatedClient) {
@@ -400,6 +403,7 @@ export class PipelineRunner {
         baseUrl,
         apiKey,
         model: override.model,
+        reasoningEffort: override.reasoningEffort ?? base?.reasoningEffort,
         temperature: base?.temperature ?? 0.7,
         maxTokens: base?.maxTokens ?? 8192,
         thinkingBudget: base?.thinkingBudget ?? 0,
@@ -445,9 +449,15 @@ export class PipelineRunner {
   // Atomic operations (composable by OpenClaw or agent mode)
   // ---------------------------------------------------------------------------
 
-  async runRadar(): Promise<RadarResult> {
-    const radar = new RadarAgent(this.agentCtxFor("radar"), this.config.radarSources);
-    return radar.scan();
+  async runRadar(mode: RadarMode = "market-trends", externalContext?: string): Promise<RadarResult> {
+    const effectiveMode = mode || this.config.radarMode || "market-trends";
+    const effectiveContext = externalContext ?? this.config.externalContext;
+    const radar = new RadarAgent(
+      this.agentCtxFor("radar"),
+      resolveWritingLanguage(this.config.language),
+      this.config.radarSources,
+    );
+    return radar.scan(effectiveMode, effectiveContext);
   }
 
   async initBook(book: BookConfig): Promise<void> {
@@ -669,7 +679,9 @@ export class PipelineRunner {
       const resolvedLang = book.language ?? gp.language;
       const heading = resolvedLang === "en"
         ? `# Chapter ${chapterNumber}: ${draftOutput.title}`
-        : `# 第${chapterNumber}章 ${draftOutput.title}`;
+        : resolvedLang === "ko"
+          ? `# 제${chapterNumber}장 ${draftOutput.title}`
+          : `# 第${chapterNumber}章 ${draftOutput.title}`;
       await writeFile(filePath, `${heading}\n\n${draftOutput.content}`, "utf-8");
 
       // Save truth files

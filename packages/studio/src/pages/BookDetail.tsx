@@ -6,6 +6,9 @@ import type { SSEMessage } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-activity";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { localizeChapterTitle } from "../shared/chapter-title";
+import { resolveStudioLanguage } from "../shared/language";
+import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "./BookCreate";
 import {
   ChevronLeft,
   Zap,
@@ -38,6 +41,7 @@ interface BookData {
     readonly id: string;
     readonly title: string;
     readonly genre: string;
+    readonly platform: string;
     readonly status: string;
     readonly chapterWordCount: number;
     readonly targetChapters?: number;
@@ -103,6 +107,7 @@ export function BookDetail({
   const [settingsWordCount, setSettingsWordCount] = useState<number | null>(null);
   const [settingsTargetChapters, setSettingsTargetChapters] = useState<number | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<BookStatus | null>(null);
+  const [settingsPlatform, setSettingsPlatform] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("txt");
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
   const activity = useMemo(() => deriveBookActivity(sse.messages, bookId), [bookId, sse.messages]);
@@ -206,6 +211,7 @@ export function BookDetail({
       if (settingsWordCount !== null) body.chapterWordCount = settingsWordCount;
       if (settingsTargetChapters !== null) body.targetChapters = settingsTargetChapters;
       if (settingsStatus !== null) body.status = settingsStatus;
+      if (settingsPlatform !== null) body.platform = settingsPlatform;
       await fetchJson(`/books/${bookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -230,7 +236,7 @@ export function BookDetail({
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-border/30 border-t-ring rounded-full animate-spin" />
       <span className="text-sm text-muted-foreground">{t("common.loading")}</span>
     </div>
   );
@@ -241,10 +247,16 @@ export function BookDetail({
   const { book, chapters } = data;
   const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
   const reviewCount = chapters.filter((ch) => ch.status === "ready-for-review").length;
+  const bookLanguage = resolveStudioLanguage(book.language);
+  const availablePlatforms = platformOptionsForLanguage(bookLanguage);
+  const availablePlatformValues = availablePlatforms.map((option) => option.value);
+  const platformMismatch = !availablePlatformValues.includes(book.platform);
+  const fallbackPlatform = pickValidValue(book.platform, availablePlatformValues);
 
   const currentWordCount = settingsWordCount ?? book.chapterWordCount;
   const currentTargetChapters = settingsTargetChapters ?? book.targetChapters ?? 0;
   const currentStatus = settingsStatus ?? (book.status as BookStatus);
+  const currentPlatform = settingsPlatform ?? fallbackPlatform;
 
   const exportHref = `/api/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
 
@@ -254,7 +266,7 @@ export function BookDetail({
       <nav className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
         <button
           onClick={nav.toDashboard}
-          className="hover:text-primary transition-colors flex items-center gap-1"
+          className={`${c.link} flex items-center gap-1`}
         >
           <ChevronLeft size={14} />
           {t("bread.books")}
@@ -269,11 +281,14 @@ export function BookDetail({
           <div className="flex items-center gap-3">
             <h1 className="text-4xl font-serif font-medium">{book.title}</h1>
             {book.language === "en" && (
-              <span className="px-1.5 py-0.5 rounded border border-primary/20 text-primary text-[10px] font-bold">EN</span>
+              <span className="inline-flex items-center rounded studio-badge-soft px-1.5 py-1 text-[10px] font-bold">EN</span>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground font-medium">
             <span className="px-2 py-0.5 rounded bg-secondary/50 text-foreground/70 uppercase tracking-wider text-xs">{book.genre}</span>
+            <span className="px-2 py-0.5 rounded bg-secondary/50 text-foreground/70 text-xs">
+              {platformLabelForLanguage(bookLanguage, book.platform)}
+            </span>
             <div className="flex items-center gap-1.5">
               <FileText size={14} />
               <span>{chapters.length} {t("dash.chapters")}</span>
@@ -295,9 +310,9 @@ export function BookDetail({
           <button
             onClick={handleWriteNext}
             disabled={writing || drafting}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-primary text-primary-foreground rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl disabled:opacity-50 ${c.btnPrimary}`}
           >
-            {writing ? <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Zap size={16} />}
+            {writing ? <div className="w-4 h-4 border-2 border-border/30 border-t-ring rounded-full animate-spin" /> : <Zap size={16} />}
             {writing ? t("dash.writing") : t("book.writeNext")}
           </button>
           <button
@@ -324,7 +339,7 @@ export function BookDetail({
           className={`rounded-2xl border px-4 py-3 text-sm ${
             activity.lastError
               ? "border-destructive/30 bg-destructive/5 text-destructive"
-              : "border-primary/20 bg-primary/[0.04] text-foreground"
+              : c.info
           }`}
         >
           {activity.lastError ? (
@@ -338,6 +353,10 @@ export function BookDetail({
           )}
         </div>
       )}
+
+      <div className={`rounded-2xl border px-4 py-3 text-sm ${c.info}`}>
+        {t("book.actionGuide")}
+      </div>
 
       {/* Tool Strip */}
       <div className="flex flex-wrap items-center gap-2 py-1">
@@ -407,14 +426,34 @@ export function BookDetail({
       {/* Book Settings */}
       <div className="paper-sheet rounded-2xl border border-border/40 shadow-sm p-6">
         <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">{t("book.settings")}</h2>
+        {platformMismatch && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+            <div className="font-semibold">{t("book.platformCurrent")}: {book.platform}</div>
+            <div className="mt-1">{t("book.platformLegacyHint")}</div>
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-4">
+          <div className="flex min-w-[13rem] flex-col gap-1">
+            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.platform")}</label>
+            <select
+              value={currentPlatform}
+              onChange={(e) => setSettingsPlatform(e.target.value)}
+              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+            >
+              {availablePlatforms.map((platformOption) => (
+                <option key={platformOption.value} value={platformOption.value}>
+                  {platformOption.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.wordsPerChapter")}</label>
             <input
               type="number"
               value={currentWordCount}
               onChange={(e) => setSettingsWordCount(Number(e.target.value))}
-              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-primary/50 w-32"
+              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20 w-32"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -423,7 +462,7 @@ export function BookDetail({
               type="number"
               value={currentTargetChapters}
               onChange={(e) => setSettingsTargetChapters(Number(e.target.value))}
-              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-primary/50 w-32"
+              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20 w-32"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -431,7 +470,7 @@ export function BookDetail({
             <select
               value={currentStatus}
               onChange={(e) => setSettingsStatus(e.target.value as BookStatus)}
-              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-primary/50"
+              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
             >
               <option value="active">{t("book.statusActive")}</option>
               <option value="paused">{t("book.statusPaused")}</option>
@@ -443,9 +482,9 @@ export function BookDetail({
           <button
             onClick={handleSaveSettings}
             disabled={savingSettings}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-primary text-primary-foreground rounded-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
           >
-            {savingSettings ? <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Save size={14} />}
+            {savingSettings ? <div className="w-4 h-4 border-2 border-border/30 border-t-ring rounded-full animate-spin" /> : <Save size={14} />}
             {savingSettings ? t("book.saving") : t("book.save")}
           </button>
         </div>
@@ -468,14 +507,14 @@ export function BookDetail({
               {chapters.map((ch, index) => {
                 const staggerClass = `stagger-${Math.min(index + 1, 5)}`;
                 return (
-                <tr key={ch.number} className={`group hover:bg-primary/[0.02] transition-colors fade-in ${staggerClass}`}>
+                <tr key={ch.number} className={`group hover:bg-muted/30 transition-colors fade-in ${staggerClass}`}>
                   <td className="px-6 py-4 text-muted-foreground/60 font-mono text-xs">{ch.number.toString().padStart(2, '0')}</td>
                   <td className="px-6 py-4">
                     <button
                       onClick={() => nav.toChapter(bookId, ch.number)}
-                      className="font-serif text-lg font-medium hover:text-primary transition-colors text-left"
+                      className="font-serif text-lg font-medium transition-colors text-left hover:text-[color:var(--studio-state-text)]"
                     >
-                      {ch.title || t("chapter.label").replace("{n}", String(ch.number))}
+                      {localizeChapterTitle(ch.title, ch.number, data.book.language as "ko" | "zh" | "en" | undefined)}
                     </button>
                   </td>
                   <td className="px-6 py-4 text-muted-foreground font-medium tabular-nums text-xs">{(ch.wordCount ?? 0).toLocaleString()}</td>
@@ -511,7 +550,7 @@ export function BookDetail({
                           alert(auditResult.passed ? "Audit passed" : `Audit failed: ${auditResult.issues?.length ?? 0} issues`);
                           refetch();
                         }}
-                        className="p-2 rounded-lg bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all shadow-sm"
+                        className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm"
                         title={t("book.audit")}
                       >
                         <ShieldCheck size={14} />
@@ -519,7 +558,7 @@ export function BookDetail({
                       <button
                         onClick={() => handleRewrite(ch.number)}
                         disabled={rewritingChapters.includes(ch.number)}
-                        className="p-2 rounded-lg bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all shadow-sm disabled:opacity-50"
+                        className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm disabled:opacity-50"
                         title={t("book.rewrite")}
                       >
                         {rewritingChapters.includes(ch.number)
@@ -533,7 +572,7 @@ export function BookDetail({
                           const mode = e.target.value as ReviseMode;
                           if (mode) handleRevise(ch.number, mode);
                         }}
-                        className="px-2 py-1.5 text-[11px] font-bold rounded-lg bg-secondary text-muted-foreground border border-border/50 outline-none hover:text-primary hover:bg-primary/10 transition-all disabled:opacity-50 cursor-pointer"
+                        className="px-2 py-1.5 text-[11px] font-bold rounded-lg studio-chip border border-border/50 outline-none transition-all disabled:opacity-50 cursor-pointer"
                         title="Revise with AI"
                       >
                         <option value="" disabled>{revisingChapters.includes(ch.number) ? t("common.loading") : t("book.curate")}</option>

@@ -4,6 +4,9 @@ import type { LLMConfig } from "../models/project.js";
 import { chatCompletionCodexCli, chatWithToolsCodexCli } from "./codex-cli.js";
 import { chatCompletionGeminiCli, chatWithToolsGeminiCli } from "./gemini-cli.js";
 
+type ReasoningEffort = NonNullable<LLMConfig["reasoningEffort"]>;
+type OpenAIReasoningEffort = Extract<ReasoningEffort, "low" | "medium" | "high">;
+
 // === Streaming Monitor Types ===
 
 export interface StreamProgress {
@@ -82,6 +85,7 @@ export interface LLMClient {
     readonly maxTokens: number;
     readonly maxTokensCap: number | null; // non-null only when user explicitly configured
     readonly thinkingBudget: number;
+    readonly reasoningEffort?: ReasoningEffort;
     readonly extra: Record<string, unknown>;
   };
 }
@@ -119,6 +123,7 @@ export function createLLMClient(config: LLMConfig): LLMClient {
     maxTokens: config.maxTokens ?? 8192,
     maxTokensCap: config.maxTokens ?? null, // only cap when user explicitly set maxTokens
     thinkingBudget: config.thinkingBudget ?? 0,
+    reasoningEffort: config.reasoningEffort,
     extra: config.extra ?? {},
   };
 
@@ -158,6 +163,10 @@ export function createLLMClient(config: LLMConfig): LLMClient {
     }),
     defaults,
   };
+}
+
+function normalizeOpenAIReasoningEffort(value: ReasoningEffort | undefined): OpenAIReasoningEffort | undefined {
+  return value === "low" || value === "medium" || value === "high" ? value : undefined;
 }
 
 function parseEnvHeaders(): Record<string, string> | undefined {
@@ -213,39 +222,39 @@ function wrapLLMError(error: unknown, context?: { readonly baseUrl?: string; rea
 
   if (msg.includes("400")) {
     return new Error(
-      `API 返回 400 (请求参数错误)。可能原因：\n` +
-      `  1. 模型名称不正确（检查 INKOS_LLM_MODEL）\n` +
-      `  2. 提供方不支持某些参数（如 max_tokens、stream）\n` +
-      `  3. 消息格式不兼容（部分提供方不支持 system role）\n` +
-      `  建议：检查提供方文档，确认该接口要求流式开启、流式关闭，还是根本不支持 stream${ctxLine}`,
+      `API returned 400 (invalid request). Possible causes:\n` +
+      `  1. The model name is incorrect (check INKOS_LLM_MODEL)\n` +
+      `  2. The provider does not support some parameters (for example max_tokens or stream)\n` +
+      `  3. The message format is incompatible (some providers reject system role)\n` +
+      `  Suggestion: check the provider docs and confirm whether this endpoint expects streaming on, streaming off, or does not support stream at all${ctxLine}`,
     );
   }
   if (msg.includes("403")) {
     return new Error(
-      `API 返回 403 (请求被拒绝)。可能原因：\n` +
-      `  1. API Key 无效或过期\n` +
-      `  2. API 提供方的内容审查拦截了请求（公益/免费 API 常见）\n` +
-      `  3. 账户余额不足\n` +
-      `  建议：用 inkos doctor 测试 API 连通性，或换一个不限制内容的 API 提供方${ctxLine}`,
+      `API returned 403 (request rejected). Possible causes:\n` +
+      `  1. The API key is invalid or expired\n` +
+      `  2. Provider-side moderation blocked the request\n` +
+      `  3. The account has no remaining quota or balance\n` +
+      `  Suggestion: run inkos doctor to verify connectivity, or switch to a provider that allows this workload${ctxLine}`,
     );
   }
   if (msg.includes("401")) {
     return new Error(
-      `API 返回 401 (未授权)。请检查 .env 中的 INKOS_LLM_API_KEY 是否正确。${ctxLine}`,
+      `API returned 401 (unauthorized). Check whether INKOS_LLM_API_KEY is correct.${ctxLine}`,
     );
   }
   if (msg.includes("429")) {
     return new Error(
-      `API 返回 429 (请求过多)。请稍后重试，或检查 API 配额。${ctxLine}`,
+      `API returned 429 (too many requests). Please retry later or review the provider quota.${ctxLine}`,
     );
   }
   if (msg.includes("Connection error") || msg.includes("ECONNREFUSED") || msg.includes("ENOTFOUND") || msg.includes("fetch failed")) {
     return new Error(
-      `无法连接到 API 服务。可能原因：\n` +
-      `  1. baseUrl 地址不正确（当前：${context?.baseUrl ?? "未知"}）\n` +
-      `  2. 网络不通或被防火墙拦截\n` +
-      `  3. API 服务暂时不可用\n` +
-      `  建议：检查 INKOS_LLM_BASE_URL 是否包含完整路径（如 /v1）`,
+      `Could not connect to the API service. Possible causes:\n` +
+      `  1. The baseUrl is incorrect (current: ${context?.baseUrl ?? "unknown"})\n` +
+      `  2. The network is unavailable or blocked by a firewall\n` +
+      `  3. The API service is temporarily down\n` +
+      `  Suggestion: check whether INKOS_LLM_BASE_URL includes the full path (for example /v1)`,
     );
   }
   return error instanceof Error ? error : new Error(msg);
@@ -260,11 +269,11 @@ function wrapStreamRequiredError(
     ? `\n  (baseUrl: ${context.baseUrl}, model: ${context.model})`
     : "";
   return new Error(
-    `API 提供方要求使用流式请求（stream:true），不能回退到同步模式。` +
-    `\n  这次失败不是模型名错误，而是前一次流式请求先失败了，随后同步回退又被提供方拒绝。` +
-    `\n  建议：保持 stream:true，并检查该提供方/代理的 SSE 流是否稳定。` +
-    `\n  原始流式错误：${String(streamError)}` +
-    `\n  同步回退错误：${String(syncError)}${ctxLine}`,
+    `The provider requires streaming requests (stream:true) and rejected the sync fallback.` +
+    `\n  This failure is not just a model-name issue: the original streaming request failed first, and then the provider refused the sync retry.` +
+    `\n  Suggestion: keep stream:true and verify that the provider or proxy supports SSE reliably.` +
+    `\n  Original stream error: ${String(streamError)}` +
+    `\n  Sync fallback error: ${String(syncError)}${ctxLine}`,
   );
 }
 
@@ -286,6 +295,7 @@ export async function chatCompletion(
   const resolved = {
     temperature: options?.temperature ?? client.defaults.temperature,
     maxTokens: cap !== null ? Math.min(perCallMax, cap) : perCallMax,
+    reasoningEffort: normalizeOpenAIReasoningEffort(client.defaults.reasoningEffort),
     extra: client.defaults.extra,
   };
   const onStreamProgress = options?.onStreamProgress;
@@ -398,6 +408,7 @@ export async function chatWithTools(
     const resolved = {
       temperature: options?.temperature ?? client.defaults.temperature,
       maxTokens: options?.maxTokens ?? client.defaults.maxTokens,
+      reasoningEffort: normalizeOpenAIReasoningEffort(client.defaults.reasoningEffort),
     };
     // Tool-calling always uses streaming (only used by agent loop, not by writer/auditor)
     if (client.provider === "gemini-cli") {
@@ -431,7 +442,12 @@ async function chatCompletionOpenAIChat(
   client: OpenAI,
   model: string,
   messages: ReadonlyArray<LLMMessage>,
-  options: { readonly temperature: number; readonly maxTokens: number; readonly extra: Record<string, unknown> },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+    readonly extra: Record<string, unknown>;
+  },
   webSearch?: boolean,
   onStreamProgress?: OnStreamProgress,
 ): Promise<LLMResponse> {
@@ -441,6 +457,7 @@ async function chatCompletionOpenAIChat(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     temperature: options.temperature,
     max_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
     stream: true,
     ...(webSearch ? { web_search_options: { search_context_size: "medium" as const } } : {}),
     ...stripReservedKeys(options.extra),
@@ -493,7 +510,12 @@ async function chatCompletionOpenAIChatSync(
   client: OpenAI,
   model: string,
   messages: ReadonlyArray<LLMMessage>,
-  options: { readonly temperature: number; readonly maxTokens: number; readonly extra: Record<string, unknown> },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+    readonly extra: Record<string, unknown>;
+  },
   _webSearch?: boolean,
 ): Promise<LLMResponse> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -502,6 +524,7 @@ async function chatCompletionOpenAIChatSync(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     temperature: options.temperature,
     max_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
     stream: false,
     ...stripReservedKeys(options.extra),
   };
@@ -525,7 +548,11 @@ async function chatWithToolsOpenAIChat(
   model: string,
   messages: ReadonlyArray<AgentMessage>,
   tools: ReadonlyArray<ToolDefinition>,
-  options: { readonly temperature: number; readonly maxTokens: number },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+  },
 ): Promise<ChatWithToolsResult> {
   const openaiMessages = agentMessagesToOpenAIChat(messages);
   const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = tools.map((t) => ({
@@ -543,6 +570,7 @@ async function chatWithToolsOpenAIChat(
     tools: openaiTools,
     temperature: options.temperature,
     max_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
     stream: true,
   });
 
@@ -619,7 +647,11 @@ async function chatCompletionOpenAIResponses(
   client: OpenAI,
   model: string,
   messages: ReadonlyArray<LLMMessage>,
-  options: { readonly temperature: number; readonly maxTokens: number },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+  },
   webSearch?: boolean,
   onStreamProgress?: OnStreamProgress,
 ): Promise<LLMResponse> {
@@ -637,6 +669,7 @@ async function chatCompletionOpenAIResponses(
     input,
     temperature: options.temperature,
     max_output_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
     stream: true,
     ...(tools ? { tools } : {}),
   });
@@ -685,7 +718,11 @@ async function chatCompletionOpenAIResponsesSync(
   client: OpenAI,
   model: string,
   messages: ReadonlyArray<LLMMessage>,
-  options: { readonly temperature: number; readonly maxTokens: number },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+  },
   _webSearch?: boolean,
 ): Promise<LLMResponse> {
   const input: OpenAI.Responses.ResponseInputItem[] = messages.map((m) => ({
@@ -698,6 +735,7 @@ async function chatCompletionOpenAIResponsesSync(
     input,
     temperature: options.temperature,
     max_output_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
     stream: false,
   });
 
@@ -725,7 +763,11 @@ async function chatWithToolsOpenAIResponses(
   model: string,
   messages: ReadonlyArray<AgentMessage>,
   tools: ReadonlyArray<ToolDefinition>,
-  options: { readonly temperature: number; readonly maxTokens: number },
+  options: {
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly reasoningEffort?: "low" | "medium" | "high";
+  },
 ): Promise<ChatWithToolsResult> {
   const input = agentMessagesToResponsesInput(messages);
   const responsesTools: OpenAI.Responses.Tool[] = tools.map((t) => ({
@@ -742,6 +784,7 @@ async function chatWithToolsOpenAIResponses(
     tools: responsesTools,
     temperature: options.temperature,
     max_output_tokens: options.maxTokens,
+    ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
     stream: true,
   });
 

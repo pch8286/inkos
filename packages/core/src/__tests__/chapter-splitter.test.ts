@@ -100,6 +100,43 @@ describe("splitChapters", () => {
     expect(chapters[0]?.title).toBe("Chapter 1");
   });
 
+  it("splits Korean chapter headings with the default pattern", () => {
+    const input = [
+      "제1장 각성의 밤",
+      "",
+      "골목 끝에서 검은 비가 내렸다.",
+      "",
+      "제2장 낙인의 주인",
+      "",
+      "그 이름을 입에 올린 순간 공기가 가라앉았다.",
+    ].join("\n");
+
+    const chapters = splitChapters(input);
+
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0]).toEqual({
+      title: "각성의 밤",
+      content: "골목 끝에서 검은 비가 내렸다.",
+    });
+    expect(chapters[1]).toEqual({
+      title: "낙인의 주인",
+      content: "그 이름을 입에 올린 순간 공기가 가라앉았다.",
+    });
+  });
+
+  it("uses Korean fallback titles when Korean headings omit the subtitle", () => {
+    const input = [
+      "제1화",
+      "",
+      "눈을 뜨자 천장이 낯설었다.",
+    ].join("\n");
+
+    const chapters = splitChapters(input);
+
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0]?.title).toBe("제1화");
+  });
+
   it("splits Roman numeral English chapter headings with the default pattern", () => {
     const input = [
       "CHAPTER I.",

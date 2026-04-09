@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useApi } from "../hooks/use-api";
 import type { SSEMessage } from "../hooks/use-sse";
-import { shouldRefetchBookCollections, shouldRefetchDaemonStatus } from "../hooks/use-book-activity";
+import { shouldRefetchBookCollections, shouldRefetchDaemonStatus, shouldRefetchBookCreateStatus } from "../hooks/use-book-activity";
 import type { TFunction } from "../hooks/use-i18n";
 import {
   Book,
@@ -24,6 +24,15 @@ interface BookSummary {
   readonly genre: string;
   readonly status: string;
   readonly chaptersWritten: number;
+}
+
+interface BookCreateJob {
+  readonly bookId: string;
+  readonly title: string;
+  readonly status: "creating" | "error";
+  readonly stage: string | null;
+  readonly message: string | null;
+  readonly error?: string;
 }
 
 interface Nav {
@@ -49,6 +58,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
   onClose?: () => void;
 }) {
   const { data, refetch: refetchBooks } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
+  const { data: createStatusData, refetch: refetchCreateStatus } = useApi<{ entries: ReadonlyArray<BookCreateJob> }>("/book-create-status");
   const { data: daemon, refetch: refetchDaemon } = useApi<{ running: boolean }>("/daemon");
 
   useEffect(() => {
@@ -57,10 +67,13 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
     if (shouldRefetchBookCollections(recent)) {
       refetchBooks();
     }
+    if (shouldRefetchBookCreateStatus(recent)) {
+      refetchCreateStatus();
+    }
     if (shouldRefetchDaemonStatus(recent)) {
       refetchDaemon();
     }
-  }, [refetchBooks, refetchDaemon, sse.messages]);
+  }, [refetchBooks, refetchCreateStatus, refetchDaemon, sse.messages]);
 
   return (
     <>
@@ -81,7 +94,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
           onClick={nav.toDashboard}
           className="group flex items-center gap-2 hover:opacity-80 transition-all duration-300"
         >
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">
+          <div className="w-8 h-8 rounded-lg studio-chip-accent flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
             <ScrollText size={18} />
           </div>
           <div className="flex flex-col">
@@ -109,7 +122,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
             </span>
             <button
               onClick={nav.toBookCreate}
-              className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all group"
+              className="p-1 rounded-md studio-icon-btn transition-all group"
               title={t("nav.newBook")}
             >
               <Plus size={14} className="group-hover:rotate-90 transition-transform duration-300" />
@@ -117,20 +130,39 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
           </div>
 
           <div className="space-y-1">
+            {(createStatusData?.entries ?? []).map((job) => (
+              <div
+                key={`create-${job.bookId}`}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${
+                  job.status === "error"
+                    ? "border-destructive/30 bg-destructive/6 text-destructive"
+                    : "studio-chip-accent"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${job.status === "error" ? "bg-destructive" : "studio-status-dot-ok animate-pulse"}`} />
+                  <span className="truncate font-medium">{job.title}</span>
+                </div>
+                <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                  {(job.error || job.stage || job.message || t("dash.createRunning")).split("\n")[0]}
+                </div>
+              </div>
+            ))}
+
             {data?.books.map((book) => (
               <button
                 key={book.id}
                 onClick={() => nav.toBook(book.id)}
                 className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
                   activePage === `book:${book.id}`
-                    ? "bg-primary/10 text-primary font-semibold"
-                    : "text-foreground font-medium hover:text-foreground hover:bg-secondary/50"
+                    ? "studio-chip-accent text-foreground font-semibold"
+                    : "studio-chip"
                 }`}
               >
-                <Book size={16} className={activePage === `book:${book.id}` ? "text-primary" : "text-muted-foreground group-hover:text-foreground"} />
+                <Book size={16} className={activePage === `book:${book.id}` ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"} />
                 <span className="truncate flex-1 text-left">{book.title}</span>
                 {book.chaptersWritten > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded studio-chip">
                     {book.chaptersWritten}
                   </span>
                 )}
@@ -171,7 +203,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
               active={activePage === "daemon"}
               onClick={nav.toDaemon}
               badge={daemon?.running ? t("nav.running") : undefined}
-              badgeColor={daemon?.running ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}
+              badgeColor={daemon?.running ? "studio-badge-ok" : "studio-badge-soft"}
             />
             <SidebarItem
               label={t("nav.logs")}
@@ -221,7 +253,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
       {/* Footer / Status Area */}
       <div className="p-4 border-t border-border bg-secondary/40">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-card border border-border shadow-sm">
-          <div className={`w-2 h-2 rounded-full ${daemon?.running ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/40"}`} />
+          <div className={`w-2 h-2 rounded-full ${daemon?.running ? "studio-status-dot-ok" : "bg-muted-foreground/40"}`} />
           <span className="text-[11px] font-semibold text-foreground/80 uppercase tracking-wider">
             {daemon?.running ? t("nav.agentOnline") : t("nav.agentOffline")}
           </span>
@@ -245,11 +277,11 @@ function SidebarItem({ label, icon, active, onClick, badge, badgeColor }: {
       onClick={onClick}
       className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
         active
-          ? "bg-secondary text-foreground font-semibold shadow-sm border border-border"
-          : "text-foreground font-medium hover:text-foreground hover:bg-secondary/50"
+          ? "studio-chip-accent text-foreground font-semibold shadow-sm"
+          : "text-foreground font-medium studio-chip"
       }`}
     >
-      <span className={`transition-colors ${active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+      <span className="transition-colors text-foreground">
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>

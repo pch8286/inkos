@@ -31,6 +31,13 @@ const BOOK_COLLECTION_REFRESH_EVENTS = new Set([
   "audit:error",
 ]);
 
+const BOOK_CREATE_STATUS_REFRESH_EVENTS = new Set([
+  "book:creating",
+  "book:create:progress",
+  "book:created",
+  "book:error",
+]);
+
 const DAEMON_STATUS_REFRESH_EVENTS = new Set([
   "daemon:started",
   "daemon:stopped",
@@ -117,6 +124,10 @@ export function shouldRefetchBookView(message: SSEMessage, bookId: string): bool
 
 export function shouldRefetchBookCollections(message: SSEMessage | undefined): boolean {
   return Boolean(message && BOOK_COLLECTION_REFRESH_EVENTS.has(message.event));
+}
+
+export function shouldRefetchBookCreateStatus(message: SSEMessage | undefined): boolean {
+  return Boolean(message && BOOK_CREATE_STATUS_REFRESH_EVENTS.has(message.event));
 }
 
 export function shouldRefetchDaemonStatus(message: SSEMessage | undefined): boolean {

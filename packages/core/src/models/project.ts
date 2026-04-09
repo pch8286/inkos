@@ -6,6 +6,7 @@ export const LLMConfigSchema = z.object({
   baseUrl: z.string().url(),
   apiKey: z.string().default(""),
   model: z.string().min(1),
+  reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   temperature: z.number().min(0).max(2).default(0.7),
   maxTokens: z.number().int().min(1).default(8192),
   thinkingBudget: z.number().int().min(0).default(0),
@@ -66,6 +67,7 @@ export const AgentLLMOverrideSchema = z.object({
   provider: z.enum(["anthropic", "openai", "custom", "gemini-cli", "codex-cli"]).optional(),
   baseUrl: z.string().url().optional(),
   apiKeyEnv: z.string().optional(),
+  reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   stream: z.boolean().optional(),
 });
 
@@ -75,6 +77,59 @@ export const InputGovernanceModeSchema = z.enum(["legacy", "v2"]);
 export type InputGovernanceMode = z.infer<typeof InputGovernanceModeSchema>;
 
 const ModelOverrideValueSchema = z.union([z.string(), AgentLLMOverrideSchema]);
+export type ModelOverrideValue = z.infer<typeof ModelOverrideValueSchema>;
+
+const MODEL_OVERRIDE_PROVIDERS = new Set(["anthropic", "openai", "custom", "gemini-cli", "codex-cli"]);
+const MODEL_OVERRIDE_REASONING = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+
+export function sanitizeModelOverrides(input: unknown): Record<string, ModelOverrideValue> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const sanitized: Record<string, ModelOverrideValue> = {};
+
+  for (const [agent, value] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof value === "string") {
+      const model = value.trim();
+      if (model) sanitized[agent] = model;
+      continue;
+    }
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    const model = typeof candidate.model === "string" ? candidate.model.trim() : "";
+    if (!model) continue;
+
+    const provider = typeof candidate.provider === "string" && MODEL_OVERRIDE_PROVIDERS.has(candidate.provider)
+      ? candidate.provider as AgentLLMOverride["provider"]
+      : undefined;
+    const baseUrl = typeof candidate.baseUrl === "string" && candidate.baseUrl.trim().length > 0
+      ? candidate.baseUrl.trim()
+      : undefined;
+    const apiKeyEnv = typeof candidate.apiKeyEnv === "string" && candidate.apiKeyEnv.trim().length > 0
+      ? candidate.apiKeyEnv.trim()
+      : undefined;
+    const reasoningEffort = typeof candidate.reasoningEffort === "string" && MODEL_OVERRIDE_REASONING.has(candidate.reasoningEffort)
+      ? candidate.reasoningEffort as AgentLLMOverride["reasoningEffort"]
+      : undefined;
+    const stream = typeof candidate.stream === "boolean" ? candidate.stream : undefined;
+
+    sanitized[agent] = {
+      model,
+      ...(provider ? { provider } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(apiKeyEnv ? { apiKeyEnv } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(stream !== undefined ? { stream } : {}),
+    };
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
 
 export const ProjectConfigSchema = z.object({
   name: z.string().min(1),

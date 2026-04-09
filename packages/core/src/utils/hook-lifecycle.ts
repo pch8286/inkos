@@ -34,19 +34,19 @@ const LABELS: Record<WritingLanguage, Record<HookPayoffTiming, string>> = {
 };
 
 const TIMING_ALIASES: Array<[HookPayoffTiming, RegExp]> = [
-  ["immediate", /^(?:立即|马上|当章|本章|下一章|immediate|instant|next(?:\s+chapter|\s+beat)?|right\s+away)$/i],
-  ["near-term", /^(?:近期|近几章|短线|soon|short(?:\s+run)?|near(?:\s*-\s*|\s+)term|current\s+sequence)$/i],
-  ["mid-arc", /^(?:中程|中期|卷中|mid(?:\s*-\s*|\s+)arc|mid(?:\s*-\s*|\s+)book|middle)$/i],
-  ["slow-burn", /^(?:慢烧|长线|后续|later|late(?:r)?|long(?:\s*-\s*|\s+)arc|slow(?:\s*-\s*|\s+)burn)$/i],
-  ["endgame", /^(?:终局|终章|大结局|最终|climax|finale|endgame|late\s+book)$/i],
+  ["immediate", /^(?:立即|马上|当章|本章|下一章|즉시|바로|당장|이번\s*화|다음\s*화|immediate|instant|next(?:\s+chapter|\s+beat)?|right\s+away)$/i],
+  ["near-term", /^(?:近期|近几章|短线|근시일|단기|가까운\s*시일|soon|short(?:\s+run)?|near(?:\s*-\s*|\s+)term|current\s+sequence)$/i],
+  ["mid-arc", /^(?:中程|中期|卷中|중반부|중기|중반|mid(?:\s*-\s*|\s+)arc|mid(?:\s*-\s*|\s+)book|middle)$/i],
+  ["slow-burn", /^(?:慢烧|长线|后续|장기\s*누적|장기|후반\s*누적|later|late(?:r)?|long(?:\s*-\s*|\s+)arc|slow(?:\s*-\s*|\s+)burn)$/i],
+  ["endgame", /^(?:终局|终章|大结局|最终|종막|최종전|결말부|climax|finale|endgame|late\s+book)$/i],
 ];
 
 const SIGNAL_PATTERNS: Array<[HookPayoffTiming, RegExp]> = [
-  ["endgame", /(终局|终章|大结局|最终揭晓|最终摊牌|climax|finale|endgame|final reveal|last act)/i],
-  ["immediate", /(当章|本章|下一章|马上|立刻|即刻|immediate|next chapter|right away|at once)/i],
-  ["near-term", /(近期|近几章|很快|短线|soon|near-term|short run|current sequence)/i],
-  ["mid-arc", /(中期|卷中|本卷中段|mid-book|mid arc|middle of the arc)/i],
-  ["slow-burn", /(长线|慢烧|后续发酵|慢慢揭开|later|slow burn|long arc|long tail)/i],
+  ["endgame", /(终局|终章|大结局|最终揭晓|最终摊牌|종막|최종전|결말부|climax|finale|endgame|final reveal|last act)/i],
+  ["immediate", /(当章|本章|下一章|马上|立刻|即刻|즉시|바로|당장|다음 화|이번 화|immediate|next chapter|right away|at once)/i],
+  ["near-term", /(近期|近几章|很快|短线|근시일|단기|곧바로 이어짐|soon|near-term|short run|current sequence)/i],
+  ["mid-arc", /(中期|卷中|本卷中段|중반부|중기|중반|mid-book|mid arc|middle of the arc)/i],
+  ["slow-burn", /(长线|慢烧|后续发酵|慢慢揭开|장기 누적|후반 누적|later|slow burn|long arc|long tail)/i],
 ];
 
 export function normalizeHookPayoffTiming(value: string | undefined | null): HookPayoffTiming | undefined {

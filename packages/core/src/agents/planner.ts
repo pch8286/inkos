@@ -147,8 +147,9 @@ export class PlannerAgent extends BaseAgent {
       .filter((summary) => summary.chapter < input.chapterNumber)
       .sort((left, right) => left.chapter - right.chapter)
       .slice(-4);
+    const resolvedLanguage = resolveWritingLanguage(input.language);
     const cadence = analyzeChapterCadence({
-      language: this.isChineseLanguage(input.language) ? "zh" : "en",
+      language: resolvedLanguage,
       rows: recentSummaries.map((summary) => ({
         chapter: summary.chapter,
         title: summary.title,
@@ -343,7 +344,11 @@ export class PlannerAgent extends BaseAgent {
       return undefined;
     }
 
-    return this.isChineseLanguage(language)
+    const resolvedLanguage = resolveWritingLanguage(language);
+    if (resolvedLanguage === "ko") {
+      return "볼륨 아웃라인의 fallback 문장에 계속 기대지 말고, 이번 화는 새로운 아크 비트나 장소 변화까지 분명히 밀어붙여라.";
+    }
+    return resolvedLanguage === "zh"
       ? "不要继续依赖卷纲的 fallback 指令，必须把本章推进到新的弧线节点或地点变化。"
       : "Do not keep leaning on the outline fallback. Force this chapter toward a fresh arc beat or location change.";
   }
@@ -357,7 +362,11 @@ export class PlannerAgent extends BaseAgent {
     }
     const repeatedType = cadence.scenePressure.repeatedType;
 
-    return this.isChineseLanguage(language)
+    const resolvedLanguage = resolveWritingLanguage(language);
+    if (resolvedLanguage === "ko") {
+      return `최근 회차가 계속 "${repeatedType}" 패턴에 머물렀다. 이번 화는 장면 그릇, 장소, 행동 방식 중 하나를 분명히 바꿔라.`;
+    }
+    return resolvedLanguage === "zh"
       ? `最近章节连续停留在“${repeatedType}”，本章必须更换场景容器、地点或行动方式。`
       : `Recent chapters are stuck in repeated ${repeatedType} beats. Change the scene container, location, or action pattern this chapter.`;
   }
@@ -371,7 +380,11 @@ export class PlannerAgent extends BaseAgent {
     }
     const moods = cadence.moodPressure.recentMoods;
 
-    return this.isChineseLanguage(language)
+    const resolvedLanguage = resolveWritingLanguage(language);
+    if (resolvedLanguage === "ko") {
+      return `최근 ${moods.length}화가 계속 고압 감정선(${moods.slice(0, 3).join(", ")})에 묶여 있다. 이번 화는 일상, 숨 고르기, 온기, 유머 중 하나를 넣어 독자가 숨 돌릴 틈을 만들어라.`;
+    }
+    return resolvedLanguage === "zh"
       ? `最近${moods.length}章情绪持续高压（${moods.slice(0, 3).join("、")}），本章必须降调——安排日常/喘息/温情/幽默场景，让读者呼吸。`
       : `The last ${moods.length} chapters have been relentlessly tense (${moods.slice(0, 3).join(", ")}). This chapter must downshift — write a quieter scene with warmth, humor, or breathing room.`;
   }
@@ -385,7 +398,11 @@ export class PlannerAgent extends BaseAgent {
     }
     const repeatedToken = cadence.titlePressure.repeatedToken;
 
-    return this.isChineseLanguage(language)
+    const resolvedLanguage = resolveWritingLanguage(language);
+    if (resolvedLanguage === "ko") {
+      return `제목을 또 "${repeatedToken}" 중심으로 반복하지 말고, 이번에는 다른 이미지나 행동 초점으로 제목을 잡아라.`;
+    }
+    return resolvedLanguage === "zh"
       ? `标题不要再围绕“${repeatedToken}”重复命名，换一个新的意象或动作焦点。`
       : `Avoid another ${repeatedToken}-centric title. Pick a new image or action focus for this chapter title.`;
   }

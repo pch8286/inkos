@@ -125,6 +125,9 @@ if (stdin.includes("Return exactly one JSON object")) {
 if (stdin.includes("Return a final JSON object")) {
   text = JSON.stringify({ type: "final", content: "DONE" });
 }
+if (stdin.includes("check reasoning flag")) {
+  text = args.join(" ");
+}
 
 console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text } }));
 console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 21, output_tokens: 9, model } }));
@@ -219,9 +222,45 @@ describe("chatCompletion stream fallback", () => {
       { role: "user", content: "ping" },
     ]));
 
-    expect(error.message).toContain("API 返回 400");
+    expect(error.message).toContain("API returned 400");
     expect(error.message).not.toContain("\"stream\": false");
-    expect(error.message).toContain("检查提供方文档");
+    expect(error.message).toContain("check the provider docs");
+  });
+
+  it("passes reasoning effort through OpenAI chat requests when configured", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "reasoned" } }],
+      usage: ZERO_USAGE,
+    });
+
+    const client: LLMClient = {
+      provider: "openai",
+      apiFormat: "chat",
+      stream: false,
+      _openai: {
+        chat: {
+          completions: {
+            create,
+          },
+        },
+      } as unknown as OpenAI,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        reasoningEffort: "high",
+        maxTokensCap: null,
+        extra: {},
+      },
+    };
+
+    await chatCompletion(client, "gpt-5.4", [
+      { role: "user", content: "ping" },
+    ]);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      reasoning_effort: "high",
+    }));
   });
 
   it("reports when sync fallback is rejected because provider requires streaming", async () => {
@@ -407,6 +446,33 @@ describe("chatCompletion stream fallback", () => {
       completionTokens: 9,
       totalTokens: 30,
     });
+  });
+
+  it("passes reasoning effort through the codex-cli runtime", async () => {
+    const fixture = await createFakeCodexCliFixture();
+    const client: LLMClient = {
+      provider: "codex-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        reasoningEffort: "xhigh",
+        maxTokensCap: null,
+        extra: {
+          codexCliCommand: fixture.commandPath,
+          codexCliAuthSource: fixture.authPath,
+          codexCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const result = await chatCompletion(client, "gpt-5.4", [
+      { role: "user", content: "check reasoning flag" },
+    ]);
+
+    expect(result.content).toContain("model_reasoning_effort=xhigh");
   });
 
   it("parses structured tool output from the codex-cli runtime", async () => {

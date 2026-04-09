@@ -1,7 +1,7 @@
 import { readFile, access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ProjectConfigSchema, type ProjectConfig } from "../models/project.js";
+import { ProjectConfigSchema, sanitizeModelOverrides, type ProjectConfig } from "../models/project.js";
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".inkos");
 export const GLOBAL_ENV_PATH = join(GLOBAL_CONFIG_DIR, ".env");
@@ -9,6 +9,7 @@ const LLM_ENV_KEYS = [
   "INKOS_LLM_PROVIDER",
   "INKOS_LLM_BASE_URL",
   "INKOS_LLM_MODEL",
+  "INKOS_LLM_REASONING_EFFORT",
   "INKOS_LLM_API_KEY",
   "INKOS_LLM_TEMPERATURE",
   "INKOS_LLM_MAX_TOKENS",
@@ -92,6 +93,13 @@ export async function loadProjectConfig(
     throw new Error(`inkos.json in ${root} is not valid JSON. Check the file for syntax errors.`);
   }
 
+  const sanitizedOverrides = sanitizeModelOverrides(config.modelOverrides);
+  if (sanitizedOverrides) {
+    config.modelOverrides = sanitizedOverrides;
+  } else {
+    delete config.modelOverrides;
+  }
+
   // .env overrides inkos.json for LLM settings
   const env = process.env;
   const llm = (config.llm ?? {}) as Record<string, unknown>;
@@ -99,6 +107,7 @@ export async function loadProjectConfig(
   if (env.INKOS_LLM_PROVIDER) llm.provider = env.INKOS_LLM_PROVIDER;
   if (env.INKOS_LLM_BASE_URL) llm.baseUrl = env.INKOS_LLM_BASE_URL;
   if (env.INKOS_LLM_MODEL) llm.model = env.INKOS_LLM_MODEL;
+  if (env.INKOS_LLM_REASONING_EFFORT) llm.reasoningEffort = env.INKOS_LLM_REASONING_EFFORT;
   if (env.INKOS_LLM_TEMPERATURE) llm.temperature = parseFloat(env.INKOS_LLM_TEMPERATURE);
   if (env.INKOS_LLM_MAX_TOKENS) llm.maxTokens = parseInt(env.INKOS_LLM_MAX_TOKENS, 10);
   if (env.INKOS_LLM_THINKING_BUDGET) llm.thinkingBudget = parseInt(env.INKOS_LLM_THINKING_BUDGET, 10);

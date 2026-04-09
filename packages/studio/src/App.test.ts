@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveActiveBookId, deriveActiveLlm } from "./App";
+import { deriveActiveBookId, deriveActiveLlm, deriveLatestAlertTimestamp, deriveUnreadAlertCount } from "./App";
 
 describe("deriveActiveBookId", () => {
   it("returns the current book across book-centered routes", () => {
@@ -69,5 +69,31 @@ describe("deriveActiveLlm", () => {
       model: "auto-gemini-3",
       source: "global",
     });
+  });
+});
+
+describe("header alerts", () => {
+  it("counts unread actionable SSE events and ignores ping/progress noise", () => {
+    const messages = [
+      { event: "ping", data: null, timestamp: 100 },
+      { event: "log", data: { message: "noise" }, timestamp: 105 },
+      { event: "llm:progress", data: { phase: "write" }, timestamp: 110 },
+      { event: "write:start", data: { bookId: "alpha" }, timestamp: 120 },
+      { event: "write:complete", data: { bookId: "alpha" }, timestamp: 140 },
+    ];
+
+    expect(deriveUnreadAlertCount(messages, 0)).toBe(2);
+    expect(deriveUnreadAlertCount(messages, 125)).toBe(1);
+  });
+
+  it("tracks the latest actionable event timestamp", () => {
+    const messages = [
+      { event: "ping", data: null, timestamp: 100 },
+      { event: "log", data: { message: "Started" }, timestamp: 155 },
+      { event: "llm:progress", data: { phase: "audit" }, timestamp: 180 },
+      { event: "audit:complete", data: { bookId: "alpha" }, timestamp: 210 },
+    ];
+
+    expect(deriveLatestAlertTimestamp(messages)).toBe(210);
   });
 });

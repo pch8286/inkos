@@ -19,7 +19,7 @@ export function splitChapters(
   text: string,
   pattern?: string,
 ): ReadonlyArray<SplitChapter> {
-  const defaultPattern = /^#{0,2}\s*(?:第[零〇○Ｏ０一二三四五六七八九十百千万\d]+(?:章|回)(?:[:：]|\s+)?\s*(.*)|Chapter\s+(?:\d+|[IVXLCDM]+)(?:\.|:|\s+)?\s*(.*))/i;
+  const defaultPattern = /^#{0,2}\s*(?:(?:제\s*\d+\s*(?:장|화))(?:[:：.\-]|\s+)?\s*(.*)|第[零〇○Ｏ０一二三四五六七八九十百千万\d]+(?:章|回)(?:[:：.\-]|\s+)?\s*(.*)|Chapter\s+(?:\d+|[IVXLCDM]+)(?:\.|:|\s+)?\s*(.*))/i;
   const regex = pattern ? new RegExp(pattern, "m") : defaultPattern;
 
   const lines = text.split("\n");
@@ -29,7 +29,7 @@ export function splitChapters(
     const match = lines[i]!.match(regex);
     if (match) {
       chapters.push({
-        title: (match[1] ?? match[2] ?? "").trim(),
+        title: (match[1] ?? match[2] ?? match[3] ?? "").trim(),
         startLine: i,
       });
     }
@@ -70,6 +70,14 @@ function stripTrailingLicense(content: string): string {
 function inferFallbackTitle(headingLine: string, chapterNumber: number): string {
   if (/chapter\s+(?:\d+|[ivxlcdm]+)/i.test(headingLine)) {
     return `Chapter ${chapterNumber}`;
+  }
+
+  if (/제\s*\d+\s*화/.test(headingLine)) {
+    return `제${chapterNumber}화`;
+  }
+
+  if (/제\s*\d+\s*장/.test(headingLine)) {
+    return `제${chapterNumber}장`;
   }
 
   if (/第[零一二三四五六七八九十百千万\d]+回/.test(headingLine)) {

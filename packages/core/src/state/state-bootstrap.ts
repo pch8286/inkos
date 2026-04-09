@@ -529,10 +529,10 @@ export function resolveContiguousChapterPrefix(chapterNumbers: ReadonlyArray<num
 function normalizeHookStatus(value: string | undefined, warnings: string[], hookId: string): HookStatus {
   const normalized = (value ?? "").trim().toLowerCase();
   if (!normalized) return "open";
-  if (/(resolved|closed|done|已回收|回收|完成)/i.test(normalized)) return "resolved";
-  if (/(deferred|paused|hold|搁置|延后|延期)/i.test(normalized)) return "deferred";
-  if (/(progress|active|推进|进行中)/i.test(normalized)) return "progressing";
-  if (/(open|pending|待定|未回收)/i.test(normalized)) return "open";
+  if (/(resolved|closed|done|已回收|回收|完成|회수됨|완료|종결)/i.test(normalized)) return "resolved";
+  if (/(deferred|paused|hold|搁置|延后|延期|보류|연기|정지)/i.test(normalized)) return "deferred";
+  if (/(progress|active|推进|进行中|진행중|활성|전개중)/i.test(normalized)) return "progressing";
+  if (/(open|pending|待定|未回收|열림|미회수|대기중|미진행)/i.test(normalized)) return "open";
   appendWarning(warnings, `${hookId}:status normalized from "${value ?? ""}" to "open"`);
   return "open";
 }

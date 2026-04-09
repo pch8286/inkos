@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
@@ -65,12 +65,43 @@ export function platformOptionsForLanguage(language: StudioLanguage): ReadonlyAr
   return PLATFORMS_ZH;
 }
 
+export function platformLabelForLanguage(
+  language: StudioLanguage,
+  platform: string,
+): string {
+  const options = platformOptionsForLanguage(language);
+  return options.find((option) => option.value === platform)?.label ?? platform;
+}
+
 interface WaitForBookReadyOptions {
   readonly fetchBook?: (bookId: string) => Promise<unknown>;
-  readonly fetchStatus?: (bookId: string) => Promise<{ status: string; error?: string }>;
+  readonly fetchStatus?: (bookId: string) => Promise<{
+    status: string;
+    error?: string;
+    stage?: string | null;
+    message?: string | null;
+    history?: ReadonlyArray<{
+      timestamp: string;
+      kind: "start" | "stage" | "info" | "error";
+      label: string;
+      detail?: string | null;
+    }>;
+  }>;
   readonly maxAttempts?: number;
   readonly delayMs?: number;
   readonly waitImpl?: (ms: number) => Promise<void>;
+  readonly onStatus?: (status: {
+    status: string;
+    error?: string;
+    stage?: string | null;
+    message?: string | null;
+    history?: ReadonlyArray<{
+      timestamp: string;
+      kind: "start" | "stage" | "info" | "error";
+      label: string;
+      detail?: string | null;
+    }>;
+  }) => void;
 }
 
 const DEFAULT_BOOK_READY_MAX_ATTEMPTS = 120;
@@ -100,6 +131,7 @@ export async function waitForBookReady(
       try {
         const status = await fetchStatus(bookId);
         lastKnownStatus = status.status;
+        options.onStatus?.(status);
         if (status.status === "error") {
           throw new Error(status.error ?? `Book "${bookId}" failed to create`);
         }
@@ -129,6 +161,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   const c = useColors(theme);
   const { data: genreData } = useApi<{ genres: ReadonlyArray<GenreInfo> }>("/genres");
   const { data: project } = useApi<{ language: string }>("/project");
+  const mountedRef = useRef(true);
 
   const projectLang = resolveStudioLanguage(project?.language);
 
@@ -139,6 +172,17 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   const [chapterWordsTouched, setChapterWordsTouched] = useState(false);
   const [targetChapters, setTargetChapters] = useState("200");
   const [creating, setCreating] = useState(false);
+  const [createProgress, setCreateProgress] = useState<{
+    stage?: string | null;
+    message?: string | null;
+    bookId?: string;
+    history?: ReadonlyArray<{
+      timestamp: string;
+      kind: "start" | "stage" | "info" | "error";
+      label: string;
+      detail?: string | null;
+    }>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Filter genres by project language + custom genres (always show)
@@ -162,6 +206,13 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
     }
   }, [projectLang, chapterWordsTouched]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const handleCreate = async () => {
     if (!title.trim()) {
       setError(t("create.titleRequired"));
@@ -173,6 +224,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
     }
     setCreating(true);
     setError(null);
+    setCreateProgress(null);
     try {
       const result = await postApi<{ bookId: string }>("/books/create", {
         title: title.trim(),
@@ -182,12 +234,31 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         chapterWordCount: parseInt(chapterWords, 10),
         targetChapters: parseInt(targetChapters, 10),
       });
-      await waitForBookReady(result.bookId);
-      nav.toBook(result.bookId);
+      if (mountedRef.current) {
+        setCreateProgress({ bookId: result.bookId });
+      }
+      await waitForBookReady(result.bookId, {
+        onStatus: (status) => {
+          if (!mountedRef.current) return;
+          setCreateProgress({
+            bookId: result.bookId,
+            stage: status.stage ?? null,
+            message: status.message ?? null,
+            history: status.history ?? [],
+          });
+        },
+      });
+      if (mountedRef.current) {
+        nav.toBook(result.bookId);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create book");
+      if (mountedRef.current) {
+        setError(e instanceof Error ? e.message : "Failed to create book");
+      }
     } finally {
-      setCreating(false);
+      if (mountedRef.current) {
+        setCreating(false);
+      }
     }
   };
 
@@ -204,6 +275,41 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
       {error && (
         <div className={`border ${c.error} rounded-md px-4 py-3`}>
           {error}
+        </div>
+      )}
+
+      {creating && createProgress && (
+        <div className={`border ${c.cardStatic} rounded-xl px-4 py-4 text-sm`}>
+          <div className="font-semibold text-foreground">
+            {createProgress.bookId ? `"${createProgress.bookId}"` : t("create.creating")}
+          </div>
+          <div className="mt-2 text-muted-foreground leading-6">
+            {createProgress.stage || createProgress.message || t("create.creatingHint")}
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">
+            {t("create.backgroundHint")}
+          </div>
+          {createProgress.history && createProgress.history.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-border/50 pt-3">
+              {createProgress.history.slice(-4).reverse().map((entry) => (
+                <div key={`${entry.timestamp}-${entry.kind}-${entry.label}`} className="rounded-lg bg-secondary/35 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      {entry.label}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  {entry.detail && (
+                    <div className="mt-1 text-xs leading-5 text-foreground/80">
+                      {entry.detail}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -230,8 +336,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 onClick={() => setGenre(g.id)}
                 className={`px-3 py-2.5 rounded-md text-sm text-left transition-all ${
                   genre === g.id
-                    ? "bg-primary/15 text-primary border border-primary/30 font-medium"
-                    : "bg-secondary text-secondary-foreground border border-transparent hover:border-border"
+                    ? "studio-surface-active font-medium"
+                    : "bg-secondary text-secondary-foreground border border-transparent studio-surface-hover"
                 }`}
               >
                 {g.name}
@@ -253,8 +359,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 onClick={() => setPlatform(p.value)}
                 className={`px-3 py-2 rounded-md text-sm transition-all ${
                   platform === p.value
-                    ? "bg-primary/15 text-primary border border-primary/30"
-                    : "bg-secondary text-secondary-foreground border border-transparent hover:border-border"
+                    ? "studio-surface-active"
+                    : "bg-secondary text-secondary-foreground border border-transparent studio-surface-hover"
                 }`}
               >
                 {p.label}

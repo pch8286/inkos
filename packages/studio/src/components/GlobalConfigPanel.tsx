@@ -4,14 +4,22 @@ import { useColors } from "../hooks/use-colors";
 import type { Theme } from "../hooks/use-theme";
 import type { AuthSessionSummary, GlobalConfigSummary } from "../shared/contracts";
 import {
-  MODEL_SUGGESTIONS,
   PROVIDER_OPTIONS,
   defaultModelForProvider,
   isCliOAuthProvider,
+  modelSuggestionsForProvider,
+  normalizeReasoningEffortForProvider,
+  providerCapability,
+  reasoningEffortsForProvider,
   type CliOAuthProvider,
+  type LlmCapabilitiesSummary,
   type LlmProvider,
 } from "../shared/llm";
 import type { TFunction } from "../hooks/use-i18n";
+
+type GlobalConfigSummaryWithReasoning = GlobalConfigSummary & {
+  readonly reasoningEffort?: string;
+};
 
 function providerLabel(provider: string): string {
   return PROVIDER_OPTIONS.find((option) => option.value === provider)?.label ?? provider;
@@ -21,7 +29,50 @@ function authTitle(provider: CliOAuthProvider): string {
   return provider === "gemini-cli" ? "Gemini CLI OAuth" : "Codex CLI OAuth";
 }
 
-export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compact = false, t, onSaved }: {
+function sourceBadgeLabel(source: "installed" | "config" | "fallback" | "mixed", t?: TFunction): string {
+  if (source === "installed") return t ? t("config.sourceInstalled") : "Installed CLI";
+  if (source === "config") return t ? t("config.sourceConfig") : "Config file";
+  if (source === "mixed") return t ? t("config.sourceMixed") : "Mixed";
+  return t ? t("config.sourceFallback") : "Fallback";
+}
+
+function modelSourceDescription(provider: string, source: "installed" | "config" | "fallback" | "mixed", t?: TFunction): string {
+  if (source === "installed") {
+    return t ? t("config.modelsDetectedFromInstalledCli") : "Model options detected from the installed CLI.";
+  }
+  if (provider === "codex-cli" && source === "config") {
+    return t ? t("config.modelsDetectedFromCodexConfig") : "Model options detected from the current Codex config.";
+  }
+  return t ? t("config.modelsFallbackHint") : "Showing fallback suggestions because no installed model catalog was detected here.";
+}
+
+function reasoningEffortLabel(value: string, t?: TFunction): string {
+  if (value === "none") return t ? t("config.reasoningNone") : "None";
+  if (value === "minimal") return t ? t("config.reasoningMinimal") : "Minimal";
+  if (value === "low") return t ? t("config.reasoningLow") : "Low";
+  if (value === "medium") return t ? t("config.reasoningMedium") : "Medium";
+  if (value === "high") return t ? t("config.reasoningHigh") : "High";
+  if (value === "xhigh") return t ? t("config.reasoningXHigh") : "XHigh";
+  return value;
+}
+
+function reasoningLabel(value: string, supportedEfforts: ReadonlyArray<string>, t?: TFunction): string {
+  if (!value) {
+    return supportedEfforts.length > 0
+      ? t ? t("config.default") : "default"
+      : t ? t("config.reasoningUnsupported") : "Not supported";
+  }
+  return reasoningEffortLabel(value, t);
+}
+
+function reasoningSourceDescription(provider: string, source: "installed" | "config" | "fallback" | "mixed", t?: TFunction): string {
+  if (provider === "codex-cli" && source === "installed") {
+    return t ? t("config.reasoningDetectedFromCodexCli") : "Reasoning levels are detected from the local Codex CLI parser.";
+  }
+  return t ? t("config.reasoningFallbackHint") : "Reasoning levels are currently shown from fallback suggestions.";
+}
+
+export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }: {
   theme: Theme;
   title?: string;
   compact?: boolean;
@@ -29,13 +80,15 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
   onSaved?: (summary: GlobalConfigSummary) => void;
 }) {
   const c = useColors(theme);
-  const { data, loading, error, refetch } = useApi<GlobalConfigSummary>("/global-config");
+  const { data, loading, error, refetch } = useApi<GlobalConfigSummaryWithReasoning>("/global-config");
+  const { data: capabilities } = useApi<LlmCapabilitiesSummary>("/llm-capabilities");
   const [form, setForm] = useState({
     language: "ko",
     provider: "openai",
     model: "",
     baseUrl: "",
     apiKey: "",
+    reasoningEffort: "",
   });
   const [saving, setSaving] = useState(false);
   const [authSession, setAuthSession] = useState<AuthSessionSummary | null>(null);
@@ -44,27 +97,31 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
 
   useEffect(() => {
     if (!data) return;
+    const reasoningEffort = normalizeReasoningEffortForProvider(data.reasoningEffort, data.provider, capabilities);
     setForm({
       language: data.language,
       provider: data.provider || "openai",
-      model: data.model || defaultModelForProvider(data.provider || "openai"),
+      model: data.model || defaultModelForProvider(data.provider || "openai", capabilities),
       baseUrl: data.baseUrl || "",
       apiKey: "",
+      reasoningEffort,
     });
-  }, [data]);
+  }, [capabilities, data]);
 
   useEffect(() => {
     if (!authSession || authSession.status === "failed" || authSession.status === "succeeded") {
       if (authSession?.status === "succeeded") {
-        void fetchJson<GlobalConfigSummary>("/global-config").then((summary) => {
+        void fetchJson<GlobalConfigSummaryWithReasoning>("/global-config").then((summary) => {
+          const persistedReasoningEffort = normalizeReasoningEffortForProvider(summary.reasoningEffort, summary.provider, capabilities);
           setForm({
             language: summary.language,
             provider: summary.provider || "openai",
-            model: summary.model || defaultModelForProvider(summary.provider || "openai"),
+            model: summary.model || defaultModelForProvider(summary.provider || "openai", capabilities),
             baseUrl: summary.baseUrl || "",
             apiKey: "",
+            reasoningEffort: persistedReasoningEffort,
           });
-          onSaved?.(summary);
+          onSaved?.(summary as GlobalConfigSummary);
         }).finally(() => {
           void refetch();
         });
@@ -81,7 +138,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
     }, 1500);
 
     return () => window.clearInterval(timer);
-  }, [authSession, onSaved, refetch]);
+  }, [authSession, capabilities, onSaved, refetch]);
 
   useEffect(() => {
     if (!authSession?.url || openedUrlRef.current === authSession.url || typeof window === "undefined") {
@@ -101,9 +158,16 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
   }
   if (!data) return null;
 
+  const resolvedTitle = title ?? (t ? t("config.globalTitle") : "Global LLM Defaults");
   const cliOAuthProvider = isCliOAuthProvider(form.provider);
-  const datalistId = `model-suggestions-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  const suggestions = MODEL_SUGGESTIONS[form.provider as Exclude<LlmProvider, "">] ?? [];
+  const datalistId = `model-suggestions-${resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const suggestions = modelSuggestionsForProvider(form.provider, capabilities);
+  const capability = providerCapability(form.provider, capabilities);
+  const modelSource = capability?.modelSource ?? "fallback";
+  const reasoningEfforts = reasoningEffortsForProvider(form.provider, capabilities);
+  const supportsReasoning = reasoningEfforts.length > 0;
+  const reasoningSource = capability?.reasoningSource ?? "fallback";
+  const modelSummary = form.model || defaultModelForProvider(form.provider, capabilities) || "-";
   const activeAuthStatus = form.provider === "gemini-cli"
     ? data.auth.geminiCli
     : form.provider === "codex-cli"
@@ -127,9 +191,10 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
       provider,
       model: current.provider === provider
         ? current.model
-        : (current.model && current.model !== defaultModelForProvider(current.provider))
+        : (current.model && current.model !== defaultModelForProvider(current.provider, capabilities))
           ? current.model
-          : defaultModelForProvider(provider),
+          : defaultModelForProvider(provider, capabilities),
+      reasoningEffort: normalizeReasoningEffortForProvider(current.reasoningEffort, provider, capabilities),
       baseUrl: isCliOAuthProvider(provider) ? "" : current.baseUrl,
       apiKey: isCliOAuthProvider(provider) ? "" : current.apiKey,
     }));
@@ -137,22 +202,27 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
   };
 
   const handleSave = async () => {
+    const reasoningEffort = normalizeReasoningEffortForProvider(form.reasoningEffort, form.provider, capabilities);
+
     setSaving(true);
     try {
       await putApi("/global-config", {
         language: form.language,
         provider: form.provider,
-        model: form.model.trim() || defaultModelForProvider(form.provider),
+        model: form.model.trim() || defaultModelForProvider(form.provider, capabilities),
+        reasoningEffort,
         baseUrl: form.baseUrl.trim(),
         apiKey: form.apiKey.trim(),
       });
-      const summary = await fetchJson<GlobalConfigSummary>("/global-config");
+      const summary = await fetchJson<GlobalConfigSummaryWithReasoning>("/global-config");
+      const persistedReasoningEffort = normalizeReasoningEffortForProvider(summary.reasoningEffort, summary.provider, capabilities);
       setForm({
         language: summary.language,
         provider: summary.provider || "openai",
-        model: summary.model || defaultModelForProvider(summary.provider || "openai"),
+        model: summary.model || defaultModelForProvider(summary.provider || "openai", capabilities),
         baseUrl: summary.baseUrl || "",
         apiKey: "",
+        reasoningEffort: persistedReasoningEffort || reasoningEffort,
       });
       onSaved?.(summary);
       await refetch();
@@ -188,40 +258,49 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="font-serif text-xl">{title}</h2>
+        <div className="space-y-1">
+          <h2 className="font-serif text-2xl">{resolvedTitle}</h2>
           {!compact && (
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="max-w-2xl text-sm text-muted-foreground">
               {t ? t("config.globalHint") : "Save `provider/model/auth` here instead of using `inkos config set-global`."}
             </p>
           )}
         </div>
         {data.exists && (
-          <span className="text-xs text-muted-foreground">
-            {(t ? t("config.storedPath") : "Stored in")} `~/.inkos/.env`
+          <span className="inline-flex items-center rounded-full border border-border/50 bg-background/75 px-3 py-1 text-xs text-muted-foreground">
+            {(t ? t("config.storedPath") : "Stored in")} <span className="ml-1 font-mono">~/.inkos/.env</span>
           </span>
         )}
       </div>
 
-      <div className={`border ${c.cardStatic} rounded-xl p-4 md:p-5 space-y-5`}>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+      <div className={`border ${c.cardStatic} rounded-2xl bg-card/70 p-4 md:p-5 space-y-6 shadow-sm`}>
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {t ? t("config.providerSummary") : "Current provider"}
             </div>
             <div className="mt-1 text-sm font-medium text-foreground">{providerLabel(form.provider)}</div>
           </div>
-          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+          <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {t ? t("config.modelSummary") : "Current model"}
             </div>
-            <div className="mt-1 text-sm font-medium text-foreground break-all">{form.model || defaultModelForProvider(form.provider) || "-"}</div>
+            <div className="mt-1 text-sm font-medium text-foreground break-all">{modelSummary}</div>
           </div>
-          <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
+          <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              {t ? t("config.globalReasoningSummary") : "Global reasoning"}
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">{reasoningLabel(form.reasoningEffort, reasoningEfforts, t)}</div>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {t ? t("config.authSummary") : "Connection status"}
             </div>
-            <div className="mt-1 text-sm font-medium text-foreground">{authSummary}</div>
+            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
+              <span className={`h-2 w-2 rounded-full ${authSummary === (t ? t("config.summaryReady") : "Ready") ? "studio-status-dot-ok" : "studio-status-dot-warn"}`} />
+              <span>{authSummary}</span>
+            </div>
           </div>
         </div>
 
@@ -253,10 +332,10 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                   key={option.value}
                   type="button"
                   onClick={() => handleProviderSelect(option.value)}
-                  className={`min-w-[11.5rem] shrink-0 snap-start sm:min-w-0 sm:shrink rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
+                  className={`min-w-[11.5rem] shrink-0 snap-start rounded-xl border px-3 py-3 text-left text-sm transition-colors sm:min-w-0 sm:shrink ${
                     active
-                      ? "border-primary bg-primary/10 text-foreground shadow-sm"
-                      : "border-border/50 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                      ? "studio-chip-accent text-foreground shadow-sm"
+                      : "studio-chip"
                   }`}
                 >
                   <div className="font-medium leading-snug">{option.label}</div>
@@ -269,40 +348,94 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
           </div>
         </div>
 
-        <label className="block space-y-1.5">
-          <span className="text-sm text-muted-foreground">{t ? t("config.model") : "Model"}</span>
-          <input
-            type="text"
-            list={datalistId}
-            value={form.model}
-            onChange={(event) => setForm({ ...form, model: event.target.value })}
-            placeholder={defaultModelForProvider(form.provider) || "Enter a model name"}
-            className={`${c.input} rounded px-3 py-2 text-sm w-full`}
-          />
-          <datalist id={datalistId}>
-            {suggestions.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-          {suggestions.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.9fr)]">
+          <label className="block space-y-1.5">
+            <span className="text-sm text-muted-foreground">{t ? t("config.model") : "Model"}</span>
+            <input
+              type="text"
+              list={datalistId}
+              value={form.model}
+              onChange={(event) => setForm({ ...form, model: event.target.value })}
+              placeholder={defaultModelForProvider(form.provider, capabilities) || "Enter a model name"}
+              className={`${c.input} rounded px-3 py-2 text-sm w-full`}
+            />
+            <datalist id={datalistId}>
               {suggestions.map((model) => (
-                <button
-                  key={model}
-                  type="button"
-                  onClick={() => setForm((current) => ({ ...current, model }))}
-                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                    form.model === model
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border/50 bg-background/70 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                  }`}
-                >
-                  {model}
-                </button>
+                <option key={model} value={model} />
               ))}
+            </datalist>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/50 bg-background/75 px-2 py-0.5">
+                {sourceBadgeLabel(modelSource, t)}
+              </span>
+              <span>{modelSourceDescription(form.provider, modelSource, t)}</span>
             </div>
-          )}
-        </label>
+            {form.provider === "codex-cli" && modelSource === "config" && (
+              <div className="text-xs text-muted-foreground">
+                {t ? t("config.codexCatalogLimit") : "Codex CLI does not expose a full model catalog here. Use custom input for other supported models."}
+              </div>
+            )}
+            {suggestions.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((model) => (
+                  <button
+                    key={model}
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, model }))}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      form.model === model
+                        ? "studio-badge-ok"
+                        : "studio-badge-soft"
+                    }`}
+                  >
+                    {model}
+                  </button>
+                ))}
+              </div>
+            )}
+          </label>
+
+          <div className="rounded-2xl border border-border/50 bg-background/80 p-4 space-y-3">
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                {t ? t("config.globalReasoningTitle") : "Global reasoning default"}
+              </div>
+              <div className="text-sm text-foreground">
+                {t ? t("config.globalReasoningHint") : "Store a default reasoning level here for new projects and providers that support it."}
+              </div>
+            </div>
+
+            <label className="block space-y-1.5">
+              <span className="text-sm text-muted-foreground">{t ? t("config.reasoningLevel") : "Reasoning level"}</span>
+              <select
+                value={supportsReasoning ? form.reasoningEffort : ""}
+                onChange={(event) => setForm({ ...form, reasoningEffort: event.target.value })}
+                disabled={!supportsReasoning}
+                className={`${c.input} rounded px-3 py-2 text-sm w-full disabled:opacity-50`}
+              >
+                <option value="">{supportsReasoning ? (t ? t("config.default") : "Default") : (t ? t("config.reasoningUnsupported") : "Not supported")}</option>
+                {reasoningEfforts.map((reasoningEffort) => (
+                  <option key={reasoningEffort} value={reasoningEffort}>
+                    {reasoningEffortLabel(reasoningEffort, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-xl border border-border/40 bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+              {supportsReasoning
+                ? (t ? t("config.globalReasoningProjectHint") : "New projects inherit this reasoning default unless you override them later.")
+                : (t ? t("config.globalReasoningUnsupportedHint") : "The current provider does not expose separate reasoning controls, so its built-in default will be used.")}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/50 bg-background/75 px-2 py-0.5">
+                {sourceBadgeLabel(reasoningSource, t)}
+              </span>
+              <span>{supportsReasoning ? reasoningSourceDescription(form.provider, reasoningSource, t) : t ? t("config.reasoningUnsupported") : "Not supported"}</span>
+            </div>
+          </div>
+        </div>
 
         {!cliOAuthProvider && (
           <>
@@ -332,22 +465,29 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
         )}
 
         {cliOAuthProvider && activeAuthStatus && (
-          <div className="rounded-xl border border-border/50 bg-secondary/30 p-4 space-y-3">
+          <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-1">
-                <div className="text-sm font-medium text-foreground">
-                  {authTitle(form.provider as CliOAuthProvider)}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-medium text-foreground">
+                    {authTitle(form.provider as CliOAuthProvider)}
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    activeAuthStatus.authenticated
+                      ? "studio-badge-ok"
+                      : "studio-badge-warn"
+                  }`}>
+                    {activeAuthStatus.authenticated
+                      ? (t ? t("config.authenticated") : "Authenticated")
+                      : (t ? t("config.notAuthenticated") : "Not Authenticated")}
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {activeAuthStatus.authenticated
-                    ? (t ? t("config.authenticated") : "Authenticated")
-                    : (t ? t("config.notAuthenticated") : "Not Authenticated")}
-                  {" · "}
                   {activeAuthStatus.available
                     ? (t ? t("config.commandDetected") : "`{command}` detected").replace("{command}", activeAuthStatus.command)
                     : (t ? t("config.commandMissing") : "`{command}` not found").replace("{command}", activeAuthStatus.command)}
                 </div>
-                <div className="text-xs text-muted-foreground break-all">
+                <div className="rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-xs text-muted-foreground break-all">
                   {activeAuthStatus.credentialPath}
                 </div>
                 {activeAuthStatus.details && (
@@ -357,7 +497,7 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
                 )}
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="grid gap-2 sm:min-w-[12rem] sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => void refetch()}
@@ -433,7 +573,9 @@ export function GlobalConfigPanel({ theme, title = "Global LLM Defaults", compac
 
         <div className="flex flex-col gap-3 border-t border-border/40 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-muted-foreground">
-            {providerLabel(form.provider)}
+            <span className="font-medium text-foreground">{providerLabel(form.provider)}</span>
+            {" · "}
+            <span className="font-mono">{form.model || defaultModelForProvider(form.provider, capabilities) || "-"}</span>
           </div>
           <button
             type="button"

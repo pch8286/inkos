@@ -74,14 +74,63 @@ export interface SaveChapterPayload {
 export interface TruthFileSummary {
   readonly name: string;
   readonly label: string;
+  readonly section: string;
+  readonly sectionLabel: string;
   readonly exists: boolean;
   readonly path: string;
   readonly optional: boolean;
   readonly available: boolean;
+  readonly preview: string;
+  readonly size: number;
 }
 
 export interface TruthFileDetail extends TruthFileSummary {
   readonly content: string | null;
+}
+
+export interface TruthSectionSummary {
+  readonly id: string;
+  readonly label: string;
+  readonly files: ReadonlyArray<TruthFileSummary>;
+}
+
+export interface TruthBulkDraft {
+  readonly name: string;
+  readonly content: string;
+  readonly originalContent: string;
+  readonly assistPrompt: string;
+  readonly loading: boolean;
+  readonly saving: boolean;
+  readonly assisting: boolean;
+  readonly error: string | null;
+  readonly assistError: string | null;
+}
+
+export interface TruthAssistChange {
+  readonly fileName: string;
+  readonly label: string;
+  readonly content: string;
+}
+
+export interface TruthAssistResponse {
+  readonly content: string;
+  readonly changes: ReadonlyArray<TruthAssistChange>;
+}
+
+export interface TruthDocumentSection {
+  readonly id: string;
+  readonly heading: string;
+  readonly headingLevel: number;
+  readonly text: string;
+  readonly tableHeaders: ReadonlyArray<string>;
+  readonly tableRows: ReadonlyArray<ReadonlyArray<string>>;
+}
+
+export interface StructuredTruthDocument {
+  readonly frontmatter: string;
+  readonly title: string;
+  readonly leadText: string;
+  readonly sections: ReadonlyArray<TruthDocumentSection>;
 }
 
 // --- Review ---
@@ -144,6 +193,8 @@ export interface ApiErrorResponse {
   };
 }
 
+export type RadarMode = "market-trends" | "idea-mining" | "fit-check";
+
 // --- Bootstrap / global config ---
 
 export interface CliAuthStatus {
@@ -159,6 +210,7 @@ export interface GlobalConfigSummary {
   readonly language: "ko" | "zh" | "en";
   readonly provider: LlmProvider;
   readonly model: string;
+  readonly reasoningEffort?: string;
   readonly baseUrl: string;
   readonly apiKeySet: boolean;
   readonly auth: {
@@ -184,4 +236,63 @@ export interface AuthSessionSummary {
   readonly verificationCode: string | null;
   readonly error: string | null;
   readonly logs: ReadonlyArray<string>;
+}
+
+export interface RadarRecommendation {
+  readonly confidence: number;
+  readonly platform: string;
+  readonly genre: string;
+  readonly concept: string;
+  readonly reasoning: string;
+  readonly benchmarkTitles: ReadonlyArray<string>;
+}
+
+export interface RadarResult {
+  readonly marketSummary: string;
+  readonly recommendations: ReadonlyArray<RadarRecommendation>;
+}
+
+export interface RadarFitCheckMetadata {
+  readonly bookId: string;
+  readonly bookTitle: string;
+  readonly sourceFiles: ReadonlyArray<string>;
+  readonly contextPreview: string;
+  readonly contextLength: number;
+  readonly note: string | null;
+}
+
+export interface RadarProgressSnapshot {
+  readonly elapsedMs: number;
+  readonly totalChars: number;
+  readonly chineseChars?: number;
+}
+
+export interface RadarStatusSummary {
+  readonly status: "idle" | "running" | "succeeded" | "failed";
+  readonly mode: RadarMode;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly progress: RadarProgressSnapshot | null;
+  readonly result: RadarResult | null;
+  readonly error: string | null;
+  readonly fitCheckMetadata?: RadarFitCheckMetadata;
+}
+
+export interface RadarHistoryEntry {
+  readonly id: string;
+  readonly savedPath: string;
+  readonly savedAt: string;
+  readonly status: "succeeded" | "failed";
+  readonly mode: RadarMode;
+  readonly fitCheckMetadata?: RadarFitCheckMetadata;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+  readonly result: RadarResult | null;
+  readonly error: string | null;
+}
+
+export interface RadarHistorySummary {
+  readonly scans: ReadonlyArray<RadarHistoryEntry>;
 }

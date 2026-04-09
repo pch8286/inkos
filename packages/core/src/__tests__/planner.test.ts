@@ -1405,4 +1405,48 @@ describe("PlannerAgent", () => {
     expect(intentMarkdown).toContain("12 active hooks");
     expect(intentMarkdown).not.toContain("8 active hooks");
   });
+
+  it("builds cadence directives in Korean for Korean books", () => {
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const directives = (planner as unknown as {
+      buildStructuredDirectives: (input: {
+        chapterNumber: number;
+        language?: string;
+        volumeOutline: string;
+        outlineNode: string | undefined;
+        matchedOutlineAnchor: boolean;
+        chapterSummaries: string;
+      }) => {
+        sceneDirective?: string;
+        moodDirective?: string;
+        titleDirective?: string;
+      };
+    }).buildStructuredDirectives({
+      chapterNumber: 5,
+      language: "ko",
+      volumeOutline: "# 볼륨 아웃라인\n",
+      outlineNode: "주인공이 첫 군단 간부를 포섭한다.",
+      matchedOutlineAnchor: false,
+      chapterSummaries: [
+        "# 회차 요약",
+        "",
+        "| 회차 | 제목 | 등장인물 | 핵심 사건 | 상태 변화 | 복선 동향 | 정서 | 회차 유형 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| 1 | 피의 계약 | 한지한 | 대치가 시작된다 | 마왕의 경계심이 오른다 | 첫 계약 복선 | 긴장 | 대치 |",
+        "| 2 | 피의 맹세 | 한지한 | 다시 대치한다 | 신뢰가 흔들린다 | 맹세 복선 | 긴장 | 대치 |",
+        "| 3 | 피의 문장 | 한지한 | 또다시 대치한다 | 압박이 누적된다 | 문장 복선 | 긴장 | 대치 |",
+        "| 4 | 피의 밤 | 한지한 | 밀실 대치가 이어진다 | 주도권이 흔들린다 | 밤의 복선 | 긴장 | 대치 |",
+      ].join("\n"),
+    });
+
+    expect(directives.sceneDirective).toContain("이번 화는 장면 그릇");
+    expect(directives.moodDirective).toContain("독자가 숨 돌릴 틈");
+    expect(directives.titleDirective).toContain("제목을 또");
+  });
 });

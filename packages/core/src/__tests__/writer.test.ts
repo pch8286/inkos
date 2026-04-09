@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WriterAgent } from "../agents/writer.js";
@@ -35,6 +35,57 @@ function createCaptureLogger() {
 describe("WriterAgent", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("saves Korean chapter headings with Korean prefixes instead of Chinese ones", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-writer-save-ko-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    const chaptersDir = join(bookDir, "chapters");
+    await mkdir(storyDir, { recursive: true });
+    await mkdir(chaptersDir, { recursive: true });
+
+    const agent = new WriterAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    try {
+      await agent.saveChapter(bookDir, {
+        chapterNumber: 1,
+        title: "제1장 각성의 밤",
+        content: "서늘한 바람이 골목을 훑었다.",
+        wordCount: 0,
+        preWriteCheck: "",
+        postSettlement: "",
+        updatedState: "# 현재 상태",
+        updatedLedger: "",
+        updatedHooks: "# 떡밥",
+        chapterSummary: "",
+        updatedSubplots: "",
+        updatedEmotionalArcs: "",
+        updatedCharacterMatrix: "",
+        postWriteErrors: [],
+        postWriteWarnings: [],
+      }, false, "ko");
+
+      const saved = await readFile(join(chaptersDir, "0001_제1장_각성의_밤.md"), "utf-8");
+      expect(saved.startsWith("# 제1장 각성의 밤\n\n")).toBe(true);
+      expect(saved).not.toContain("# 第1章");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("uses compact summary context plus selected long-range evidence during governed settlement", async () => {

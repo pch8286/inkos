@@ -465,4 +465,62 @@ describe("ReviserAgent", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("uses Korean reviser prompts for Korean books", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-reviser-ko-test-"));
+    const bookDir = join(root, "book");
+    await mkdir(join(bookDir, "story"), { recursive: true });
+    await writeFile(join(bookDir, "book.json"), JSON.stringify({ language: "ko" }, null, 2), "utf-8");
+
+    const agent = new ReviserAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ReviserAgent.prototype as never, "chat" as never).mockResolvedValue({
+      content: [
+        "=== FIXED_ISSUES ===",
+        "- repaired",
+        "",
+        "=== REVISED_CONTENT ===",
+        "수정된 본문",
+        "",
+        "=== UPDATED_STATE ===",
+        "상태 카드",
+        "",
+        "=== UPDATED_HOOKS ===",
+        "복선 풀",
+      ].join("\n"),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await agent.reviseChapter(bookDir, "원문 본문", 3, [CRITICAL_ISSUE], "rewrite", "xuanhuan");
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+      const userPrompt = messages?.[1]?.content ?? "";
+
+      expect(systemPrompt).toContain("전문 웹소설 수정 에디터");
+      expect(systemPrompt).toContain("수정 모드");
+      expect(userPrompt).toContain("## 심사 이슈");
+      expect(userPrompt).toContain("## 수정 대상 원문");
+      expect(userPrompt).not.toContain("## 审稿问题");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

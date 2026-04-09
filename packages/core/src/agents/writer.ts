@@ -655,9 +655,7 @@ export class WriterAgent extends BaseAgent {
     const paddedNum = String(output.chapterNumber).padStart(4, "0");
     const filename = `${paddedNum}_${this.sanitizeFilename(output.title)}.md`;
 
-    const heading = language === "en"
-      ? `# Chapter ${output.chapterNumber}: ${output.title}`
-      : `# 第${output.chapterNumber}章 ${output.title}`;
+    const heading = this.composeChapterHeading(output.chapterNumber, output.title, language);
     const chapterContent = [
       heading,
       "",
@@ -692,6 +690,34 @@ export class WriterAgent extends BaseAgent {
     }
 
     await Promise.all(writes);
+  }
+
+  private composeChapterHeading(
+    chapterNumber: number,
+    rawTitle: string,
+    language: WritingLanguage,
+  ): string {
+    const prefix = language === "en"
+      ? `Chapter ${chapterNumber}`
+      : language === "ko"
+        ? `제${chapterNumber}장`
+        : `第${chapterNumber}章`;
+    const title = rawTitle.trim();
+    const normalizedTitle = title.replace(
+      /^(?:제\s*\d+\s*(?:장|화)|第\s*[零〇○Ｏ０一二三四五六七八九十百千万\d]+\s*(?:章|回)|Chapter\s+(?:\d+|[IVXLCDM]+))(?:[:：.\-]\s*|\s+)?/i,
+      "",
+    ).trim();
+
+    if (!title) {
+      return `# ${prefix}`;
+    }
+    if (normalizedTitle !== title) {
+      return normalizedTitle ? `# ${prefix} ${normalizedTitle}` : `# ${prefix}`;
+    }
+    if (language === "en") {
+      return `# ${prefix}: ${title}`;
+    }
+    return `# ${prefix} ${title}`;
   }
 
   private buildUserPrompt(params: {

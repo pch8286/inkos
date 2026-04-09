@@ -5,6 +5,7 @@ describe("STUDIO_SSE_EVENTS", () => {
   it("covers the server lifecycle events that drive the UI", () => {
     expect(STUDIO_SSE_EVENTS).toEqual(expect.arrayContaining([
       "book:creating",
+      "book:create:progress",
       "book:created",
       "book:deleted",
       "book:error",
@@ -44,6 +45,8 @@ describe("STUDIO_SSE_EVENTS", () => {
       "radar:start",
       "radar:complete",
       "radar:error",
+      "radar:saved",
+      "radar:save:error",
       "log",
       "llm:progress",
       "ping",

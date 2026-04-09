@@ -360,7 +360,7 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
               key={g.id}
               onClick={() => setSelected(g.id)}
               className={`w-full text-left px-4 py-3 border-b border-border/40 transition-colors ${
-                validSelected === g.id ? "bg-primary/10 text-primary" : "hover:bg-muted/30"
+                validSelected === g.id ? "studio-surface-active" : "studio-surface-hover hover:bg-muted/30"
               }`}
             >
               <div className="text-sm font-medium">{g.name}</div>

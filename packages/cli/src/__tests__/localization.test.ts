@@ -8,6 +8,9 @@ import {
   formatImportChaptersComplete,
   formatImportChaptersDiscovery,
   formatImportChaptersResume,
+  formatRadarReportLines,
+  formatRadarScanFailed,
+  formatRadarScanStart,
   formatWriteNextComplete,
   formatWriteNextProgress,
   formatWriteNextResultLines,
@@ -157,6 +160,43 @@ describe("CLI localization", () => {
       "Canon imported: story/parent_canon.md",
       "Writer and auditor will auto-detect this file for spinoff mode.",
     ]);
+  });
+
+  it("formats radar summaries in Korean", () => {
+    expect(formatRadarScanStart("ko")).toBe("시장 레이더 스캔 중...");
+    expect(formatRadarReportLines("ko", {
+      marketSummary: "현대판타지와 무협이 강세다.",
+      recommendations: [
+        {
+          confidence: 0.82,
+          platform: "NAVER 시리즈",
+          genre: "현대판타지",
+          concept: "회귀한 딜러가 기업 전쟁에 뛰어든다",
+          reasoning: "상위권 제목 다수가 직업/성장형 hook을 쓴다.",
+          benchmarkTitles: ["절대회귀", "게임 속 바바리안으로 살아남기"],
+        },
+      ],
+    }, "radar/scan-2026-04-09.json")).toEqual([
+      "시장 요약:",
+      "현대판타지와 무협이 강세다.",
+      "",
+      "추천:",
+      "  [82%] NAVER 시리즈/현대판타지",
+      "    콘셉트: 회귀한 딜러가 기업 전쟁에 뛰어든다",
+      "    근거: 상위권 제목 다수가 직업/성장형 hook을 쓴다.",
+      "    비교작: 절대회귀, 게임 속 바바리안으로 살아남기",
+      "",
+      "레이더 결과 저장: radar/scan-2026-04-09.json",
+    ]);
+  });
+
+  it("formats radar scan failures naturally for Korean users", () => {
+    expect(formatRadarScanFailed("ko", "Error: API 返回 400 (请求参数错误)。可能原因："))
+      .toBe("레이더 스캔 실패: 요청 파라미터 오류(400)로 스캔이 실패했습니다. 모델명, max_tokens, stream, 메시지 형식 지원 여부를 확인해 주세요.");
+    expect(formatRadarScanFailed("ko", "Error: API returned 400 (invalid request). Possible causes:"))
+      .toBe("레이더 스캔 실패: 요청 파라미터 오류(400)로 스캔이 실패했습니다. 모델명, max_tokens, stream, 메시지 형식 지원 여부를 확인해 주세요.");
+    expect(formatRadarScanFailed("en", "API returned 500"))
+      .toBe("Radar scan failed: API returned 500");
   });
 
   it("defaults to Korean for unknown language inputs", () => {

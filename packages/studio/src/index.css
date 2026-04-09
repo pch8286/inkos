@@ -15,6 +15,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -32,9 +34,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-serif: 'Instrument Serif', 'Noto Serif KR', Georgia, serif;
-  --font-sans: 'DM Sans', 'Noto Sans KR', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-serif: 'Noto Serif KR', 'Instrument Serif', 'Nanum Myeongjo', Georgia, serif;
+  --font-sans: 'Noto Sans KR', 'DM Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'D2Coding', 'SFMono-Regular', Consolas, monospace;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
@@ -64,6 +66,10 @@
   --primary: oklch(0.45 0.12 25);
   --primary-foreground: oklch(0.98 0.006 76);
 
+  /* Brand CTA: Warm honey / apricot */
+  --brand: oklch(0.82 0.14 72);
+  --brand-foreground: oklch(0.22 0.03 45);
+
   /* Secondary: Soft paper shadow */
   --secondary: oklch(0.94 0.01 76);
   --secondary-foreground: oklch(0.25 0.015 60);
@@ -79,9 +85,27 @@
   --destructive: oklch(0.55 0.18 25);
   --destructive-foreground: oklch(0.98 0 0);
 
+  --studio-cta-start: oklch(0.95 0.08 82);
+  --studio-cta-end: oklch(0.91 0.11 74);
+  --studio-cta-text: oklch(0.25 0.03 60);
+  --studio-chip: oklch(0.93 0.02 82);
+  --studio-chip-border: oklch(0.77 0.03 82);
+  --studio-chip-text: oklch(0.32 0.03 60);
+  --studio-chip-accent: oklch(0.9 0.08 76);
+  --studio-chip-accent-text: oklch(0.28 0.05 60);
+  --studio-state-ok: oklch(0.58 0.14 151);
+  --studio-state-warn: oklch(0.73 0.15 82);
+  --studio-state-text: oklch(0.24 0.02 60);
+
   --border: oklch(0.84 0.01 76);
   --input: oklch(0.92 0.005 76);
   --ring: oklch(0.45 0.12 25);
+}
+
+html:lang(ko) {
+  --font-serif: 'Noto Serif KR', 'Nanum Myeongjo', 'Apple SD Gothic Neo', 'Malgun Gothic', serif;
+  --font-sans: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', system-ui, sans-serif;
+  --font-mono: 'D2Coding', 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
 /* ── Dark Mode: Obsidian & Candlelight ── */
@@ -102,6 +126,10 @@
   --primary: oklch(0.78 0.14 85);
   --primary-foreground: oklch(0.12 0.01 250);
 
+  /* Brand CTA: Bright ember for action surfaces */
+  --brand: oklch(0.76 0.15 76);
+  --brand-foreground: oklch(0.14 0.02 248);
+
   /* Secondary: Dark slate */
   --secondary: oklch(0.22 0.02 250);
   --secondary-foreground: oklch(0.92 0.005 250);
@@ -116,6 +144,18 @@
 
   --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(0.98 0 0);
+
+  --studio-cta-start: oklch(0.76 0.14 82);
+  --studio-cta-end: oklch(0.68 0.16 88);
+  --studio-cta-text: oklch(0.97 0.005 95);
+  --studio-chip: oklch(0.24 0.02 250);
+  --studio-chip-border: oklch(0.36 0.03 250);
+  --studio-chip-text: oklch(0.82 0.005 250);
+  --studio-chip-accent: oklch(0.32 0.05 88);
+  --studio-chip-accent-text: oklch(0.94 0.07 90);
+  --studio-state-ok: oklch(0.7 0.16 150);
+  --studio-state-warn: oklch(0.73 0.13 85);
+  --studio-state-text: oklch(0.84 0.02 250);
 
   --border: oklch(0.30 0.02 250);
   --input: oklch(0.25 0.02 250);
@@ -133,6 +173,19 @@ body {
   background-attachment: scroll;
   color: var(--foreground);
   transition: background 0.5s ease, color 0.5s ease;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+html:lang(ko) body {
+  word-break: keep-all;
 }
 
 /* ── Cursor interaction rules ── */
@@ -164,6 +217,23 @@ h1, h2, h3, h4 {
   font-family: var(--font-serif);
   letter-spacing: -0.02em;
   font-weight: 500;
+}
+
+html:lang(ko) h1,
+html:lang(ko) h2,
+html:lang(ko) h3,
+html:lang(ko) h4 {
+  font-family: var(--font-sans);
+  font-style: normal;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+html:lang(ko) .font-serif {
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: -0.035em;
 }
 
 h1 { font-size: 2.25rem; font-style: normal; line-height: 1.02; }
@@ -237,6 +307,121 @@ h3 { font-size: 1.25rem; }
   box-shadow: var(--shadow-3d-hover);
   transform: translateY(-4px) scale(1.005);
   border-color: var(--primary);
+}
+
+/* Warm utility surface that matches the paper theme */
+.studio-cta {
+  border: 1px solid color-mix(in oklch, var(--studio-cta-text) 22%, transparent);
+  background: linear-gradient(135deg, var(--studio-cta-start) 0%, var(--studio-cta-end) 100%);
+  color: var(--studio-cta-text);
+  text-shadow: 0 1px 0 oklch(0.97 0.01 90 / 0.35);
+  box-shadow: 0 10px 22px -14px color-mix(in oklch, var(--studio-cta-text) 36%, transparent);
+  transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.studio-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 16px 30px -18px color-mix(in oklch, var(--studio-cta-text) 40%, transparent);
+}
+
+.studio-cta:active {
+  transform: translateY(0);
+}
+
+.studio-chip {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-border) 45%, transparent);
+  background-color: color-mix(in oklch, var(--studio-chip) 80%, transparent);
+  color: var(--studio-chip-text);
+}
+
+.studio-chip-accent {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-accent) 45%, transparent);
+  background-color: color-mix(in oklch, var(--studio-chip-accent) 76%, transparent);
+  color: var(--studio-chip-accent-text);
+}
+
+.studio-header-pill {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-border) 55%, transparent);
+  background: color-mix(in oklch, var(--studio-chip) 72%, transparent);
+  color: var(--studio-state-text);
+  transition: all 0.2s ease;
+}
+
+.studio-header-pill:hover {
+  border-color: color-mix(in oklch, var(--studio-chip-accent) 45%, transparent);
+  color: var(--studio-state-text);
+}
+
+.studio-header-pill.active {
+  border-color: color-mix(in oklch, var(--studio-state-ok) 45%, transparent);
+  background: color-mix(in oklch, var(--studio-chip-accent) 46%, transparent);
+  color: color-mix(in oklch, var(--studio-state-text) 80%, var(--studio-state-ok));
+}
+
+.studio-icon-btn {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-border) 50%, transparent);
+  background: color-mix(in oklch, var(--studio-chip) 76%, transparent);
+  color: var(--studio-state-text);
+  transition: all 0.2s ease;
+}
+
+.studio-icon-btn:hover {
+  border-color: color-mix(in oklch, var(--studio-chip-accent) 50%, transparent);
+  color: var(--studio-state-text);
+  background: color-mix(in oklch, var(--studio-chip-accent) 24%, transparent);
+}
+
+.studio-icon-btn.active {
+  background: linear-gradient(135deg, var(--studio-cta-start), var(--studio-cta-end));
+  border-color: color-mix(in oklch, var(--studio-cta-text) 22%, transparent);
+  color: var(--studio-cta-text);
+}
+
+.studio-status-dot-ok {
+  background: var(--studio-state-ok);
+}
+
+.studio-status-dot-warn {
+  background: var(--studio-state-warn);
+}
+
+.studio-badge-ok {
+  border: 1px solid color-mix(in oklch, var(--studio-state-ok) 42%, transparent);
+  background: color-mix(in oklch, var(--studio-state-ok) 24%, transparent);
+  color: color-mix(in oklch, var(--studio-state-text) 58%, var(--studio-state-ok));
+}
+
+.studio-badge-warn {
+  border: 1px solid color-mix(in oklch, var(--studio-state-warn) 42%, transparent);
+  background: color-mix(in oklch, var(--studio-state-warn) 24%, transparent);
+  color: color-mix(in oklch, var(--studio-state-text) 48%, var(--studio-state-warn));
+}
+
+.studio-badge-soft {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-border) 48%, transparent);
+  background: color-mix(in oklch, var(--studio-chip) 84%, transparent);
+  color: var(--studio-chip-text);
+}
+
+.studio-surface-active {
+  border: 1px solid color-mix(in oklch, var(--studio-chip-accent) 52%, transparent);
+  background: color-mix(in oklch, var(--studio-chip-accent) 34%, transparent);
+  color: var(--studio-state-text);
+}
+
+.studio-surface-hover {
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.studio-surface-hover:hover {
+  border-color: color-mix(in oklch, var(--studio-chip-accent) 44%, transparent);
+  background: color-mix(in oklch, var(--studio-chip-accent) 18%, transparent);
+  color: var(--studio-state-text);
+}
+
+.studio-state-soft-text {
+  color: color-mix(in oklch, var(--studio-state-text) 72%, transparent);
 }
 
 /* ── ChatPanel Animations ── */

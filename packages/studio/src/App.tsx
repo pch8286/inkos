@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatBar";
 import { Dashboard } from "./pages/Dashboard";
@@ -17,13 +17,15 @@ import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
 import { LanguageSelector } from "./pages/LanguageSelector";
-import { useSSE } from "./hooks/use-sse";
+import { useSSE, type SSEMessage } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
-import { Sun, Moon, Bell, MessageSquare, PanelLeftOpen } from "lucide-react";
+import { Sun, Moon, Bell, MessageSquare, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
 import type { BootstrapSummary } from "./shared/contracts";
-import { defaultModelForProvider, labelForProvider } from "./shared/llm";
+import { buildActivityFeedEntries } from "./shared/activity-feed";
+import { compactModelLabel, defaultModelForProvider, labelForProvider, shortLabelForProvider } from "./shared/llm";
+import type { TruthAssistantContext } from "./shared/truth-assistant";
 
 export type Route =
   | { page: "dashboard" }
@@ -66,11 +68,28 @@ export function deriveActiveLlm(
   };
 }
 
+function isHeaderAlertMessage(message: SSEMessage): boolean {
+  return message.event !== "ping"
+    && message.event !== "log"
+    && message.event !== "llm:progress"
+    && message.event !== "radar:progress";
+}
+
+export function deriveUnreadAlertCount(messages: ReadonlyArray<SSEMessage>, lastSeenTimestamp: number): number {
+  return messages.filter((message) => isHeaderAlertMessage(message) && message.timestamp > lastSeenTimestamp).length;
+}
+
+export function deriveLatestAlertTimestamp(messages: ReadonlyArray<SSEMessage>): number {
+  return messages
+    .filter(isHeaderAlertMessage)
+    .reduce((latest, message) => Math.max(latest, message.timestamp), 0);
+}
+
 export function App() {
   const [route, setRoute] = useState<Route>({ page: "dashboard" });
   const sse = useSSE();
   const { theme, setTheme } = useTheme();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { data: bootstrap, loading: bootstrapLoading, error: bootstrapError, refetch: refetchBootstrap } = useApi<BootstrapSummary>("/bootstrap");
   const { data: project, refetch: refetchProject } = useApi<{
     language: string;
@@ -79,16 +98,33 @@ export function App() {
     model: string;
     baseUrl: string;
   }>("/project");
+  const { data: activityData, refetch: refetchActivity } = useApi<{ entries: ReadonlyArray<SSEMessage> }>("/activity");
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [lastSeenAlertAt, setLastSeenAlertAt] = useState(0);
+  const [truthAssistantContext, setTruthAssistantContext] = useState<TruthAssistantContext | null>(null);
+  const alertPopoverRef = useRef<HTMLDivElement | null>(null);
 
   const isDark = theme === "dark";
+  const unreadAlertCount = useMemo(() => deriveUnreadAlertCount(sse.messages, lastSeenAlertAt), [lastSeenAlertAt, sse.messages]);
+  const latestAlertTimestamp = useMemo(() => deriveLatestAlertTimestamp(sse.messages), [sse.messages]);
+  const alertEntries = useMemo(
+    () => buildActivityFeedEntries(activityData?.entries ?? sse.messages)
+      .filter((entry) => isHeaderAlertMessage({ event: entry.event, data: null, timestamp: entry.timestamp }))
+      .slice(0, 6),
+    [activityData?.entries, sse.messages],
+  );
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
   }, [isDark]);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   useEffect(() => {
     if (!bootstrapLoading && bootstrap && !bootstrap.projectInitialized) {
@@ -107,6 +143,51 @@ export function App() {
       setReady(true);
     }
   }, [bootstrap, bootstrapLoading, project]);
+
+  useEffect(() => {
+    if (route.page !== "logs" || latestAlertTimestamp === 0) return;
+    setLastSeenAlertAt((current) => Math.max(current, latestAlertTimestamp));
+  }, [latestAlertTimestamp, route.page]);
+
+  useEffect(() => {
+    setAlertOpen(false);
+  }, [route.page]);
+
+  useEffect(() => {
+    if (route.page !== "truth") {
+      setTruthAssistantContext(null);
+    }
+  }, [route.page]);
+
+  useEffect(() => {
+    if (!sse.messages.length) return;
+    void refetchActivity();
+  }, [refetchActivity, sse.messages]);
+
+  useEffect(() => {
+    if (!alertOpen || latestAlertTimestamp === 0) return;
+    setLastSeenAlertAt((current) => Math.max(current, latestAlertTimestamp));
+  }, [alertOpen, latestAlertTimestamp]);
+
+  useEffect(() => {
+    if (!alertOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!alertPopoverRef.current) return;
+      if (alertPopoverRef.current.contains(event.target as Node)) return;
+      setAlertOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAlertOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [alertOpen]);
 
   const nav = {
     toDashboard: () => {
@@ -172,6 +253,11 @@ export function App() {
     activeBookId
       ? `book:${activeBookId}`
       : route.page;
+  const contentWidthClass = route.page === "config"
+    ? "max-w-6xl"
+    : route.page === "truth"
+      ? "max-w-7xl"
+      : "max-w-5xl";
   const activeLlm = deriveActiveLlm(bootstrap ?? undefined, project ?? undefined);
   const activeLlmAuthMissing = activeLlm
     ? activeLlm.provider === "gemini-cli"
@@ -192,7 +278,7 @@ export function App() {
   if (!ready || bootstrapLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <div className="w-12 h-12 border-4 border-border/30 border-t-ring rounded-full animate-spin" />
       </div>
     );
   }
@@ -257,52 +343,126 @@ export function App() {
             {activeLlm && (
               <button
                 onClick={nav.toConfig}
-                className={`min-w-0 max-w-[10.75rem] rounded-2xl border px-2.5 py-1.5 text-left transition-colors sm:max-w-[18rem] sm:px-3 sm:py-2 ${
+                className={`min-w-0 max-w-[8.25rem] rounded-full px-2 py-1.5 text-left transition-all sm:max-w-[10.75rem] ${
                   route.page === "config"
-                    ? "border-primary/60 bg-primary/10"
-                    : "border-border/60 bg-secondary/60 hover:border-primary/40"
+                    ? "studio-header-pill active"
+                    : "studio-header-pill"
                 }`}
-                title={t("app.llmSettings")}
+                title={`${t("app.llmSettings")} · ${labelForProvider(activeLlm.provider)} · ${activeLlm.model || defaultModelForProvider(activeLlm.provider) || "-"}`}
+                aria-label={t("app.llmSettings")}
               >
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${activeLlmAuthMissing ? "bg-amber-500" : "bg-emerald-500"}`} />
-                  <span className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    {t("app.llmSettings")}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${activeLlmAuthMissing ? "studio-status-dot-warn" : "studio-status-dot-ok"}`} />
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {shortLabelForProvider(activeLlm.provider)}
                   </span>
-                </div>
-                <div className="mt-1 truncate text-[11px] font-medium text-foreground sm:text-xs">
-                  {labelForProvider(activeLlm.provider) || "Not configured"}
-                </div>
-                <div className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
-                  {activeLlm.model || defaultModelForProvider(activeLlm.provider) || (activeLlmAuthMissing ? t("app.loginRequired") : "-")}
-                  <span className="hidden sm:inline">
-                    {" · "}
-                    {activeLlm.source === "project" ? t("app.currentProjectLlm") : t("app.newProjectDefault")}
+                  <span className="truncate text-[10px] font-medium text-foreground/85 sm:text-[11px]">
+                    {activeLlmAuthMissing
+                      ? t("app.loginRequired")
+                      : compactModelLabel(activeLlm.provider, activeLlm.model || defaultModelForProvider(activeLlm.provider) || "-")}
                   </span>
+                  <SlidersHorizontal size={11} className="ml-auto shrink-0 text-muted-foreground/70" />
                 </div>
               </button>
             )}
 
             <button
               onClick={() => setTheme(isDark ? "light" : "dark")}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all shadow-sm"
+              className="w-8 h-8 flex items-center justify-center rounded-lg studio-icon-btn"
               title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {isDark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
 
-            <button className="hidden sm:flex w-8 h-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-all relative">
-              <Bell size={16} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full border-2 border-background" />
-            </button>
+            <div className="relative hidden sm:block" ref={alertPopoverRef}>
+              <button
+                type="button"
+                onClick={() => setAlertOpen((current) => !current)}
+                className={`relative flex h-8 min-w-8 items-center justify-center rounded-lg transition-all studio-icon-btn ${
+                  alertOpen
+                    ? "active"
+                    : "hover:scale-[1.02]"
+                }`}
+                title={unreadAlertCount > 0 ? `${t("app.alerts")} · ${unreadAlertCount}` : t("app.alerts")}
+                aria-label={unreadAlertCount > 0 ? `${t("app.alerts")} (${unreadAlertCount})` : t("app.alerts")}
+                aria-expanded={alertOpen}
+                aria-haspopup="dialog"
+              >
+                <Bell size={16} />
+                {unreadAlertCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full studio-chip-accent px-1 text-[10px] font-semibold leading-none shadow-sm">
+                    {unreadAlertCount > 9 ? "9+" : unreadAlertCount}
+                  </span>
+                )}
+              </button>
+
+              {alertOpen && (
+                  <div className="absolute right-0 top-[calc(100%+0.6rem)] z-40 w-[23rem] overflow-hidden rounded-2xl border border-border/70 bg-background/96 shadow-2xl shadow-black/10 backdrop-blur-xl">
+                  <div className="border-b border-border/50 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{t("app.alerts")}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{t("app.alertsHint")}</div>
+                      </div>
+                      {unreadAlertCount > 0 && (
+                        <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                          {unreadAlertCount > 9 ? "9+" : unreadAlertCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
+                    {alertEntries.length > 0 ? (
+                      <div className="space-y-2">
+                        {alertEntries.map((entry) => (
+                          <div key={entry.id} className="rounded-xl border border-border/50 bg-secondary/30 px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                                {entry.label}
+                              </div>
+                              <div className="shrink-0 text-[11px] text-muted-foreground">
+                                {new Date(entry.timestamp).toLocaleTimeString()}
+                              </div>
+                            </div>
+                            {entry.detail && (
+                              <div className="mt-2 text-sm leading-6 text-foreground/85 break-words">
+                                {entry.detail}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border/50 px-3 py-8 text-center text-sm italic text-muted-foreground">
+                        {t("app.alertsEmpty")}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-border/50 px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAlertOpen(false);
+                        nav.toLogs();
+                      }}
+                      className="w-full rounded-xl studio-chip border border-border/50 px-3 py-2.5 text-sm font-medium text-foreground"
+                    >
+                      {t("app.openLogs")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Chat Panel Toggle */}
             <button
               onClick={() => setChatOpen((prev) => !prev)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all shadow-sm ${
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all studio-icon-btn ${
                 chatOpen
-                  ? "bg-primary text-primary-foreground shadow-primary/20"
-                  : "bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  ? "active"
+                  : "hover:scale-[1.02]"
               }`}
               title="Toggle AI Assistant"
             >
@@ -313,20 +473,29 @@ export function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto scroll-smooth">
-          <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 sm:py-10 md:px-12 lg:py-16 fade-in">
+          <div className={`${contentWidthClass} mx-auto px-4 py-8 sm:px-6 sm:py-10 md:px-12 lg:py-16 fade-in`}>
             {route.page === "dashboard" && <Dashboard nav={nav} sse={sse} theme={theme} t={t} />}
             {route.page === "book" && <BookDetail bookId={route.bookId} nav={nav} theme={theme} t={t} sse={sse} />}
             {route.page === "book-create" && <BookCreate nav={nav} theme={theme} t={t} />}
             {route.page === "chapter" && <ChapterReader bookId={route.bookId} chapterNumber={route.chapterNumber} nav={nav} theme={theme} t={t} />}
             {route.page === "analytics" && <Analytics bookId={route.bookId} nav={nav} theme={theme} t={t} />}
             {route.page === "config" && <ConfigView nav={nav} theme={theme} t={t} />}
-            {route.page === "truth" && <TruthFiles bookId={route.bookId} nav={nav} theme={theme} t={t} />}
+            {route.page === "truth" && (
+              <TruthFiles
+                bookId={route.bookId}
+                nav={nav}
+                theme={theme}
+                t={t}
+                onAssistantContextChange={setTruthAssistantContext}
+                onOpenAssistant={() => setChatOpen(true)}
+              />
+            )}
             {route.page === "daemon" && <DaemonControl nav={nav} theme={theme} t={t} sse={sse} />}
-            {route.page === "logs" && <LogViewer nav={nav} theme={theme} t={t} />}
+            {route.page === "logs" && <LogViewer nav={nav} theme={theme} t={t} sse={sse} />}
             {route.page === "genres" && <GenreManager nav={nav} theme={theme} t={t} />}
             {route.page === "style" && <StyleManager nav={nav} theme={theme} t={t} />}
             {route.page === "import" && <ImportManager nav={nav} theme={theme} t={t} />}
-            {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} />}
+            {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} sse={sse} />}
             {route.page === "doctor" && <DoctorView nav={nav} theme={theme} t={t} />}
           </div>
         </main>
@@ -339,6 +508,7 @@ export function App() {
         t={t}
         sse={sse}
         activeBookId={activeBookId}
+        truthContext={route.page === "truth" ? truthAssistantContext : null}
       />
     </div>
   );

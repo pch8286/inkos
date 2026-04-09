@@ -8,6 +8,7 @@ export interface SSEMessage {
 
 export const STUDIO_SSE_EVENTS = [
   "book:creating",
+  "book:create:progress",
   "book:created",
   "book:deleted",
   "book:error",
@@ -46,8 +47,11 @@ export const STUDIO_SSE_EVENTS = [
   "fanfic:refresh:complete",
   "fanfic:refresh:error",
   "radar:start",
+  "radar:progress",
   "radar:complete",
   "radar:error",
+  "radar:saved",
+  "radar:save:error",
   "log",
   "llm:progress",
   "ping",

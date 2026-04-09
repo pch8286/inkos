@@ -128,6 +128,7 @@ bookCommand
   .option("--chapter-words <n>", "Words per chapter")
   .option("--target-chapters <n>", "Target chapter count")
   .option("--status <status>", "Book status (outlining/active/paused/completed)")
+  .option("--platform <platform>", "Target platform")
   .option("--lang <language>", "Writing language: ko, zh, or en")
   .option("--json", "Output JSON")
   .action(async (bookIdArg: string | undefined, opts) => {
@@ -141,6 +142,7 @@ bookCommand
       if (opts.chapterWords) updates.chapterWordCount = parseInt(opts.chapterWords, 10);
       if (opts.targetChapters) updates.targetChapters = parseInt(opts.targetChapters, 10);
       if (opts.status) updates.status = opts.status;
+      if (opts.platform) updates.platform = opts.platform;
       if (opts.lang) updates.language = opts.lang;
 
       if (Object.keys(updates).length === 0) {

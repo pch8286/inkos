@@ -26,6 +26,20 @@ type ImportResultShape = {
   readonly continueBookId: string;
 };
 
+type RadarRecommendationShape = {
+  readonly confidence: number;
+  readonly platform: string;
+  readonly genre: string;
+  readonly concept: string;
+  readonly reasoning: string;
+  readonly benchmarkTitles: ReadonlyArray<string>;
+};
+
+type RadarResultShape = {
+  readonly marketSummary: string;
+  readonly recommendations: ReadonlyArray<RadarRecommendationShape>;
+};
+
 function localize(language: CliLanguage, messages: { ko: string; zh: string; en: string }): string {
   if (language === "en") return messages.en;
   if (language === "zh") return messages.zh;
@@ -247,4 +261,115 @@ export function formatImportCanonComplete(language: CliLanguage): string[] {
       en: "Writer and auditor will auto-detect this file for spinoff mode.",
     }),
   ];
+}
+
+export function formatRadarScanStart(language: CliLanguage): string {
+  return localize(language, {
+    ko: "시장 레이더 스캔 중...",
+    zh: "扫描市场中...",
+    en: "Scanning market...",
+  });
+}
+
+export function formatRadarReportLines(
+  language: CliLanguage,
+  result: RadarResultShape,
+  savedPath: string,
+): string[] {
+  const lines = [
+    localize(language, {
+      ko: "시장 요약:",
+      zh: "市场概要：",
+      en: "Market Summary:",
+    }),
+    result.marketSummary,
+    "",
+    localize(language, {
+      ko: "추천:",
+      zh: "推荐：",
+      en: "Recommendations:",
+    }),
+  ];
+
+  for (const rec of result.recommendations) {
+    lines.push(`  [${(rec.confidence * 100).toFixed(0)}%] ${rec.platform}/${rec.genre}`);
+    lines.push(localize(language, {
+      ko: `    콘셉트: ${rec.concept}`,
+      zh: `    概念：${rec.concept}`,
+      en: `    Concept: ${rec.concept}`,
+    }));
+    lines.push(localize(language, {
+      ko: `    근거: ${rec.reasoning}`,
+      zh: `    理由：${rec.reasoning}`,
+      en: `    Reasoning: ${rec.reasoning}`,
+    }));
+    lines.push(localize(language, {
+      ko: `    비교작: ${rec.benchmarkTitles.join(", ")}`,
+      zh: `    对标：${rec.benchmarkTitles.join(", ")}`,
+      en: `    Benchmarks: ${rec.benchmarkTitles.join(", ")}`,
+    }));
+    lines.push("");
+  }
+
+  lines.push(localize(language, {
+    ko: `레이더 결과 저장: ${savedPath}`,
+    zh: `雷达结果已保存：${savedPath}`,
+    en: `Radar result saved to ${savedPath}`,
+  }));
+
+  return lines;
+}
+
+function normalizeRadarFailureMessageForKo(error: string): string {
+  const trimmed = error.trim();
+
+  if (!trimmed) {
+    return "요청을 처리할 수 없었습니다. 잠시 후 다시 시도해 주세요.";
+  }
+
+  if (/API 返回 400|API returned 400|400 \(invalid request|400 \(bad request/i.test(trimmed)) {
+    return "요청 파라미터 오류(400)로 스캔이 실패했습니다. 모델명, max_tokens, stream, 메시지 형식 지원 여부를 확인해 주세요.";
+  }
+
+  if (/API 返回 401|API returned 401|401 \(unauthorized/i.test(trimmed)) {
+    return "인증 실패(401)로 스캔을 진행하지 못했습니다. API 키와 인증 정보를 다시 확인해 주세요.";
+  }
+
+  if (/API 返回 403|API returned 403|403 \(forbidden/i.test(trimmed)) {
+    return "요청이 거부(403)되어 스캔이 실패했습니다. 계정/권한 또는 네트워크 정책을 확인해 주세요.";
+  }
+
+  if (/API 返回 429|API returned 429|429 \(too many requests/i.test(trimmed)) {
+    return "요청이 너무 빈번합니다(429). 잠시 후 다시 시도해 주세요.";
+  }
+
+  if (/无法连接到 API 服务|Could not connect to the API service/.test(trimmed) || /ECONNREFUSED|ENOTFOUND|fetch failed/i.test(trimmed)) {
+    return "API 연결에 실패했습니다. baseUrl·네트워크·방화벽 설정을 확인해 주세요.";
+  }
+
+  if (/API 提供方要求使用流式请求|provider requires streaming|stream must be set to true/i.test(trimmed)) {
+    return "제공자가 스트리밍 모드(stream=true)를 요구합니다. 해당 설정으로 다시 시도해 주세요.";
+  }
+
+  if (/[\u4e00-\u9fff]/.test(trimmed)) {
+    return "레이더 스캔 중 제공자 응답을 처리하지 못했습니다. 로그에서 상세 원인을 확인하고 모델·파라미터를 점검해 주세요.";
+  }
+
+  return trimmed;
+}
+
+export function formatRadarScanFailed(
+  language: CliLanguage,
+  error: unknown,
+): string {
+  const normalizedError = String(error);
+  const localizedError = language === "ko"
+    ? normalizeRadarFailureMessageForKo(normalizedError)
+    : `Radar scan failed: ${normalizedError}`;
+
+  if (language === "ko") {
+    return `레이더 스캔 실패: ${localizedError}`;
+  }
+
+  return localizedError;
 }

@@ -8,6 +8,7 @@ const ENV_KEYS = [
   "INKOS_LLM_PROVIDER",
   "INKOS_LLM_BASE_URL",
   "INKOS_LLM_MODEL",
+  "INKOS_LLM_REASONING_EFFORT",
   "INKOS_LLM_API_KEY",
   "INKOS_LLM_TEMPERATURE",
   "INKOS_LLM_MAX_TOKENS",
@@ -126,6 +127,30 @@ describe("loadProjectConfig local provider auth", () => {
     expect(config.llm.apiKey).toBe("");
   });
 
+  it("loads reasoning effort from env overrides", async () => {
+    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-reasoning-"));
+    for (const key of ENV_KEYS) {
+      previousEnv.set(key, process.env[key]);
+      delete process.env[key];
+    }
+
+    process.env.INKOS_LLM_REASONING_EFFORT = "xhigh";
+
+    await writeFile(join(root, "inkos.json"), JSON.stringify({
+      name: "reasoning-project",
+      version: "0.1.0",
+      llm: {
+        provider: "codex-cli",
+        model: "gpt-5.4",
+      },
+    }, null, 2), "utf-8");
+    await writeFile(join(root, ".env"), "", "utf-8");
+
+    const config = await loadProjectConfig(root);
+
+    expect(config.llm.reasoningEffort).toBe("xhigh");
+  });
+
   it("ignores untouched scaffold project env when a global OAuth provider is set", async () => {
     root = await mkdtemp(join(tmpdir(), "inkos-config-loader-scaffold-"));
     for (const key of ENV_KEYS) {
@@ -159,5 +184,45 @@ describe("loadProjectConfig local provider auth", () => {
     expect(config.llm.baseUrl).toBe("https://codex-cli.invalid");
     expect(config.llm.model).toBe("gpt-5.4");
     expect(config.llm.apiKey).toBe("");
+  });
+
+  it("drops invalid empty model overrides saved by older Studio builds", async () => {
+    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-overrides-"));
+    for (const key of ENV_KEYS) {
+      previousEnv.set(key, process.env[key]);
+      process.env[key] = "";
+    }
+
+    await writeFile(join(root, "inkos.json"), JSON.stringify({
+      name: "override-project",
+      version: "0.1.0",
+      llm: {
+        provider: "codex-cli",
+        model: "gpt-5.4",
+      },
+      modelOverrides: {
+        writer: {
+          model: "",
+          provider: "gemini-cli",
+          baseUrl: "",
+        },
+        reviser: {
+          model: "gpt-5.3-codex",
+          provider: "codex-cli",
+          reasoningEffort: "xhigh",
+        },
+      },
+    }, null, 2), "utf-8");
+    await writeFile(join(root, ".env"), "", "utf-8");
+
+    const config = await loadProjectConfig(root);
+
+    expect(config.modelOverrides).toEqual({
+      reviser: {
+        model: "gpt-5.3-codex",
+        provider: "codex-cli",
+        reasoningEffort: "xhigh",
+      },
+    });
   });
 });

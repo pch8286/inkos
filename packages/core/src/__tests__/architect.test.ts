@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArchitectAgent } from "../agents/architect.js";
 import type { BookConfig } from "../models/book.js";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const ZERO_USAGE = {
   promptTokens: 0,
@@ -144,6 +147,141 @@ describe("ArchitectAgent", () => {
     expect(messages[0]?.content).toContain("## Narrative Perspective");
     expect(messages[0]?.content).not.toContain("## 01_世界观");
     expect(messages[0]?.content).not.toContain("## 叙事视角");
+  });
+
+  it("forces Korean output for Korean foundation generation prompts", async () => {
+    const agent = new ArchitectAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const book: BookConfig = {
+      id: "korean-book",
+      title: "전생했더니 Lv1 마왕",
+      platform: "naver-series",
+      genre: "g04",
+      status: "active",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    };
+
+    const chat = vi.spyOn(agent as unknown as { chat: (...args: unknown[]) => Promise<unknown> }, "chat")
+      .mockResolvedValue({
+        content: [
+          "=== SECTION: story_bible ===",
+          "# 세계관",
+          "",
+          "=== SECTION: volume_outline ===",
+          "# 권별 개요",
+          "",
+          "=== SECTION: book_rules ===",
+          "---",
+          "version: \"1.0\"",
+          "---",
+          "",
+          "=== SECTION: current_state ===",
+          "# 현재 상태",
+          "",
+          "=== SECTION: pending_hooks ===",
+          "# 회수 대기 떡밥",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    await agent.generateFoundation(book, "한국 웹소설 톤으로", "중국어 표기를 쓰지 말 것");
+
+    const messages = chat.mock.calls[0]?.[0] as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("MUST be written in Korean");
+    expect(messages[0]?.content).toContain("Use Korean headings");
+    expect(messages[0]?.content).toContain("## 외부 지시");
+    expect(messages[0]?.content).toContain("## 이전 검토 피드백");
+    expect(messages[0]?.content).toContain("## 01_세계관");
+    expect(messages[0]?.content).toContain("## 서사 시점");
+    expect(messages[0]?.content).not.toContain("## 叙事视角");
+    expect(messages[0]?.content).not.toContain("### 黄金三章法则");
+    expect(messages[1]?.content).toContain("모든 출력은 한국어로 작성하세요");
+  });
+
+  it("uses Korean extraction prompts when rebuilding foundation from imported Korean chapters", async () => {
+    const agent = new ArchitectAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const book: BookConfig = {
+      id: "imported-korean-book",
+      title: "전생했더니 Lv1 마왕",
+      platform: "naver-series",
+      genre: "g04",
+      status: "active",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    };
+
+    const chat = vi.spyOn(agent as unknown as { chat: (...args: unknown[]) => Promise<unknown> }, "chat")
+      .mockResolvedValue({
+        content: [
+          "=== SECTION: story_bible ===",
+          "# 세계관",
+          "",
+          "=== SECTION: volume_outline ===",
+          "# 권별 개요",
+          "",
+          "=== SECTION: book_rules ===",
+          "---",
+          "version: \"1.0\"",
+          "---",
+          "",
+          "=== SECTION: current_state ===",
+          "# 현재 상태",
+          "",
+          "=== SECTION: pending_hooks ===",
+          "# 회수 대기 떡밥",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    await agent.generateFoundationFromImport(
+      book,
+      "1화. 폐허가 된 가문 회의실에서 마왕으로 깨어난다.",
+    );
+
+    const messages = chat.mock.calls[0]?.[0] as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("MUST be written in Korean");
+    expect(messages[0]?.content).toContain("## 작업 모드");
+    expect(messages[0]?.content).toContain("## 작품 정보");
+    expect(messages[0]?.content).toContain("## 01_세계관");
+    expect(messages[0]?.content).not.toContain("## 工作模式");
+    expect(messages[0]?.content).not.toContain("## 关键原则");
+    expect(messages[1]?.content).toContain("한국어로 역설계하세요");
   });
 
   it("embeds reviewer feedback into original foundation regeneration prompts", async () => {
@@ -515,5 +653,90 @@ describe("ArchitectAgent", () => {
       });
 
     await expect(agent.generateFoundation(book)).rejects.toThrow(/book_rules/i);
+  });
+
+  it("writes Korean truth-file templates when language is ko", async () => {
+    const agent = new ArchitectAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const bookDir = await mkdtemp(join(tmpdir(), "inkos-architect-ko-truth-template-"));
+
+    await agent.writeFoundationFiles(
+      bookDir,
+      {
+        storyBible: "# Story Bible",
+        volumeOutline: "# Volume",
+        bookRules: "# Book Rules",
+        currentState: "# Current State",
+        pendingHooks: "# Pending Hooks",
+      },
+      true,
+      "ko",
+    );
+
+    const characterMatrix = await readFile(join(bookDir, "story", "character_matrix.md"), "utf-8");
+    const subplotBoard = await readFile(join(bookDir, "story", "subplot_board.md"), "utf-8");
+    const emotionalArcs = await readFile(join(bookDir, "story", "emotional_arcs.md"), "utf-8");
+    const particleLedger = await readFile(join(bookDir, "story", "particle_ledger.md"), "utf-8");
+
+    expect(characterMatrix).toContain("# 캐릭터 상호작용 매트릭스");
+    expect(characterMatrix).toContain("### 캐릭터 프로필");
+    expect(subplotBoard).toContain("# 서브플롯 보드");
+    expect(emotionalArcs).toContain("# 감정 곡선");
+    expect(particleLedger).toContain("# 자원 장부");
+
+    expect(characterMatrix).not.toContain("角色交互矩阵");
+    await rm(bookDir, { recursive: true, force: true });
+  });
+
+  it("keeps Chinese truth-file templates when language is zh", async () => {
+    const agent = new ArchitectAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const bookDir = await mkdtemp(join(tmpdir(), "inkos-architect-zh-truth-template-"));
+
+    await agent.writeFoundationFiles(
+      bookDir,
+      {
+        storyBible: "# 故事圣经",
+        volumeOutline: "# 卷纲",
+        bookRules: "# 规则",
+        currentState: "# 当前状态",
+        pendingHooks: "# 伏笔池",
+      },
+      true,
+      "zh",
+    );
+
+    const characterMatrix = await readFile(join(bookDir, "story", "character_matrix.md"), "utf-8");
+    expect(characterMatrix).toContain("# 角色交互矩阵");
+    expect(characterMatrix).toContain("### 角色档案");
+    await rm(bookDir, { recursive: true, force: true });
   });
 });

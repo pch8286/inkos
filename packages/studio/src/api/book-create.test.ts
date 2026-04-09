@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildStudioBookConfig, normalizeStudioPlatform, waitForStudioBookReady } from "./book-create";
+import {
+  buildStudioBookConfig,
+  defaultStudioPlatformForLanguage,
+  normalizeStudioPlatform,
+  waitForStudioBookReady,
+} from "./book-create";
 
 describe("normalizeStudioPlatform", () => {
   it("keeps supported chinese platform ids and folds unsupported values to other", () => {
@@ -66,6 +71,27 @@ describe("buildStudioBookConfig", () => {
       language: "ko",
       platform: "naver-series",
     });
+  });
+
+  it("defaults to a Korean platform when the request omits one for Korean books", () => {
+    const config = buildStudioBookConfig(
+      {
+        title: "플랫폼 기본값",
+        genre: "modern-fantasy",
+        language: "ko",
+      },
+      "2026-03-30T00:00:00.000Z",
+    );
+
+    expect(config.platform).toBe("naver-series");
+  });
+});
+
+describe("defaultStudioPlatformForLanguage", () => {
+  it("uses Korean platforms for Korean books", () => {
+    expect(defaultStudioPlatformForLanguage("ko")).toBe("naver-series");
+    expect(defaultStudioPlatformForLanguage("zh")).toBe("tomato");
+    expect(defaultStudioPlatformForLanguage("en")).toBe("other");
   });
 });
 

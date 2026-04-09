@@ -80,7 +80,7 @@ export function ConfirmDialog({
             className={`px-4 py-2.5 text-sm font-bold rounded-xl transition-all hover:scale-105 active:scale-95 shadow-sm ${
               isDanger
                 ? "bg-destructive text-white hover:shadow-destructive/20"
-                : "bg-primary text-primary-foreground hover:shadow-primary/20"
+                : "studio-cta"
             }`}
           >
             {confirmLabel}

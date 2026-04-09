@@ -45,6 +45,7 @@ async function buildPipelineConfig(context: GeminiCliContextFile): Promise<Pipel
     client: createLLMClient(clientConfig),
     model: effectiveLlm.model,
     projectRoot: context.projectRoot,
+    language: project.language,
     defaultLLMConfig: effectiveLlm,
     notifyChannels: project.notify,
     modelOverrides: project.modelOverrides,

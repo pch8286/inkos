@@ -3,6 +3,7 @@ import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { listAvailableGenres, readGenreProfile, getBuiltinGenresDir } from "@actalk/inkos-core";
 import { findProjectRoot, log, logError } from "../utils.js";
+import { parseGenreBatchMarkdown, renderGenreProfileMarkdown } from "./genre-batch.js";
 
 export const genreCommand = new Command("genre")
   .description("Manage genre profiles");
@@ -147,6 +148,59 @@ genreCommand
     }
   });
 
+genreCommand
+  .command("import-batch")
+  .description("Import multiple genre profiles from a markdown spec file into the project genres/ directory")
+  .argument("<path>", "Path to the markdown spec file, or - to read from stdin")
+  .option("--force", "Overwrite existing project genre files", false)
+  .action(async (path: string, opts) => {
+    try {
+      const root = findProjectRoot();
+      const genresDir = join(root, "genres");
+      const raw = path === "-"
+        ? await readStdinText()
+        : await readFile(path, "utf-8");
+
+      const profiles = parseGenreBatchMarkdown(raw);
+      await mkdir(genresDir, { recursive: true });
+
+      const created: string[] = [];
+      const skipped: string[] = [];
+
+      for (const profile of profiles) {
+        const filePath = join(genresDir, `${profile.id}.md`);
+        const nextContent = renderGenreProfileMarkdown(profile);
+
+        if (!opts.force) {
+          try {
+            await readFile(filePath, "utf-8");
+            skipped.push(profile.id);
+            continue;
+          } catch {
+            // File does not exist yet.
+          }
+        }
+
+        await writeFile(filePath, nextContent, "utf-8");
+        created.push(profile.id);
+      }
+
+      if (created.length > 0) {
+        log(`Imported ${created.length} genre profile(s): ${created.join(", ")}`);
+      }
+      if (skipped.length > 0) {
+        log(`Skipped existing profiles: ${skipped.join(", ")}`);
+        log("Re-run with --force to overwrite them.");
+      }
+      if (created.length === 0 && skipped.length === 0) {
+        log("No genre profiles were imported.");
+      }
+    } catch (e) {
+      logError(`Failed to import genres: ${e}`);
+      process.exit(1);
+    }
+  });
+
 function buildGenreTemplate(params: {
   readonly id: string;
   readonly name: string;
@@ -227,4 +281,12 @@ auditDimensions: [1,2,3,6,7,8,9,10,13,14,15,16,17,18,19]
 
 (이 장르에서 중요한 전개 리듬, 문체, 독자 기대를 적기)
 `;
+}
+
+async function readStdinText(): Promise<string> {
+  const chunks: string[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf-8"));
+  }
+  return chunks.join("");
 }

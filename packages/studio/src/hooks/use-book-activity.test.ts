@@ -3,6 +3,7 @@ import type { SSEMessage } from "./use-sse";
 import {
   deriveActiveBookIds,
   deriveBookActivity,
+  shouldRefetchBookCreateStatus,
   shouldRefetchBookCollections,
   shouldRefetchBookView,
   shouldRefetchDaemonStatus,
@@ -95,6 +96,16 @@ describe("shouldRefetchBookCollections", () => {
     expect(shouldRefetchBookCollections(msg("rewrite:complete", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("audit:start", { bookId: "alpha" }, 1))).toBe(false);
     expect(shouldRefetchBookCollections(undefined)).toBe(false);
+  });
+});
+
+describe("shouldRefetchBookCreateStatus", () => {
+  it("refreshes create-job status lists for background book creation events", () => {
+    expect(shouldRefetchBookCreateStatus(msg("book:creating", { bookId: "alpha" }, 1))).toBe(true);
+    expect(shouldRefetchBookCreateStatus(msg("book:create:progress", { bookId: "alpha" }, 2))).toBe(true);
+    expect(shouldRefetchBookCreateStatus(msg("book:created", { bookId: "alpha" }, 3))).toBe(true);
+    expect(shouldRefetchBookCreateStatus(msg("book:error", { bookId: "alpha" }, 4))).toBe(true);
+    expect(shouldRefetchBookCreateStatus(msg("write:start", { bookId: "alpha" }, 5))).toBe(false);
   });
 });
 

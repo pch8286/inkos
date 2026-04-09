@@ -51,6 +51,12 @@ export function normalizeStudioPlatform(platform?: string): Platform {
   }
 }
 
+export function defaultStudioPlatformForLanguage(language: StudioLanguage): Platform {
+  if (language === "ko") return "naver-series";
+  if (language === "zh") return "tomato";
+  return "other";
+}
+
 export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): StudioBookConfigDraft {
   return {
     id: body.title
@@ -60,7 +66,9 @@ export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): 
       .replace(/^-|-$/g, "")
       .slice(0, 30),
     title: body.title,
-    platform: normalizeStudioPlatform(body.platform),
+    platform: body.platform
+      ? normalizeStudioPlatform(body.platform)
+      : defaultStudioPlatformForLanguage(body.language ?? "ko"),
     genre: body.genre,
     status: "outlining",
     targetChapters: body.targetChapters ?? 200,

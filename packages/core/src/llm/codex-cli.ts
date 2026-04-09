@@ -14,9 +14,12 @@ import type {
   ToolDefinition,
   ToolCall,
 } from "./provider.js";
+import type { LLMConfig } from "../models/project.js";
 
 const CODEX_CLI_DEFAULT_COMMAND = "codex";
 const CODEX_CLI_DEFAULT_MODEL = "gpt-5.4";
+const CODEX_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+type CodexReasoningEffort = NonNullable<LLMConfig["reasoningEffort"]>;
 
 interface CodexCliEvent {
   readonly type?: string;
@@ -68,6 +71,11 @@ function getCodexCliCommand(client: LLMClient): string {
 
 function getCodexCliModel(model: string): string {
   return model.trim().length > 0 ? model : CODEX_CLI_DEFAULT_MODEL;
+}
+
+function getCodexCliReasoningEffort(client: LLMClient): CodexReasoningEffort | undefined {
+  const value = client.defaults.reasoningEffort;
+  return CODEX_REASONING_EFFORTS.has(value ?? "") ? value as CodexReasoningEffort : undefined;
 }
 
 function getCodexCliSourceHome(client: LLMClient): string {
@@ -241,6 +249,10 @@ async function runCodexCliJson(
 
   if (resolvedModel) {
     args.push("--model", resolvedModel);
+  }
+  const reasoningEffort = getCodexCliReasoningEffort(client);
+  if (reasoningEffort) {
+    args.push("-c", `model_reasoning_effort=${reasoningEffort}`);
   }
   args.push("-");
 

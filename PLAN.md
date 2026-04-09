@@ -37,6 +37,33 @@
 
 즉, 현재 구현은 `한국어를 쓸 수 있는 상태`에는 도달했지만, `한국 웹소설 작가용으로 문체와 플랫폼 감각까지 맞춘 상태`까지는 아직 추가 작업이 필요하다.
 
+## Alignment Update (2026-04-09)
+
+사용자 인터뷰 기준 재정렬:
+
+- 대표 사용 시나리오는 `Studio 열기 -> 모델 연결 -> 책 생성 -> 1화 생성 -> 검토`
+- 가장 중요한 만족 지점은 UI 번역이 아니라 `1화 결과가 한국 웹소설처럼 읽히는가`
+- 사용자는 CLI보다 Studio를 메인 진입점으로 사용할 가능성이 높음
+- 설정 화면에서 `전역 설정`과 `현재 프로젝트 설정`의 중복 표시는 줄이는 편이 맞음
+- 사용자가 실제로 조정하고 싶은 LLM 제어축은 `provider`, `model`, `reasoning`, `agent별 routing`, `OAuth 상태`
+- reasoning은 지원 provider 기준으로 동적으로 노출하되, 기본 화면에서는 전역/기본값 중심으로 보여주는 쪽이 더 적합함
+- 시장 레이더는 즉시 액션보다 `리포트형 시장 조사` 성격이 강함
+- 시장 레이더는 최소한 아래 3가지 목적을 분리해 다루는 편이 맞음
+  - 시장 트렌드 파악
+  - 아이디어 발굴
+  - 현재 작품 방향성/시장 적합도 검토
+- 한국어 지원의 핵심은 강한 언어 강제가 아니라 `중국어/영어 잔재 제거`와 `한국어 문맥의 자연스러운 기본값` 유지
+- 다음 우선순위는 실제 새 책을 만들어 보고 1화 품질을 기준으로 피드백 루프를 돌리는 것
+
+현재 정렬성 판단:
+
+- `Studio-first workflow`: 정렬
+- `설정 UX 단순성`: 부분 정렬
+- `레이더 리포트형 사용`: 부분 정렬
+- `1화 품질 중심 성공 기준`: 아직 미검증
+
+즉, 다음 구현의 우선순위는 `Studio 설정 복잡도 축소`, `레이더 목적별 분리`, `1화 acceptance loop` 이다.
+
 ## Goal
 
 InkOS에 한국어를 1급 언어로 추가한다.
@@ -232,6 +259,15 @@ Targets:
 - `packages/core/src/pipeline/runner.ts`
   - `ko` fallback 이 중국어로 떨어지지 않도록 로컬라이즈 fallback 정리
   - foundation review/import 경로에서 `ko` 언어 유지
+- `packages/core/src/agents/planner.ts`
+  - cadence 분석이 `ko`를 영어 버킷으로 보내지 않도록 수정
+  - scene/mood/title/arc pressure 지시문에 한국어 분기 추가
+- `packages/core/src/agents/reviser.ts`
+  - `ko`일 때 수정 시스템 프롬프트, 출력 형식 설명, 컨텍스트 블록 heading 을 한국어로 분리
+  - `style_guide`, `hook pool`, `state`, `outline` 등 보조 블록이 중국어 heading 으로 새지 않도록 보정
+- `packages/core/src/llm/provider.ts`
+  - provider 에러 래핑 기본 문구를 중국어 전용에서 중립 영어로 정리
+  - Studio/CLI 한국어 레이어가 이를 다시 자연스럽게 현지화할 수 있게 정리
 
 남은 작업:
 
@@ -293,6 +329,109 @@ Targets:
 - `packages/core/src/__tests__/*`
 - 수동 검수 문서
 
+### 12. Studio-First UX Simplification
+
+- Status: 진행 중
+
+- 설정 화면에서 `전역 인증/기본값`과 `현재 프로젝트 override`의 역할을 분리하되, 반복 표시는 줄인다
+- 기본 화면은 전역/기본값 중심으로 두고, 프로젝트 override 와 agent routing 은 필요할 때만 드러나게 단순화한다
+- reasoning 은 지원 provider 기준으로 동적으로 노출하되, 기본 맥락에서는 전역/기본값을 먼저 보여준다
+- 새 책 생성과 집필으로 이어지는 핵심 흐름을 홈/설정에서 더 분명하게 만든다
+- CTA/선택 카드/상태 pill 의 공통 팔레트를 `studio-*` 계열로 통일하고, 기존 `primary` 채움 표면을 점진적으로 교체한다
+
+완료된 배치:
+
+- `packages/studio/src/pages/Dashboard.tsx`
+  - quick-start, background 책 생성 상태, 3-dot 메뉴 clipping, 홈 CTA 재배치
+- `packages/studio/src/App.tsx`
+  - LLM pill/알림 팝오버/모바일 내비 구조 정리
+- `packages/studio/src/api/server.ts`
+  - truth 목록/단일 파일 API 화이트리스트 정합성 정리로 `author_intent.md`, `current_focus.md` 클릭 응답 복원
+- `packages/studio/src/pages/TruthFiles.tsx`
+  - `Truth Files`를 `설정집` 개념으로 재배치
+  - 문서 누락 시 skeleton 을 보여주고, 개별 파일 편집 전에 전체 문서를 모아보는 overview 추가
+  - 기본 진입은 `모아보기`, 큰 화면용 `핵심 문서 작업대`는 별도 단계로 분리
+  - 사람이 보기 쉬운 구조 편집기로 제목, 서두, 섹션, 마크다운 표를 분해해 수정하고 저장 시 다시 markdown 으로 직렬화
+  - `author_intent.md`, `current_focus.md` 등 제어 문서도 whitelist/API 응답을 정리해 클릭 불가 상태를 복구
+- `packages/studio/src/components/TruthAgentPanel.tsx`
+  - 설정집 작업대/상세 편집 옆에 우측 AI 패널 추가
+  - 문서별 버튼 대신 `대상 문서 선택 -> 자연어 지시 -> 제안 적용` 흐름으로 정리
+  - AI 제안은 에디터 상태에만 반영하고 자동 저장은 하지 않도록 제한
+- `packages/studio/src/api/server.ts`
+  - `truth/assist` 가 최근 대화 맥락을 함께 받아 설정집 제안을 만들 수 있게 확장
+- `packages/studio/src/index.css`
+  - `studio-cta`, `studio-chip`, `studio-icon-btn`, `studio-surface-active` 등 공통 토큰 정리
+- `packages/studio/src/pages/BookCreate.tsx`
+  - 장르/플랫폼 선택 카드 색 계층을 공통 팔레트로 이동
+- `packages/studio/src/pages/BookDetail.tsx`
+  - write/save/audit/rewrite 등 메인 액션을 공통 CTA/칩 계열로 이동
+- `packages/studio/src/pages/ChapterReader.tsx`
+  - 저장/편집/본문 focus ring/하단 내비를 공통 팔레트로 정리
+- `packages/studio/src/pages/RadarView.tsx`
+  - 레이더 상태 카드/선택 스캔/아이콘 강조를 공통 팔레트로 정리
+
+남은 작업:
+
+- 설정 화면에서 `전역 LLM`과 `현재 프로젝트 LLM` 정보 반복을 더 줄이기
+- `ChatBar`, `TruthFiles`, `StyleManager` 등 2차 화면의 하드코딩 `primary` 표면 정리
+- `설정집`은 여러 문서를 한 화면에서 저장하는 작업대와 우측 AI 패널까지 들어갔지만, multi-file diff/승인 UI 는 아직 미구현
+- `설정집`은 구조 편집과 markdown fallback 은 갖췄지만, 문서별 전용 폼(`author_intent`, `book_rules`, `character_matrix`)은 아직 미구현
+
+Targets:
+
+- `packages/studio/src/pages/ConfigView.tsx`
+- `packages/studio/src/components/GlobalConfigPanel.tsx`
+- `packages/studio/src/pages/Dashboard.tsx`
+- `packages/studio/src/pages/TruthFiles.tsx`
+- `packages/studio/src/hooks/use-i18n.ts`
+
+### 13. Radar Report Modes
+
+- Status: 진행 중
+
+- 시장 레이더를 단일 스캔이 아니라 목적별 리포트 모드로 분리한다
+- 1차 모드는 아래 3개를 기본으로 둔다
+  - `market-trends`: 현재 한국 웹소설 시장 흐름 요약
+  - `idea-mining`: 신작 아이디어/기획 발굴
+  - `fit-check`: 현재 작품 또는 콘셉트의 시장 적합도 검토
+- 모드는 Studio UI, API 계약, 저장 이력, 프롬프트까지 end-to-end 로 연결한다
+- 실패 시에는 기술 에러를 그대로 노출하기보다, 사용자가 수정 가능한 원인 중심으로 안내한다
+
+완료된 배치:
+
+- `market-trends`, `idea-mining`, `fit-check` 3모드가 Studio/API/core prompt 까지 연결됨
+- background status, recent activity, saved scan history, last-result restore 가 구현됨
+- `fit-check` 는 선택 책 + 추가 메모를 서버에서 truth files 와 조합해 preview/context 로 사용함
+- 한국어 Studio 에서는 중국어 provider 에러뿐 아니라 영어 provider 에러도 한국어로 정규화해 보여줌
+
+남은 작업:
+
+- `munpia` source parity 와 실제 소스 안정성 판단
+- 목적별 report template 과 결과 가독성 추가 정리
+
+Targets:
+
+- `packages/studio/src/pages/RadarView.tsx`
+- `packages/studio/src/api/server.ts`
+- `packages/studio/src/shared/contracts.ts`
+- `packages/core/src/agents/radar.ts`
+- `packages/core/src/pipeline/runner.ts`
+- `packages/cli/src/localization.ts`
+
+### 14. First-Chapter Acceptance Loop
+
+- Status: 미착수
+
+- `책 생성 -> 1화 생성 -> 한국 웹소설 감각 검토`의 반복 루프를 명시적인 acceptance 흐름으로 만든다
+- 수동 검수 rubric 을 우선 만들고, 이후 자동 smoke 시나리오로 확장한다
+- 장르별 최소 검수 대상은 `modern-fantasy`, `fantasy`, `murim`
+
+Targets:
+
+- `PLAN.md`
+- 수동 검수 문서
+- 관련 smoke test / sample harness
+
 ## Execution Order
 
 ### Phase 1. Foundation
@@ -322,6 +461,12 @@ Targets:
 - 플랫폼별 회차 감각 리서치
 - preset 설계 및 override 경로 추가
 - 5000자/회차 기준 및 카운팅 관례 정리
+
+### Phase 6. Studio-First Alignment
+
+- 설정 UX 단순화
+- 레이더 목적별 리포트 모드 추가
+- 새 책/1화 기준 acceptance loop 정리
 
 ## Main Risks
 

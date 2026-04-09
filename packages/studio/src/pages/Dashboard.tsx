@@ -12,7 +12,6 @@ import {
   BarChart2,
   Zap,
   Clock,
-  CheckCircle2,
   AlertCircle,
   MoreVertical,
   ChevronRight,
@@ -21,6 +20,7 @@ import {
   Settings,
   Download,
   FileInput,
+  Loader2,
 } from "lucide-react";
 
 interface BookSummary {
@@ -33,10 +33,29 @@ interface BookSummary {
   readonly fanficMode?: string;
 }
 
+interface BookCreateJob {
+  readonly bookId: string;
+  readonly title: string;
+  readonly status: "creating" | "error";
+  readonly startedAt: string;
+  readonly updatedAt: string;
+  readonly stage: string | null;
+  readonly message: string | null;
+  readonly history: ReadonlyArray<{
+    readonly timestamp: string;
+    readonly kind: "start" | "stage" | "info" | "error";
+    readonly label: string;
+    readonly detail?: string | null;
+  }>;
+  readonly error?: string;
+}
+
 interface Nav {
   toBook: (id: string) => void;
   toAnalytics: (id: string) => void;
   toBookCreate: () => void;
+  toConfig: () => void;
+  toRadar: () => void;
 }
 
 function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
@@ -67,18 +86,18 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
   };
 
   return (
-    <div ref={menuRef} className="relative">
+    <div ref={menuRef} className="relative z-10">
       <button
         onClick={() => setOpen((prev) => !prev)}
-        className="p-3 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-xl studio-icon-btn cursor-pointer"
       >
         <MoreVertical size={18} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-xl shadow-lg shadow-primary/5 py-1 z-50 fade-in">
+        <div className="absolute right-0 top-full mt-2 min-w-[11rem] bg-card/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl shadow-black/15 py-1 z-50 fade-in">
           <button
             onClick={() => { setOpen(false); nav.toBook(bookId); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
           >
             <Settings size={14} className="text-muted-foreground" />
             {t("book.settings")}
@@ -87,7 +106,7 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
             href={`/api/books/${bookId}/export?format=txt`}
             download
             onClick={() => setOpen(false)}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
           >
             <Download size={14} className="text-muted-foreground" />
             {t("book.export")}
@@ -95,7 +114,7 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
           <div className="border-t border-border/50 my-1" />
           <button
             onClick={() => { setOpen(false); setConfirmDelete(true); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/12 transition-colors cursor-pointer"
           >
             <Trash2 size={14} />
             {t("book.deleteBook")}
@@ -119,7 +138,9 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
 export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: ReadonlyArray<SSEMessage> }; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
   const { data, loading, error, refetch } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
+  const { data: createStatusData, refetch: refetchCreateStatus } = useApi<{ entries: ReadonlyArray<BookCreateJob> }>("/book-create-status");
   const writingBooks = useMemo(() => deriveActiveBookIds(sse.messages), [sse.messages]);
+  const createJobs = createStatusData?.entries ?? [];
 
   const logEvents = sse.messages.filter((m) => m.event === "log").slice(-8);
   const progressEvent = sse.messages.filter((m) => m.event === "llm:progress").slice(-1)[0];
@@ -130,11 +151,14 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
     if (shouldRefetchBookCollections(recent)) {
       refetch();
     }
-  }, [refetch, sse.messages]);
+    if (recent.event === "book:creating" || recent.event === "book:create:progress" || recent.event === "book:error" || recent.event === "book:created") {
+      refetchCreateStatus();
+    }
+  }, [refetch, refetchCreateStatus, sse.messages]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-border/30 border-t-ring rounded-full animate-spin" />
       <span className="text-sm text-muted-foreground animate-pulse">Gathering manuscripts...</span>
     </div>
   );
@@ -149,40 +173,107 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
 
   if (!data?.books.length) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center fade-in">
-        <div className="w-20 h-20 rounded-full bg-primary/5 flex items-center justify-center mb-8">
-          <BookOpen size={40} className="text-primary/20" />
-        </div>
-        <h2 className="font-serif text-3xl italic text-foreground/80 mb-3">{t("dash.noBooks")}</h2>
-        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-10">
-          {t("dash.createFirst")}
-        </p>
-        <button
-          onClick={nav.toBookCreate}
-          className="group flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
-        >
-          <Plus size={18} />
-          {t("nav.newBook")}
-        </button>
+      <div className="space-y-10 fade-in">
+        {createJobs.length > 0 && (
+          <CreateJobPanel jobs={createJobs} t={t} />
+        )}
+        <section className="grid gap-6 rounded-[2rem] border border-border/50 bg-card/70 px-6 py-8 shadow-soft md:grid-cols-[minmax(0,1.02fr)_minmax(19rem,0.98fr)] md:px-8 md:py-10">
+          <div className="flex flex-col gap-5 text-center md:text-left">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <HeroSignalCard
+                icon={<Clock size={14} />}
+                title={t("dash.quickStartTitle")}
+                description={t("dash.quickStartBody")}
+              />
+              <HeroSignalCard
+                icon={<Zap size={14} />}
+                title={t("dash.workflowTitle")}
+                description={t("dash.workflowBody")}
+              />
+              <HeroSignalCard
+                icon={<BarChart2 size={14} />}
+                title={t("dash.localizedTitle")}
+                description={t("dash.localizedBody")}
+              />
+            </div>
+
+            <div className="flex flex-1 flex-col justify-center rounded-[1.75rem] border border-border/50 bg-background/72 px-6 py-8 md:px-7">
+              <div className="mx-auto mb-6 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full studio-chip-accent md:mx-0">
+                <BookOpen size={34} className="text-[color:var(--studio-state-text)]" />
+              </div>
+              <h2 className="font-serif text-[clamp(2.1rem,4vw,3.2rem)] leading-[1.02] text-foreground/90">{t("dash.noBooks")}</h2>
+              <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground md:text-base">
+                {t("dash.createFirst")}
+              </p>
+              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row md:justify-start">
+                <button
+                  onClick={nav.toBookCreate}
+                  className="group inline-flex items-center justify-center gap-2 rounded-xl px-8 py-3.5 text-sm font-bold studio-cta transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  <Plus size={18} />
+                  {t("nav.newBook")}
+                </button>
+                <button
+                  onClick={nav.toConfig}
+                  className="flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold studio-chip transition-colors"
+                >
+                  <Settings size={16} />
+                  {t("app.llmSettings")}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-1">
+            <QuickStartCard
+              icon={<Settings size={16} />}
+              step="01"
+              title={t("dash.quickStepConfig")}
+              description={t("dash.quickStepConfigBody")}
+              ctaLabel={t("common.open")}
+              onClick={nav.toConfig}
+            />
+            <QuickStartCard
+              icon={<Plus size={16} />}
+              step="02"
+              title={t("nav.newBook")}
+              description={t("dash.quickStepBookBody")}
+              ctaLabel={t("common.open")}
+              onClick={nav.toBookCreate}
+            />
+            <QuickStartCard
+              icon={<FileInput size={16} />}
+              step="03"
+              title={t("nav.radar")}
+              description={t("dash.quickStepRadarBody")}
+              ctaLabel={t("common.open")}
+              onClick={nav.toRadar}
+            />
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="space-y-12">
-      <div className="flex items-end justify-between border-b border-border/40 pb-8">
+      <div className="flex flex-col gap-4 border-b border-border/40 pb-8 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-serif text-4xl mb-2">{t("dash.title")}</h1>
+          <h1 className="mb-2 font-serif text-3xl sm:text-4xl">{t("dash.title")}</h1>
           <p className="text-sm text-muted-foreground">{t("dash.subtitle")}</p>
         </div>
         <button
           onClick={nav.toBookCreate}
-          className="group flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
+          className="group inline-flex items-center justify-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-bold studio-cta transition-all hover:scale-105 active:scale-95 sm:self-auto"
         >
           <Plus size={16} />
           {t("nav.newBook")}
         </button>
       </div>
+
+      {createJobs.length > 0 && (
+        <CreateJobPanel jobs={createJobs} t={t} />
+      )}
 
       <div className="grid gap-6">
         {data.books.map((book, index) => {
@@ -191,34 +282,34 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
           return (
             <div
               key={book.id}
-              className={`paper-sheet group relative rounded-2xl overflow-hidden fade-in ${staggerClass}`}
+              className={`paper-sheet group relative rounded-2xl overflow-visible fade-in ${staggerClass}`}
             >
-              <div className="p-8 flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-primary/5 text-primary">
+              <div className="flex flex-col gap-5 p-5 sm:p-6 xl:flex-row xl:items-start xl:justify-between xl:p-8">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-4 flex items-start gap-3">
+                    <div className="rounded-lg studio-chip p-2">
                       <BookOpen size={20} />
                     </div>
                     <button
                       onClick={() => nav.toBook(book.id)}
-                      className="font-serif text-2xl hover:text-primary transition-all text-left truncate block font-medium hover:underline underline-offset-4 decoration-primary/30"
+                      className="block min-w-0 truncate text-left font-serif text-xl font-medium transition-all hover:text-[color:var(--studio-state-text)] hover:underline decoration-[color:var(--studio-state-text)] underline-offset-4 sm:text-2xl"
                     >
                       {book.title}
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-[13px] text-muted-foreground font-medium">
-                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-secondary/50">
+                  <div className="grid grid-cols-2 gap-2 text-[12px] font-medium text-muted-foreground sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 sm:text-[13px]">
+                    <div className="inline-flex items-center gap-1.5 rounded bg-secondary/50 px-2 py-1">
                       <span className="uppercase tracking-wider">{book.genre}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="inline-flex items-center gap-1.5 rounded bg-background/75 px-2 py-1 sm:bg-transparent sm:px-0 sm:py-0">
                       <Clock size={14} />
                       <span>{book.chaptersWritten} {t("dash.chapters")}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="inline-flex items-center gap-1.5 rounded bg-background/75 px-2 py-1 sm:bg-transparent sm:px-0 sm:py-0">
                       <div className={`w-2 h-2 rounded-full ${
-                        book.status === "active" ? "bg-emerald-500" :
-                        book.status === "paused" ? "bg-amber-500" :
+                        book.status === "active" ? "studio-status-dot-ok" :
+                        book.status === "paused" ? "studio-status-dot-warn" :
                         "bg-muted-foreground"
                       }`} />
                       <span>{
@@ -231,10 +322,10 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                       }</span>
                     </div>
                     {book.language === "en" && (
-                      <span className="px-1.5 py-0.5 rounded border border-primary/20 text-primary text-[10px] font-bold">EN</span>
+                      <span className="inline-flex items-center rounded studio-badge-soft px-1.5 py-1 text-[10px] font-bold">EN</span>
                     )}
                     {book.fanficMode && (
-                      <span className="flex items-center gap-1 text-purple-500">
+                      <span className="inline-flex items-center gap-1 rounded studio-chip px-2 py-1 sm:bg-transparent sm:px-0 sm:py-0">
                         <Zap size={12} />
                         <span className="italic">{book.fanficMode}</span>
                       </span>
@@ -242,19 +333,19 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 ml-6">
+                <div className="flex w-full items-center gap-2 sm:gap-3 xl:ml-6 xl:w-auto xl:shrink-0 xl:justify-end">
                   <button
                     onClick={() => postApi(`/books/${book.id}/write-next`)}
                     disabled={isWriting}
-                    className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-sm ${
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all sm:flex-none sm:px-6 ${
                       isWriting
-                        ? "bg-primary/20 text-primary cursor-wait animate-pulse"
-                        : "bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-primary/20 hover:scale-105 active:scale-95"
+                        ? "studio-chip text-foreground cursor-wait animate-pulse"
+                        : "studio-chip-accent hover:scale-105 active:scale-95"
                     }`}
                   >
                     {isWriting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-border/30 border-t-ring rounded-full animate-spin" />
                         {t("dash.writing")}
                       </>
                     ) : (
@@ -266,7 +357,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                   </button>
                   <button
                     onClick={() => nav.toAnalytics(book.id)}
-                    className="p-3 rounded-xl bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/30 hover:shadow-md hover:scale-105 active:scale-95 transition-all border border-border/50 shadow-sm"
+                    className="rounded-xl studio-icon-btn p-3 transition-all hover:scale-105 active:scale-95"
                     title={t("dash.stats")}
                   >
                     <BarChart2 size={18} />
@@ -284,7 +375,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
               {/* Enhanced progress indicator */}
               {isWriting && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary overflow-hidden">
-                   <div className="h-full bg-primary w-1/3 animate-[progress_2s_ease-in-out_infinite]" />
+                   <div className="h-full bg-ring w-1/3 animate-[progress_2s_ease-in-out_infinite]" />
                 </div>
               )}
             </div>
@@ -294,24 +385,24 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
 
       {/* Modern writing progress panel */}
       {writingBooks.size > 0 && logEvents.length > 0 && (
-        <div className="glass-panel rounded-2xl p-8 border-primary/20 bg-primary/[0.02] shadow-2xl shadow-primary/5 fade-in">
+        <div className="glass-panel rounded-2xl p-8 border border-border/50 shadow-2xl fade-in">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+              <div className="p-2 rounded-lg studio-chip-accent">
                 <Flame size={18} className="animate-pulse" />
               </div>
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-primary"> Manuscript Foundry</h3>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-[color:var(--studio-state-text)]"> Manuscript Foundry</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Real-time LLM generation tracking</p>
               </div>
             </div>
             {progressEvent && (
-              <div className="flex items-center gap-4 text-xs font-bold text-primary px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
+              <div className="flex items-center gap-4 text-xs font-bold studio-chip px-4 py-2 rounded-full">
                 <div className="flex items-center gap-2">
                   <Clock size={12} />
                   <span>{Math.round(((progressEvent.data as { elapsedMs?: number })?.elapsedMs ?? 0) / 1000)}s</span>
                 </div>
-                <div className="w-px h-3 bg-primary/20" />
+                <div className="w-px h-3 bg-border/40" />
                 <div className="flex items-center gap-2">
                   <Zap size={12} />
                   <span>{((progressEvent.data as { totalChars?: number })?.totalChars ?? 0).toLocaleString()} Chars</span>
@@ -325,7 +416,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
               const d = msg.data as { tag?: string; message?: string };
               return (
                 <div key={i} className="flex gap-3 leading-relaxed animate-in fade-in slide-in-from-left-2 duration-300">
-                  <span className="text-primary/60 font-bold shrink-0">[{d.tag}]</span>
+                  <span className="font-bold shrink-0 studio-state-soft-text">[{d.tag}]</span>
                   <span className="text-muted-foreground">{d.message}</span>
                 </div>
               );
@@ -341,5 +432,136 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
         }
       `}</style>
     </div>
+  );
+}
+
+function HeroSignalCard({ icon, title, description }: {
+  readonly icon: React.ReactNode;
+  readonly title: string;
+  readonly description: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-background/72 p-4 text-left">
+      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+        {icon}
+        {title}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function CreateJobPanel({ jobs, t }: {
+  readonly jobs: ReadonlyArray<BookCreateJob>;
+  readonly t: TFunction;
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-border/40 studio-chip px-5 py-5 shadow-soft">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl studio-chip">
+          <Loader2 size={18} className="animate-spin" />
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-foreground">{t("dash.createQueueTitle")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("dash.createQueueHint")}</div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {jobs.map((job) => (
+          <CreateJobCard key={job.bookId} job={job} t={t} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CreateJobCard({ job, t }: { readonly job: BookCreateJob; readonly t: TFunction }) {
+  const detail = (job.error || job.stage || job.message || t("create.creatingHint")).split("\n")[0];
+
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-4 ${
+        job.status === "error"
+          ? "border-destructive/25 bg-destructive/6"
+          : "border-border/50 bg-background/75"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-foreground">{job.title}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{job.bookId}</div>
+        </div>
+        <div className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
+          job.status === "error"
+            ? "bg-destructive/10 text-destructive"
+            : "studio-badge-soft"
+        }`}>
+          {job.status === "error" ? t("dash.createFailed") : t("dash.createRunning")}
+        </div>
+      </div>
+      <div className="mt-3 text-sm leading-6 text-foreground/85">
+        {detail}
+      </div>
+      {job.status === "creating" && job.stage && (
+        <div className="mt-2 text-xs text-muted-foreground">
+          {job.stage}
+        </div>
+      )}
+      {job.history.length > 0 && (
+        <div className="mt-3 space-y-2 border-t border-border/50 pt-3">
+          {job.history.slice(-3).reverse().map((entry) => (
+            <div key={`${entry.timestamp}-${entry.kind}-${entry.label}`} className="flex items-start justify-between gap-3 text-xs">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground/85">{entry.label}</div>
+                {entry.detail && entry.detail !== entry.label && (
+                  <div className="truncate text-muted-foreground">{entry.detail.split("\n")[0]}</div>
+                )}
+              </div>
+              <div className="shrink-0 text-muted-foreground">
+                {new Date(entry.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 text-xs text-muted-foreground">
+        {t("dash.createUpdated")} {new Date(job.updatedAt).toLocaleTimeString()}
+      </div>
+    </div>
+  );
+}
+
+function QuickStartCard({ step, title, description, icon, ctaLabel, onClick }: {
+  readonly step: string;
+  readonly title: string;
+  readonly description: string;
+  readonly icon: React.ReactNode;
+  readonly ctaLabel: string;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-2xl border border-border/60 bg-background/75 p-4 text-left transition-all hover:bg-card hover:border-border hover:shadow-soft"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{step}</div>
+          <div className="mt-2 text-base font-semibold text-foreground">{title}</div>
+        </div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl studio-icon-btn transition-transform group-hover:scale-105">
+          {icon}
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+      <div className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--studio-state-text)]">
+        {ctaLabel}
+        <ChevronRight size={14} />
+      </div>
+    </button>
   );
 }

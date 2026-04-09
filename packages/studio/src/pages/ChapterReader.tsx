@@ -3,6 +3,7 @@ import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
+import { defaultLocalizedChapterTitle, localizeChapterTitle } from "../shared/chapter-title";
 import {
   ChevronLeft,
   Check,
@@ -24,6 +25,7 @@ interface ChapterData {
   readonly chapterNumber: number;
   readonly filename: string;
   readonly content: string;
+  readonly language?: "ko" | "zh" | "en";
 }
 
 interface Nav {
@@ -76,7 +78,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-border/30 border-t-ring rounded-full animate-spin" />
       <span className="text-sm text-muted-foreground">{t("reader.openingManuscript")}</span>
     </div>
   );
@@ -87,7 +89,9 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
   // Split markdown content into title and body
   const lines = data.content.split("\n");
   const titleLine = lines.find((l) => l.startsWith("# "));
-  const title = titleLine?.replace(/^#\s*/, "") ?? `Chapter ${chapterNumber}`;
+  const title = titleLine
+    ? localizeChapterTitle(titleLine, chapterNumber, data.language)
+    : defaultLocalizedChapterTitle(chapterNumber, data.language);
   const body = lines
     .filter((l) => l !== titleLine)
     .join("\n")
@@ -112,14 +116,14 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
         <nav className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
           <button
             onClick={nav.toDashboard}
-            className="hover:text-primary transition-colors flex items-center gap-1"
+            className={`${c.link} flex items-center gap-1`}
           >
             {t("bread.books")}
           </button>
           <span className="text-border">/</span>
           <button
             onClick={() => nav.toBook(bookId)}
-            className="hover:text-primary transition-colors truncate max-w-[120px]"
+            className={`${c.link} truncate max-w-[120px]`}
           >
             {bookId}
           </button>
@@ -145,9 +149,9 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-primary text-primary-foreground rounded-xl hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl shadow-sm disabled:opacity-50 ${c.btnPrimary}`}
               >
-                {saving ? <div className="w-3.5 h-3.5 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Save size={14} />}
+                {saving ? <div className="w-3.5 h-3.5 border-2 border-border/30 border-t-ring rounded-full animate-spin" /> : <Save size={14} />}
                 {saving ? t("book.saving") : t("book.save")}
               </button>
               <button
@@ -161,7 +165,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
           ) : (
             <button
               onClick={handleStartEdit}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary text-muted-foreground rounded-xl hover:text-primary hover:bg-primary/10 transition-all border border-border/50"
+              className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl studio-chip transition-all border border-border/50"
             >
               <Pencil size={14} />
               {t("reader.edit")}
@@ -197,7 +201,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
             <BookOpen size={20} />
             <div className="h-px w-12 bg-border/40" />
           </div>
-          <h1 className="text-4xl md:text-5xl font-serif font-medium italic text-foreground tracking-tight leading-tight">
+          <h1 className="text-4xl md:text-5xl font-serif font-medium text-foreground tracking-tight leading-tight">
             {title}
           </h1>
           <div className="mt-8 flex items-center justify-center gap-4 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
@@ -211,13 +215,13 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
           <textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="w-full min-h-[60vh] bg-transparent font-serif text-lg leading-[1.8] text-foreground/90 focus:outline-none resize-none border border-border/30 rounded-lg p-6 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
+            className="w-full min-h-[60vh] bg-transparent font-serif text-lg leading-[1.8] text-foreground/90 focus:outline-none resize-none border border-border/30 rounded-lg p-6 focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20 transition-all"
             autoFocus
           />
         ) : (
           <article className="prose prose-zinc dark:prose-invert max-w-none">
             {paragraphs.map((para, i) => (
-              <p key={i} className="font-serif text-lg md:text-xl leading-[1.8] text-foreground/90 mb-8 first-letter:text-2xl first-letter:font-bold first-letter:text-primary/40">
+              <p key={i} className="font-serif text-lg md:text-xl leading-[1.8] text-foreground/90 mb-8 first-letter:text-2xl first-letter:font-bold first-letter:text-[color:var(--studio-state-text)]/45">
                 {para}
               </p>
             ))}
@@ -227,11 +231,11 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
         <footer className="mt-24 pt-12 border-t border-border/20 flex flex-col items-center gap-6 text-center">
           <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/50">
-               <Type size={14} className="text-primary/60" />
+               <Type size={14} className="studio-state-soft-text" />
                <span>{body.length.toLocaleString()} {t("reader.characters")}</span>
              </div>
              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/50">
-               <Clock size={14} className="text-primary/60" />
+               <Clock size={14} className="studio-state-soft-text" />
                <span>{Math.ceil(body.length / 500)} {t("reader.minRead")}</span>
              </div>
           </div>
@@ -244,7 +248,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
         {chapterNumber > 1 ? (
           <button
             onClick={() => nav.toBook(bookId)}
-            className="flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-all group"
+            className="flex items-center gap-2 text-sm font-bold text-muted-foreground transition-all group hover:text-[color:var(--studio-state-text)]"
           >
             <RotateCcw size={16} className="group-hover:-rotate-45 transition-transform" />
             {t("reader.chapterList")}

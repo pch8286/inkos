@@ -58,9 +58,9 @@ export function LanguageSelector({ onSelect }: { onSelect: (lang: StudioLanguage
             onMouseLeave={() => setHovering(null)}
             className={`group border rounded-lg p-10 text-left transition-all duration-300 ${
               selected === card.lang
-                ? "border-primary bg-primary/10 scale-[1.02]"
+                ? "studio-surface-active scale-[1.02]"
                 : hovering === card.lang
-                  ? "border-primary/50 bg-card"
+                  ? "border-border bg-card studio-surface-hover"
                   : "border-border bg-card/50"
             }`}
           >

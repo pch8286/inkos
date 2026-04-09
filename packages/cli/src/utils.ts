@@ -86,6 +86,7 @@ export function buildPipelineConfig(
     }),
     model: config.llm.model,
     projectRoot: root,
+    language: config.language,
     defaultLLMConfig: config.llm,
     modelOverrides: config.modelOverrides,
     inputGovernanceMode: extra?.inputGovernanceMode ?? config.inputGovernanceMode,
