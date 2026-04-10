@@ -26,6 +26,7 @@ import type { BootstrapSummary } from "./shared/contracts";
 import { buildActivityFeedEntries } from "./shared/activity-feed";
 import { compactModelLabel, defaultModelForProvider, labelForProvider, shortLabelForProvider } from "./shared/llm";
 import type { TruthAssistantContext } from "./shared/truth-assistant";
+import { getBrowserStorage, readBrowserJson, writeBrowserJson } from "./shared/browser-storage";
 
 export type Route =
   | { page: "dashboard" }
@@ -68,6 +69,48 @@ export function deriveActiveLlm(
   };
 }
 
+interface AssistantPaneWidths {
+  readonly general: number;
+  readonly truth: number;
+}
+
+const ASSISTANT_PANE_WIDTH_STORAGE_KEY = "inkos:assistant-pane-width:v1";
+const DEFAULT_ASSISTANT_PANE_WIDTHS: AssistantPaneWidths = {
+  general: 380,
+  truth: 540,
+};
+
+export function clampAssistantPaneWidth(
+  width: number,
+  options: {
+    readonly truthMode?: boolean;
+    readonly viewportWidth?: number;
+  } = {},
+): number {
+  const truthMode = options.truthMode ?? false;
+  const viewportWidth = Math.max(480, options.viewportWidth ?? (typeof window !== "undefined" ? window.innerWidth : 1440));
+  const minWidth = truthMode ? 420 : 320;
+  const preferredMax = truthMode ? 760 : 560;
+  const viewportMargin = viewportWidth < 1024 ? 48 : 320;
+  const maxWidth = Math.max(minWidth, Math.min(preferredMax, viewportWidth - viewportMargin));
+  return Math.min(maxWidth, Math.max(minWidth, Math.round(width)));
+}
+
+export function resolveAssistantPaneWidths(
+  stored?: Partial<AssistantPaneWidths> | null,
+  viewportWidth = 1440,
+): AssistantPaneWidths {
+  return {
+    general: clampAssistantPaneWidth(stored?.general ?? DEFAULT_ASSISTANT_PANE_WIDTHS.general, {
+      viewportWidth,
+    }),
+    truth: clampAssistantPaneWidth(stored?.truth ?? DEFAULT_ASSISTANT_PANE_WIDTHS.truth, {
+      truthMode: true,
+      viewportWidth,
+    }),
+  };
+}
+
 function isHeaderAlertMessage(message: SSEMessage): boolean {
   return message.event !== "ping"
     && message.event !== "log"
@@ -102,11 +145,16 @@ export function App() {
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [assistantPaneWidths, setAssistantPaneWidths] = useState<AssistantPaneWidths>(() => resolveAssistantPaneWidths(
+    readBrowserJson<Partial<AssistantPaneWidths>>(getBrowserStorage(), ASSISTANT_PANE_WIDTH_STORAGE_KEY),
+  ));
+  const [assistantResizing, setAssistantResizing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
   const [lastSeenAlertAt, setLastSeenAlertAt] = useState(0);
   const [truthAssistantContext, setTruthAssistantContext] = useState<TruthAssistantContext | null>(null);
   const alertPopoverRef = useRef<HTMLDivElement | null>(null);
+  const assistantResizeCleanupRef = useRef<(() => void) | null>(null);
 
   const isDark = theme === "dark";
   const unreadAlertCount = useMemo(() => deriveUnreadAlertCount(sse.messages, lastSeenAlertAt), [lastSeenAlertAt, sse.messages]);
@@ -160,6 +208,45 @@ export function App() {
   }, [route.page]);
 
   useEffect(() => {
+    writeBrowserJson(getBrowserStorage(), ASSISTANT_PANE_WIDTH_STORAGE_KEY, assistantPaneWidths);
+  }, [assistantPaneWidths]);
+
+  const stopAssistantResizing = () => {
+    assistantResizeCleanupRef.current?.();
+    assistantResizeCleanupRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!chatOpen && assistantResizing) {
+      stopAssistantResizing();
+    }
+  }, [assistantResizing, chatOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      setAssistantPaneWidths((current) => {
+        const next = resolveAssistantPaneWidths(current, window.innerWidth);
+        return next.general === current.general && next.truth === current.truth ? current : next;
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopAssistantResizing();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!sse.messages.length) return;
     void refetchActivity();
   }, [refetchActivity, sse.messages]);
@@ -188,6 +275,70 @@ export function App() {
       window.removeEventListener("keydown", handleEscape);
     };
   }, [alertOpen]);
+
+  const assistantPaneMode = route.page === "truth" ? "truth" : "general";
+
+  const handleAssistantResizeStart = (clientX: number) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    stopAssistantResizing();
+
+    const truthMode = assistantPaneMode === "truth";
+    const handlePointerMove = (event: MouseEvent) => {
+      setAssistantPaneWidths((current) => {
+        const nextWidth = clampAssistantPaneWidth(window.innerWidth - event.clientX, {
+          truthMode,
+          viewportWidth: window.innerWidth,
+        });
+        if (nextWidth === current[assistantPaneMode]) {
+          return current;
+        }
+        return {
+          ...current,
+          [assistantPaneMode]: nextWidth,
+        };
+      });
+    };
+    const cleanup = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", stopAssistantResizing);
+      assistantResizeCleanupRef.current = null;
+      setAssistantResizing(false);
+    };
+
+    assistantResizeCleanupRef.current = cleanup;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", stopAssistantResizing);
+
+    setAssistantPaneWidths((current) => ({
+      ...current,
+      [assistantPaneMode]: clampAssistantPaneWidth(window.innerWidth - clientX, {
+        truthMode: assistantPaneMode === "truth",
+        viewportWidth: window.innerWidth,
+      }),
+    }));
+    setAssistantResizing(true);
+  };
+
+  const handleAssistantResizeNudge = (delta: number) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setAssistantPaneWidths((current) => ({
+      ...current,
+      [assistantPaneMode]: clampAssistantPaneWidth(current[assistantPaneMode] + delta, {
+        truthMode: assistantPaneMode === "truth",
+        viewportWidth: window.innerWidth,
+      }),
+    }));
+  };
 
   const nav = {
     toDashboard: () => {
@@ -253,6 +404,10 @@ export function App() {
     activeBookId
       ? `book:${activeBookId}`
       : route.page;
+  const assistantPaneWidth = clampAssistantPaneWidth(assistantPaneWidths[assistantPaneMode], {
+    truthMode: assistantPaneMode === "truth",
+    viewportWidth: typeof window !== "undefined" ? window.innerWidth : 1440,
+  });
   const contentWidthClass = route.page === "config"
     ? "max-w-6xl"
     : route.page === "truth"
@@ -465,6 +620,9 @@ export function App() {
                   : "hover:scale-[1.02]"
               }`}
               title="Toggle AI Assistant"
+              aria-label="Toggle AI Assistant"
+              aria-controls="inkos-assistant-panel"
+              aria-expanded={chatOpen}
             >
               <MessageSquare size={16} />
             </button>
@@ -487,7 +645,6 @@ export function App() {
                 theme={theme}
                 t={t}
                 onAssistantContextChange={setTruthAssistantContext}
-                onOpenAssistant={() => setChatOpen(true)}
               />
             )}
             {route.page === "daemon" && <DaemonControl nav={nav} theme={theme} t={t} sse={sse} />}
@@ -505,10 +662,15 @@ export function App() {
       <ChatPanel
         open={chatOpen}
         onClose={() => setChatOpen(false)}
+        onOpenConfig={nav.toConfig}
         t={t}
         sse={sse}
         activeBookId={activeBookId}
         truthContext={route.page === "truth" ? truthAssistantContext : null}
+        width={assistantPaneWidth}
+        isResizing={assistantResizing}
+        onResizeStart={handleAssistantResizeStart}
+        onResizeNudge={handleAssistantResizeNudge}
       />
     </div>
   );

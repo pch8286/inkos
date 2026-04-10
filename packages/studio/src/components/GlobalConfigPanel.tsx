@@ -267,25 +267,24 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
           )}
         </div>
         {data.exists && (
-          <span className="inline-flex items-center rounded-full border border-border/50 bg-background/75 px-3 py-1 text-xs text-muted-foreground">
-            {(t ? t("config.storedPath") : "Stored in")} <span className="ml-1 font-mono">~/.inkos/.env</span>
+          <span className="inline-flex min-w-0 max-w-full flex-wrap items-center rounded-full border border-border/50 bg-background/75 px-3 py-1 text-xs text-muted-foreground">
+            <span className="shrink-0">{t ? t("config.storedPath") : "Stored in"}</span>
+            <span className="ml-1 break-all font-mono">~/.inkos/.env</span>
           </span>
         )}
       </div>
 
       <div className={`border ${c.cardStatic} rounded-2xl bg-card/70 p-4 md:p-5 space-y-6 shadow-sm`}>
-        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {t ? t("config.providerSummary") : "Current provider"}
             </div>
-            <div className="mt-1 text-sm font-medium text-foreground">{providerLabel(form.provider)}</div>
-          </div>
-          <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <div className="mt-1 break-all text-sm font-medium text-foreground">{providerLabel(form.provider)}</div>
+            <div className="mt-3 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {t ? t("config.modelSummary") : "Current model"}
             </div>
-            <div className="mt-1 text-sm font-medium text-foreground break-all">{modelSummary}</div>
+            <div className="mt-1 break-all text-sm font-medium text-foreground">{modelSummary}</div>
           </div>
           <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -368,7 +367,7 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
               <span className="rounded-full border border-border/50 bg-background/75 px-2 py-0.5">
                 {sourceBadgeLabel(modelSource, t)}
               </span>
-              <span>{modelSourceDescription(form.provider, modelSource, t)}</span>
+              <span className="min-w-0 flex-1 break-words">{modelSourceDescription(form.provider, modelSource, t)}</span>
             </div>
             {form.provider === "codex-cli" && modelSource === "config" && (
               <div className="text-xs text-muted-foreground">
@@ -491,7 +490,7 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
                   {activeAuthStatus.credentialPath}
                 </div>
                 {activeAuthStatus.details && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground break-words">
                     {activeAuthStatus.details}
                   </div>
                 )}
@@ -533,7 +532,7 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
 
             {authSession && authSession.provider === form.provider && (
               <div className="space-y-2 rounded-md bg-background/70 p-3 border border-border/40">
-                <div className="text-xs text-muted-foreground">{t ? t("config.authStatus") : "Auth status"}: {authSession.status}</div>
+                  <div className="text-xs text-muted-foreground">{t ? t("config.authStatus") : "Auth status"}: {authSession.status}</div>
                 {authSession.url && (
                   <a href={authSession.url} target="_blank" rel="noreferrer" className={c.link}>
                     {t ? t("config.openAuthPage") : "Open authorization page"}
@@ -559,10 +558,10 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
                   </div>
                 )}
                 {authSession.error && (
-                  <div className="text-xs text-destructive whitespace-pre-wrap">{authSession.error}</div>
+                  <div className="text-xs text-destructive break-words whitespace-pre-wrap">{authSession.error}</div>
                 )}
                 {authSession.logs.length > 0 && (
-                  <pre className="text-[11px] whitespace-pre-wrap rounded bg-black/80 text-zinc-100 p-2 overflow-x-auto">
+                  <pre className="text-[11px] whitespace-pre-wrap break-all rounded bg-black/80 text-zinc-100 p-2 overflow-x-auto">
                     {authSession.logs.join("")}
                   </pre>
                 )}
@@ -575,7 +574,7 @@ export function GlobalConfigPanel({ theme, title, compact = false, t, onSaved }:
           <div className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{providerLabel(form.provider)}</span>
             {" · "}
-            <span className="font-mono">{form.model || defaultModelForProvider(form.provider, capabilities) || "-"}</span>
+            <span className="break-all font-mono">{form.model || defaultModelForProvider(form.provider, capabilities) || "-"}</span>
           </div>
           <button
             type="button"

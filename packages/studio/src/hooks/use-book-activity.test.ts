@@ -77,6 +77,7 @@ describe("deriveActiveBookIds", () => {
 
 describe("shouldRefetchBookView", () => {
   it("refreshes the book detail view after terminal background jobs for that book", () => {
+    expect(shouldRefetchBookView(msg("book:updated", { bookId: "alpha", title: "Renamed" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("write:complete", { bookId: "alpha" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("draft:error", { bookId: "alpha", error: "quota" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("rewrite:complete", { bookId: "alpha", chapterNumber: 3 }, 1), "alpha")).toBe(true);
@@ -90,6 +91,7 @@ describe("shouldRefetchBookView", () => {
 describe("shouldRefetchBookCollections", () => {
   it("refreshes book lists for create/delete and chapter-changing terminal events", () => {
     expect(shouldRefetchBookCollections(msg("book:created", { bookId: "alpha" }, 1))).toBe(true);
+    expect(shouldRefetchBookCollections(msg("book:updated", { bookId: "alpha", title: "Renamed" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("book:deleted", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("write:complete", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("draft:error", { bookId: "alpha" }, 1))).toBe(true);

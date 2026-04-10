@@ -8,8 +8,8 @@ import { GlobalConfigPanel } from "../components/GlobalConfigPanel";
 import {
   PROVIDER_OPTIONS,
   defaultModelForProvider,
-  isCliOAuthProvider,
   labelForProvider,
+  isCliOAuthProvider,
   modelSuggestionsForProvider,
   providerCapability,
   normalizeReasoningEffort,
@@ -177,8 +177,6 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
   if (!form) return null;
 
   const hasChanges = projectFormHasChanges(form, data);
-  const activeProjectLlm = `${labelForProvider(form.provider)} · ${form.model || defaultModelForProvider(form.provider, capabilities) || "-"}`;
-
   const handleReset = () => {
     setForm(projectToForm(data));
   };
@@ -232,13 +230,8 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_minmax(0,1fr)]">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <SummaryStat label={t("config.project")} value={data.name} />
-            <SummaryStat
-              label={t("config.activeLlmTitle")}
-              value={activeProjectLlm}
-              mono
-            />
             <SummaryStat
               label={t("config.language")}
               value={languageLabel(data.language, t)}
@@ -247,7 +240,7 @@ export function ConfigView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         </div>
       </div>
 
-      <GlobalConfigPanel theme={theme} t={t} title={t("config.globalTitle")} />
+      <GlobalConfigPanel theme={theme} t={t} title={t("config.globalTitle")} compact />
 
       <div className="space-y-3">
         <SectionHeader title={t("config.activeLlmTitle")} hint={t("config.activeLlmHint")} />
@@ -646,7 +639,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (
     <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-muted-foreground text-sm">{label}</span>
-      <span className={`${mono ? "font-mono" : ""} text-sm break-all sm:text-right`}>{value}</span>
+      <span className={`${mono ? "font-mono break-all" : "break-words"} min-w-0 whitespace-normal text-sm sm:text-right`}>{value}</span>
     </div>
   );
 }
@@ -671,9 +664,9 @@ function SectionHeader({ title, hint }: { title: string; hint: string }) {
 
 function SummaryStat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-xl border border-border/50 bg-background/75 px-3 py-3 shadow-sm">
+    <div className="min-w-0 rounded-xl border border-border/50 bg-background/75 px-3 py-3 shadow-sm">
       <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>{value}</div>
+      <div className={`mt-1 min-w-0 whitespace-normal text-sm font-medium text-foreground ${mono ? "font-mono break-all" : "break-words"}`}>{value}</div>
     </div>
   );
 }
@@ -695,12 +688,12 @@ function EditRow({ label, value, onChange, type, options, c, disabled = false }:
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className={`${c.input} rounded px-2 py-1 text-sm w-full sm:w-32 disabled:opacity-50`}
+          className={`${c.input} min-w-0 rounded px-2 py-1 text-sm w-full sm:w-[16rem] lg:w-[18rem] disabled:opacity-50`}
         >
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : (
-        <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={`${c.input} rounded px-2 py-1 text-sm w-full text-right sm:w-32`} />
+        <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={`${c.input} min-w-0 rounded px-2 py-1 text-sm w-full text-right sm:w-[16rem] lg:w-[18rem]`} />
       )}
     </div>
   );
@@ -724,7 +717,7 @@ function TextEditRow({ label, value, onChange, placeholder, disabled = false, c,
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className={`${c.input} rounded px-2 py-1 text-sm w-full disabled:opacity-50 sm:w-56 ${mono ? "font-mono" : ""}`}
+        className={`${c.input} min-w-0 rounded px-2 py-1 text-sm w-full disabled:opacity-50 sm:w-[16rem] lg:w-[22rem] ${mono ? "font-mono break-all" : ""}`}
       />
     </div>
   );
@@ -743,7 +736,7 @@ function ModelEditRow({ label, value, onChange, suggestions, placeholder, c }: {
   return (
     <div className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-muted-foreground text-sm">{label}</span>
-      <div className="w-full sm:w-56">
+      <div className="w-full sm:w-[16rem] lg:w-[22rem]">
         <input
           type="text"
           list={listId}

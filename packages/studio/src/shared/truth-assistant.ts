@@ -7,6 +7,13 @@ export interface TruthAssistantFile {
   readonly path: string;
 }
 
+export interface TruthAlignmentContext {
+  readonly knownFacts: ReadonlyArray<string>;
+  readonly unknowns: ReadonlyArray<string>;
+  readonly mustDecide: string;
+  readonly askFirst: string;
+}
+
 export interface TruthAssistantContext {
   readonly kind: "truth";
   readonly bookId: string;
@@ -14,8 +21,10 @@ export interface TruthAssistantContext {
   readonly detailFile: string | null;
   readonly workspaceTargetFile: string;
   readonly files: ReadonlyArray<TruthAssistantFile>;
+  readonly alignment: TruthAlignmentContext | null;
   readonly currentContents: Readonly<Record<string, string>>;
   readonly applySuggestion: (fileName: string, proposalMarkdown: string) => void;
+  readonly applyInterviewAnswer: (question: string, answer: string) => void;
   readonly openDetail: (fileName: string) => void;
   readonly setWorkspaceTargetFile: (fileName: string) => void;
 }

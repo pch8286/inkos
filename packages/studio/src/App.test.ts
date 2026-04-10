@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { deriveActiveBookId, deriveActiveLlm, deriveLatestAlertTimestamp, deriveUnreadAlertCount } from "./App";
+import {
+  clampAssistantPaneWidth,
+  deriveActiveBookId,
+  deriveActiveLlm,
+  deriveLatestAlertTimestamp,
+  deriveUnreadAlertCount,
+  resolveAssistantPaneWidths,
+} from "./App";
 
 describe("deriveActiveBookId", () => {
   it("returns the current book across book-centered routes", () => {
@@ -95,5 +102,21 @@ describe("header alerts", () => {
     ];
 
     expect(deriveLatestAlertTimestamp(messages)).toBe(210);
+  });
+});
+
+describe("assistant pane sizing", () => {
+  it("clamps pane widths by mode and viewport", () => {
+    expect(clampAssistantPaneWidth(200, { viewportWidth: 1440 })).toBe(320);
+    expect(clampAssistantPaneWidth(900, { viewportWidth: 1440 })).toBe(560);
+    expect(clampAssistantPaneWidth(900, { truthMode: true, viewportWidth: 1440 })).toBe(760);
+    expect(clampAssistantPaneWidth(900, { truthMode: true, viewportWidth: 700 })).toBe(652);
+  });
+
+  it("fills missing stored widths with defaults", () => {
+    expect(resolveAssistantPaneWidths({ general: 430 }, 1440)).toEqual({
+      general: 430,
+      truth: 540,
+    });
   });
 });

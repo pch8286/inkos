@@ -126,7 +126,7 @@ vi.mock("@actalk/inkos-core", () => {
   };
 });
 
-  const projectConfig = {
+const projectConfig = {
   name: "studio-test",
   version: "0.1.0",
   language: "zh",
@@ -156,6 +156,42 @@ vi.mock("@actalk/inkos-core", () => {
 
 function cloneProjectConfig() {
   return structuredClone(projectConfig);
+}
+
+const PROJECT_LLM_ENV_KEYS = [
+  "INKOS_LLM_PROVIDER",
+  "INKOS_LLM_BASE_URL",
+  "INKOS_LLM_MODEL",
+  "INKOS_LLM_REASONING_EFFORT",
+  "INKOS_LLM_TEMPERATURE",
+  "INKOS_LLM_MAX_TOKENS",
+] as const;
+
+type ProjectLlmEnvKey = (typeof PROJECT_LLM_ENV_KEYS)[number];
+
+function applyMockLlmEnvOverrides<T extends {
+  readonly llm: {
+    readonly provider: string;
+    readonly baseUrl: string;
+    readonly model: string;
+    readonly reasoningEffort?: string;
+    readonly temperature?: number;
+    readonly maxTokens?: number;
+  };
+}>(config: T): T {
+  const llm = { ...config.llm };
+
+  if (process.env.INKOS_LLM_PROVIDER) llm.provider = process.env.INKOS_LLM_PROVIDER;
+  if (process.env.INKOS_LLM_BASE_URL !== undefined) llm.baseUrl = process.env.INKOS_LLM_BASE_URL;
+  if (process.env.INKOS_LLM_MODEL) llm.model = process.env.INKOS_LLM_MODEL;
+  if (process.env.INKOS_LLM_REASONING_EFFORT) llm.reasoningEffort = process.env.INKOS_LLM_REASONING_EFFORT;
+  if (process.env.INKOS_LLM_TEMPERATURE) llm.temperature = Number(process.env.INKOS_LLM_TEMPERATURE);
+  if (process.env.INKOS_LLM_MAX_TOKENS) llm.maxTokens = Number(process.env.INKOS_LLM_MAX_TOKENS);
+
+  return {
+    ...config,
+    llm,
+  };
 }
 
 async function seedFitCheckBook(
@@ -190,10 +226,18 @@ async function seedFitCheckBook(
 
 describe("createStudioServer daemon lifecycle", () => {
   let root: string;
+  let llmEnvSnapshot: Partial<Record<ProjectLlmEnvKey, string | undefined>>;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "inkos-studio-server-"));
     await writeFile(join(root, "inkos.json"), JSON.stringify(projectConfig, null, 2), "utf-8");
+    llmEnvSnapshot = Object.fromEntries(PROJECT_LLM_ENV_KEYS.map((key) => [key, process.env[key]])) as Partial<Record<
+      ProjectLlmEnvKey,
+      string | undefined
+    >>;
+    for (const key of PROJECT_LLM_ENV_KEYS) {
+      delete process.env[key];
+    }
     logger.info.mockReset();
     logger.warn.mockReset();
     logger.error.mockReset();
@@ -215,7 +259,7 @@ describe("createStudioServer daemon lifecycle", () => {
     loadProjectConfigMock.mockReset();
     loadProjectConfigMock.mockImplementation(async () => {
       const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as Record<string, unknown>;
-      return {
+      return applyMockLlmEnvOverrides({
         ...cloneProjectConfig(),
         ...raw,
         llm: {
@@ -228,12 +272,17 @@ describe("createStudioServer daemon lifecycle", () => {
         },
         modelOverrides: (raw.modelOverrides ?? {}) as Record<string, unknown>,
         notify: (raw.notify ?? []) as unknown[],
-      };
+      });
     });
     pipelineConfigs.length = 0;
   });
 
   afterEach(async () => {
+    for (const key of PROJECT_LLM_ENV_KEYS) {
+      const value = llmEnvSnapshot[key];
+      if (typeof value === "string") process.env[key] = value;
+      else delete process.env[key];
+    }
     await rm(root, { recursive: true, force: true });
     await rm(globalEnvPath, { force: true });
   });
@@ -285,8 +334,25 @@ describe("createStudioServer daemon lifecycle", () => {
   });
 
   it("reflects project edits immediately without restarting the studio server", async () => {
+    process.env.INKOS_LLM_PROVIDER = "openai";
+    process.env.INKOS_LLM_BASE_URL = "https://stale.example.com/v1";
+    process.env.INKOS_LLM_MODEL = "stale-model";
+    process.env.INKOS_LLM_REASONING_EFFORT = "low";
+    process.env.INKOS_LLM_TEMPERATURE = "0.95";
+    process.env.INKOS_LLM_MAX_TOKENS = "8192";
+
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const beforeSave = await app.request("http://localhost/api/project");
+    await expect(beforeSave.json()).resolves.toMatchObject({
+      provider: "openai",
+      baseUrl: "https://stale.example.com/v1",
+      model: "stale-model",
+      reasoningEffort: "low",
+      temperature: 0.95,
+      maxTokens: 8192,
+    });
 
     const save = await app.request("http://localhost/api/project", {
       method: "PUT",
@@ -618,7 +684,16 @@ describe("createStudioServer daemon lifecycle", () => {
     const response = await app.request("http://localhost/api/books/assist-book/truth/assist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileName: "author_intent.md", instruction: "통치와 정당성 축을 더 선명하게" }),
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        instruction: "통치와 정당성 축을 더 선명하게",
+        alignment: {
+          knownFacts: ["왕권과 제도의 충돌을 다룬다."],
+          unknowns: ["주인공의 통치 원칙은 아직 정리되지 않았다."],
+          mustDecide: "이번 편집의 끝에서 통치 정당성 기준이 일관되게 남아야 한다.",
+          askFirst: "현재 통치 원칙의 정당화 근거가 무엇인가?",
+        },
+      }),
     });
     expect(response.status).toBe(200);
     const body = await response.json() as { content: string; changes: ReadonlyArray<{ fileName: string; content: string }> };
@@ -626,9 +701,116 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(body.changes).toHaveLength(1);
     expect(body.changes[0]).toMatchObject({ fileName: "author_intent.md" });
     expect(chatCompletionMock).toHaveBeenCalledTimes(1);
+    const proposalCall = chatCompletionMock.mock.calls[0] as [
+      unknown,
+      unknown,
+      ReadonlyArray<{ role: "system" | "user" | "assistant"; content: string }>,
+    ];
+    const proposalPrompt = proposalCall[2]?.map((message) => message.content).join("\n") ?? "";
+    expect(proposalPrompt).toContain("왕권과 제도의 충돌을 다룬다.");
+    expect(proposalPrompt).toContain("주인공의 통치 원칙은 아직 정리되지 않았다.");
+    expect(proposalPrompt).toContain("이번 편집의 끝에서 통치 정당성 기준이 일관되게 남아야 한다.");
+    expect(proposalPrompt).toContain("현재 통치 원칙의 정당화 근거가 무엇인가?");
+    expect(proposalPrompt).toContain("정렬 제약:");
 
     const persisted = await readFile(join(root, "books", "assist-book", "story", "author_intent.md"), "utf-8");
     expect(persisted).toContain("왕권과 제도의 충돌");
+  });
+
+  it("returns a single alignment question before drafting when question mode is requested", async () => {
+    await seedFitCheckBook(root, "assist-question-book", "질문 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+      { file: "current_focus.md", content: "# 현재 초점\n\n- 이번 권은 귀족 의회와 충돌한다.\n" },
+    ]);
+    chatCompletionMock.mockResolvedValueOnce({
+      content: JSON.stringify({
+        question: "이번 문서에서 절대 바뀌면 안 되는 통치 원칙은 무엇인가?",
+        rationale: "이 원칙이 확정돼야 후속 문단이 자의적으로 흩어지지 않는다.",
+      }),
+      usage: { promptTokens: 5, completionTokens: 7, totalTokens: 12 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-question-book/truth/assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        mode: "question",
+        alignment: {
+          knownFacts: ["왕권과 제도의 충돌을 다룬다."],
+          unknowns: ["주인공이 지키려는 통치 원칙이 아직 흐리다."],
+          mustDecide: "이번 편집에서 통치 정당성의 기준을 남긴다.",
+          askFirst: "주요 통치 규칙은 무엇이어야 하나요?",
+        },
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      mode: string;
+      content: string;
+      question: string;
+      rationale: string;
+      changes: ReadonlyArray<unknown>;
+    };
+    expect(body).toMatchObject({
+      mode: "question",
+      question: "이번 문서에서 절대 바뀌면 안 되는 통치 원칙은 무엇인가?",
+      rationale: "이 원칙이 확정돼야 후속 문단이 자의적으로 흩어지지 않는다.",
+      changes: [],
+    });
+    expect(chatCompletionMock).toHaveBeenCalledTimes(1);
+    const interviewCall = chatCompletionMock.mock.calls[0] as [
+      unknown,
+      unknown,
+      ReadonlyArray<{ role: "system" | "user" | "assistant"; content: string }>,
+    ];
+    const interviewPrompt = interviewCall[2]?.map((message) => message.content).join("\n") ?? "";
+    expect(interviewPrompt).toContain("주요 통치 규칙은 무엇이어야 하나요?");
+    expect(interviewPrompt).toContain("왕권과 제도의 충돌을 다룬다.");
+    expect(interviewPrompt).toContain("주인공이 지키려는 통치 원칙이 아직 흐리다.");
+    expect(interviewPrompt).toContain("이번 편집에서 통치 정당성의 기준을 남긴다.");
+    expect(interviewPrompt).toContain("정렬 인터뷰어 제약:");
+
+    const persisted = await readFile(join(root, "books", "assist-question-book", "story", "author_intent.md"), "utf-8");
+    expect(persisted).toContain("왕권과 제도의 충돌");
+  });
+
+  it("falls back to the raw interview content when the model returns a plain-text question", async () => {
+    await seedFitCheckBook(root, "assist-question-fallback-book", "질문 fallback 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+    ]);
+    chatCompletionMock.mockResolvedValueOnce({
+      content: "이번 문서에서 통치 정당성의 기준이 이미 확정돼 있나요?",
+      usage: { promptTokens: 5, completionTokens: 7, totalTokens: 12 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-question-fallback-book/truth/assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        mode: "question",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      mode: string;
+      content: string;
+      question: string;
+      changes: ReadonlyArray<unknown>;
+    };
+    expect(body).toMatchObject({
+      mode: "question",
+      content: "이번 문서에서 통치 정당성의 기준이 이미 확정돼 있나요?",
+      question: "이번 문서에서 통치 정당성의 기준이 이미 확정돼 있나요?",
+      changes: [],
+    });
   });
 
   it("returns bundled truth-file proposals and keeps files untouched until saved", async () => {
@@ -1189,5 +1371,73 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saved = JSON.parse(await readFile(join(root, "books", "legacy-book", "book.json"), "utf-8")) as Record<string, unknown>;
     expect(saved.platform).toBe("munpia");
+  });
+
+  it("updates an existing book title through the API", async () => {
+    await mkdir(join(root, "books", "rename-book"), { recursive: true });
+    await writeFile(join(root, "books", "rename-book", "book.json"), JSON.stringify({
+      id: "rename-book",
+      title: "Before Rename",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/rename-book", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "After Rename" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      book: expect.objectContaining({
+        id: "rename-book",
+        title: "After Rename",
+      }),
+    });
+
+    const saved = JSON.parse(await readFile(join(root, "books", "rename-book", "book.json"), "utf-8")) as Record<string, unknown>;
+    expect(saved.title).toBe("After Rename");
+  });
+
+  it("rejects blank book titles through the API", async () => {
+    await mkdir(join(root, "books", "rename-book"), { recursive: true });
+    await writeFile(join(root, "books", "rename-book", "book.json"), JSON.stringify({
+      id: "rename-book",
+      title: "Before Rename",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/rename-book", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "   " }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Book title cannot be empty" });
+
+    const saved = JSON.parse(await readFile(join(root, "books", "rename-book", "book.json"), "utf-8")) as Record<string, unknown>;
+    expect(saved.title).toBe("Before Rename");
   });
 });

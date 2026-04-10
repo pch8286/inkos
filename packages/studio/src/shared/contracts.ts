@@ -112,9 +112,28 @@ export interface TruthAssistChange {
   readonly content: string;
 }
 
+export interface TruthAssistRequest {
+  readonly fileName?: string;
+  readonly fileNames?: ReadonlyArray<string>;
+  readonly instruction?: string;
+  readonly mode?: "proposal" | "question";
+  readonly alignment?: TruthAssistAlignmentPayload;
+  readonly conversation?: ReadonlyArray<{ readonly role?: string; readonly content?: string }>;
+}
+
+export interface TruthAssistAlignmentPayload {
+  readonly knownFacts?: ReadonlyArray<string>;
+  readonly unknowns?: ReadonlyArray<string>;
+  readonly mustDecide?: string;
+  readonly askFirst?: string;
+}
+
 export interface TruthAssistResponse {
+  readonly mode?: "proposal" | "question";
   readonly content: string;
   readonly changes: ReadonlyArray<TruthAssistChange>;
+  readonly question?: string;
+  readonly rationale?: string;
 }
 
 export interface TruthDocumentSection {

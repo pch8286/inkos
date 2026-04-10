@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
 import { cn } from "../lib/utils";
-import { fetchJson, postApi } from "../hooks/use-api";
+import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { TruthAssistResponse, TruthFileDetail } from "../shared/contracts";
 import type { TruthAssistantContext } from "../shared/truth-assistant";
 import {
@@ -13,6 +13,19 @@ import {
   summarizeTruthDiff,
   truthThreadKey,
 } from "../shared/truth-assistant";
+import { readStoredTruthThreads, writeStoredTruthThreads, type StoredTruthThreads } from "../shared/truth-session";
+import { mergeInterviewAnswerIntoAlignmentContext } from "../shared/truth-workspace";
+import {
+  compactModelLabel,
+  defaultModelForProvider,
+  modelSuggestionsForProvider,
+  normalizeReasoningEffortForProvider,
+  reasoningEffortsForProvider,
+  shortLabelForProvider,
+  supportsReasoningEffort,
+  type LlmCapabilitiesSummary,
+  type ReasoningEffort,
+} from "../shared/llm";
 import {
   Sparkles,
   Trash2,
@@ -27,6 +40,7 @@ import {
   BotMessageSquare,
   BadgeCheck,
   CircleAlert,
+  CircleHelp,
   Brain,
   PenTool,
   Shield,
@@ -37,6 +51,7 @@ import {
   FileOutput,
   TrendingUp,
   WandSparkles,
+  Settings2,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -54,7 +69,8 @@ interface TruthProposalChange {
 }
 
 type TruthRole = "user" | "assistant";
-type TruthMessageKind = "chat" | "proposal" | "clarification";
+type TruthMessageKind = "chat" | "proposal" | "clarification" | "question";
+type TruthSubmitMode = "proposal" | "question";
 
 interface TruthMessage {
   readonly id: string;
@@ -70,6 +86,12 @@ type TruthThreads = Readonly<Record<string, ReadonlyArray<TruthMessage>>>;
 
 interface BookRef {
   readonly id: string;
+}
+
+interface ProjectLlmSummary {
+  readonly provider: string;
+  readonly model: string;
+  readonly reasoningEffort?: string;
 }
 
 export function resolveDirectWriteTarget(
@@ -109,6 +131,49 @@ function clearTruthThread(
   const next = { ...threads };
   delete next[key];
   return next;
+}
+
+function resolveTruthTargetsForSubmit(
+  instruction: string,
+  context: TruthAssistantContext,
+): ReturnType<typeof inferTruthTargets> {
+  const trimmed = instruction.trim();
+  if (!trimmed) {
+    if (context.detailFile && context.files.some((file) => file.name === context.detailFile)) {
+      return {
+        status: "resolved",
+        fileNames: [context.detailFile],
+        reason: "detail-lock",
+      };
+    }
+    if (context.workspaceTargetFile && context.files.some((file) => file.name === context.workspaceTargetFile)) {
+      return {
+        status: "resolved",
+        fileNames: [context.workspaceTargetFile],
+        reason: "workspace-default",
+      };
+    }
+  }
+  return inferTruthTargets(trimmed, context);
+}
+
+function buildTruthAlignmentBlock(alignment: TruthAssistantContext["alignment"] | null | undefined): string {
+  if (!alignment) return "";
+  const parts = [
+    alignment.knownFacts.length > 0
+      ? `Known facts:\n${alignment.knownFacts.map((item) => `- ${item}`).join("\n")}`
+      : "",
+    alignment.unknowns.length > 0
+      ? `Unknowns:\n${alignment.unknowns.map((item) => `- ${item}`).join("\n")}`
+      : "",
+    alignment.mustDecide ? `Must decide:\n${alignment.mustDecide}` : "",
+    alignment.askFirst ? `Ask first:\n${alignment.askFirst}` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
+
+function extractTruthQuestionPrompt(value: string): string {
+  return value.split("\n\n")[0]?.trim() ?? value.trim();
 }
 
 function lineTone(type: "context" | "add" | "remove" | "skip"): string {
@@ -248,14 +313,28 @@ function TruthMessageCard({
 }) {
   if (message.kind !== "proposal") {
     const isUser = message.role === "user";
+    const isQuestion = message.kind === "question";
     return (
       <article
-        className={`rounded-xl border px-3 py-3 ${isUser ? "border-secondary/40 bg-secondary/50" : "border-border/50 bg-background/40"}`}
+        className={`rounded-xl border px-3 py-3 ${
+          isUser
+            ? "border-secondary/40 bg-secondary/50"
+            : isQuestion
+              ? "border-primary/30 bg-primary/5"
+              : "border-border/50 bg-background/40"
+        }`}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {isUser ? "You" : "Assistant"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              {isUser ? "You" : "Assistant"}
+            </span>
+            {isQuestion && (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                {t("truth.agentQuestionBadge")}
+              </span>
+            )}
+          </div>
           <span className="text-[10px] text-muted-foreground">
             {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
@@ -375,17 +454,27 @@ function QuickChip({ icon, label, onClick }: {
 export function ChatPanel({
   open,
   onClose,
+  onOpenConfig,
   t,
   sse,
   activeBookId,
   truthContext,
+  width,
+  isResizing = false,
+  onResizeStart,
+  onResizeNudge,
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
+  readonly onOpenConfig?: () => void;
   readonly t: TFunction;
   readonly sse: { messages: ReadonlyArray<SSEMessage>; connected: boolean };
   readonly activeBookId?: string;
   readonly truthContext?: TruthAssistantContext | null;
+  readonly width: number;
+  readonly isResizing?: boolean;
+  readonly onResizeStart?: (clientX: number) => void;
+  readonly onResizeNudge?: (delta: number) => void;
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ReadonlyArray<ChatMessage>>([]);
@@ -393,15 +482,110 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [truthSending, setTruthSending] = useState(false);
   const [truthError, setTruthError] = useState<string | null>(null);
+  const [assistantLlmForm, setAssistantLlmForm] = useState<{ model: string; reasoningEffort: ReasoningEffort }>({
+    model: "",
+    reasoningEffort: "",
+  });
+  const [assistantLlmSaving, setAssistantLlmSaving] = useState(false);
+  const [assistantLlmError, setAssistantLlmError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hydratedTruthBooksRef = useRef<Set<string>>(new Set());
+  const skipTruthThreadPersistRef = useRef<Set<string>>(new Set());
+  const { data: projectLlm, refetch: refetchProjectLlm } = useApi<ProjectLlmSummary>("/project");
+  const { data: llmCapabilities } = useApi<LlmCapabilitiesSummary>("/llm-capabilities");
   const truthMode = Boolean(truthContext);
   const truthKey = truthContext ? truthThreadKey(truthContext) : "";
   const truthThread = useMemo(() => truthContext ? (truthThreads[truthKey] ?? []) : [], [truthContext, truthKey, truthThreads]);
+  const lastTruthMessage = truthThread[truthThread.length - 1];
+  const awaitingTruthAnswer = lastTruthMessage?.role === "assistant" && lastTruthMessage.kind === "question";
+  const trimmedTruthInput = truthMode ? normalizeTruthText(input) : "";
+  const projectProvider = projectLlm?.provider ?? "";
+  const projectModel = (projectLlm?.model ?? "").trim() || defaultModelForProvider(projectProvider, llmCapabilities) || "";
+  const projectReasoningEffort = normalizeReasoningEffortForProvider(
+    projectLlm?.reasoningEffort ?? "",
+    projectProvider,
+    llmCapabilities,
+  );
+  const assistantModelSuggestions = useMemo(
+    () => modelSuggestionsForProvider(projectProvider, llmCapabilities),
+    [llmCapabilities, projectProvider],
+  );
+  const assistantReasoningEfforts = useMemo(
+    () => reasoningEffortsForProvider(projectProvider, llmCapabilities),
+    [llmCapabilities, projectProvider],
+  );
+  const assistantSupportsReasoning = supportsReasoningEffort(projectProvider, llmCapabilities);
+  const assistantModelListId = useMemo(
+    () => `assistant-model-suggestions-${projectProvider || "default"}`,
+    [projectProvider],
+  );
+  const assistantLlmDirty = assistantLlmForm.model.trim() !== projectModel
+    || assistantLlmForm.reasoningEffort !== projectReasoningEffort;
+  const truthAlignmentSummary = useMemo(() => {
+    if (!truthContext?.alignment) return [];
+    return [
+      truthContext.alignment.knownFacts.length > 0 ? `${t("truth.knownFacts")} ${truthContext.alignment.knownFacts.length}` : "",
+      truthContext.alignment.unknowns.length > 0 ? `${t("truth.unknowns")} ${truthContext.alignment.unknowns.length}` : "",
+      truthContext.alignment.mustDecide ? t("truth.mustDecide") : "",
+      truthContext.alignment.askFirst ? t("truth.questionQueue") : "",
+    ].filter(Boolean);
+  }, [t, truthContext?.alignment]);
+  const canRequestTruthQuestion = Boolean(
+    trimmedTruthInput
+    || truthContext?.alignment?.askFirst
+    || truthContext?.alignment?.unknowns.length
+    || truthContext?.detailFile
+    || truthContext?.workspaceTargetFile,
+  );
+  const canRequestTruthProposal = awaitingTruthAnswer
+    ? Boolean(trimmedTruthInput)
+    : Boolean(trimmedTruthInput || truthContext?.alignment?.mustDecide);
+
+  useEffect(() => {
+    setAssistantLlmForm({
+      model: projectModel,
+      reasoningEffort: projectReasoningEffort,
+    });
+  }, [projectModel, projectReasoningEffort, projectProvider]);
+
+  useEffect(() => {
+    setAssistantLlmError(null);
+  }, [assistantLlmForm.model, assistantLlmForm.reasoningEffort]);
 
   useEffect(() => {
     setTruthError(null);
   }, [truthKey, truthMode]);
+
+  useEffect(() => {
+    if (!truthContext || hydratedTruthBooksRef.current.has(truthContext.bookId)) {
+      return;
+    }
+    const stored = readStoredTruthThreads(truthContext.bookId);
+    hydratedTruthBooksRef.current.add(truthContext.bookId);
+    if (!stored) {
+      return;
+    }
+    skipTruthThreadPersistRef.current.add(truthContext.bookId);
+    setTruthThreads((current) => ({ ...stored.threads, ...current }));
+  }, [truthContext]);
+
+  useEffect(() => {
+    if (!truthContext) {
+      return;
+    }
+    if (skipTruthThreadPersistRef.current.has(truthContext.bookId)) {
+      skipTruthThreadPersistRef.current.delete(truthContext.bookId);
+      return;
+    }
+    const bookThreads = Object.fromEntries(
+      Object.entries(truthThreads).filter(([key]) => key.startsWith(`truth:${truthContext.bookId}:`)),
+    );
+    writeStoredTruthThreads(truthContext.bookId, {
+      version: 1,
+      threads: bookThreads,
+    } satisfies StoredTruthThreads);
+  }, [truthContext, truthThreads]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -456,6 +640,36 @@ export function ChatPanel({
     const lastStatus = [...messages].reverse().find((m) => m.role === "assistant" && m.content.startsWith("⋯"));
     return lastStatus?.content.replace("⋯ ", "") ?? "Initializing...";
   }, [messages]);
+
+  const saveAssistantLlm = async () => {
+    if (!projectProvider) {
+      return;
+    }
+
+    const nextModel = assistantLlmForm.model.trim() || defaultModelForProvider(projectProvider, llmCapabilities) || "";
+    if (!nextModel) {
+      setAssistantLlmError(t("config.modelRequired"));
+      return;
+    }
+
+    setAssistantLlmSaving(true);
+    setAssistantLlmError(null);
+    try {
+      await putApi("/project", {
+        model: nextModel,
+        reasoningEffort: normalizeReasoningEffortForProvider(
+          assistantLlmForm.reasoningEffort,
+          projectProvider,
+          llmCapabilities,
+        ) || "",
+      });
+      await refetchProjectLlm();
+    } catch (error) {
+      setAssistantLlmError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAssistantLlmSaving(false);
+    }
+  };
 
   const isZh = t("nav.connected") === "已连接";
 
@@ -513,19 +727,33 @@ export function ChatPanel({
     }
   };
 
-  const handleTruthSubmit = async (text: string) => {
+  const handleTruthSubmit = async (text: string, submitMode: TruthSubmitMode) => {
     if (!truthContext) return;
+    const interviewQuestion = awaitingTruthAnswer && submitMode === "proposal"
+      ? extractTruthQuestionPrompt(lastTruthMessage?.content ?? "")
+      : "";
+    const effectiveAlignment = awaitingTruthAnswer && truthContext.alignment && text
+      ? mergeInterviewAnswerIntoAlignmentContext(truthContext.alignment, {
+        question: interviewQuestion,
+        answer: text,
+      })
+      : truthContext.alignment ?? null;
+    const instruction = submitMode === "question"
+      ? text || effectiveAlignment?.askFirst || effectiveAlignment?.unknowns[0] || t("truth.agentDefaultQuestionRequest")
+      : awaitingTruthAnswer
+        ? effectiveAlignment?.mustDecide || t("truth.agentDefaultProposalRequest")
+        : text || effectiveAlignment?.mustDecide || t("truth.agentDefaultProposalRequest");
 
     const userMessage: TruthMessage = {
       id: `truth-user-${Date.now()}-${Math.random()}`,
       role: "user",
-      content: text,
+      content: text || (submitMode === "question" ? t("truth.agentAskFirst") : t("truth.agentGenerateProposal")),
       createdAt: Date.now(),
       kind: "chat",
       targetFiles: [],
     };
 
-    const inference = inferTruthTargets(text, truthContext);
+    const inference = resolveTruthTargetsForSubmit(instruction, truthContext);
     if (inference.status === "clarify") {
       const labels = inference.suggestedFileNames
         .map((fileName) => truthContext.files.find((file) => file.name === fileName)?.label ?? fileName)
@@ -555,7 +783,21 @@ export function ChatPanel({
     }
 
     try {
-      const apiConversation = [...truthThread, resolvedUserMessage].map((item) => ({
+      if (awaitingTruthAnswer && submitMode === "proposal" && text) {
+        truthContext.applyInterviewAnswer(interviewQuestion || (lastTruthMessage?.content ?? ""), text);
+      }
+
+      const alignmentBlock = buildTruthAlignmentBlock(effectiveAlignment);
+      const apiConversation = [
+        ...truthThread,
+        resolvedUserMessage,
+        ...(alignmentBlock ? [{
+          role: "user" as const,
+          content: alignmentBlock,
+          kind: "chat" as const,
+          changes: undefined,
+        }] : []),
+      ].map((item) => ({
         role: item.role,
         content: item.kind === "proposal"
           ? item.changes?.map((change) => `${change.label}: ${change.preview}`).join("\n")
@@ -568,10 +810,29 @@ export function ChatPanel({
         body: JSON.stringify({
           fileName: inference.fileNames.length === 1 ? inference.fileNames[0] : undefined,
           fileNames: inference.fileNames.length > 1 ? inference.fileNames : undefined,
-          instruction: text,
+          instruction,
           conversation: apiConversation,
+          mode: submitMode,
+          alignment: effectiveAlignment ?? undefined,
         }),
       });
+
+      if ((payload.mode ?? submitMode) === "question" || payload.question) {
+        const question = payload.question?.trim() || payload.content.trim();
+        if (!question) {
+          throw new Error("No clarifying question returned from assistant");
+        }
+        const assistantMessage: TruthMessage = {
+          id: `truth-question-${Date.now()}-${Math.random()}`,
+          role: "assistant",
+          content: payload.rationale?.trim() ? `${question}\n\n${payload.rationale.trim()}` : question,
+          createdAt: Date.now(),
+          kind: "question",
+          targetFiles: inference.fileNames,
+        };
+        setTruthThreads((current) => addTruthMessage(current, truthKey, assistantMessage));
+        return;
+      }
 
       const requestedFiles = (payload.changes ?? [])
         .map((change) => change.fileName)
@@ -625,14 +886,27 @@ export function ChatPanel({
     }
   };
 
-  const handleSubmit = async () => {
-    const text = truthMode ? normalizeTruthText(input) : input.trim();
-    if (!text) return;
+  const handleSubmit = async (modeOverride?: TruthSubmitMode) => {
+    const text = truthMode ? trimmedTruthInput : input.trim();
+    const truthSubmitMode = truthMode
+      ? (modeOverride ?? (awaitingTruthAnswer ? "proposal" : "question"))
+      : "proposal";
     if ((truthMode && truthSending) || (!truthMode && loading)) return;
+    if (!truthMode && !text) return;
+    if (truthMode && truthSubmitMode === "proposal" && awaitingTruthAnswer && !text) return;
+    if (
+      truthMode
+      && !text
+      && truthSubmitMode === "question"
+      && !truthContext?.alignment?.askFirst
+      && !truthContext?.alignment?.unknowns.length
+      && !truthContext?.detailFile
+      && !truthContext?.workspaceTargetFile
+    ) return;
 
     setInput("");
     if (truthMode) {
-      await handleTruthSubmit(text);
+      await handleTruthSubmit(text, truthSubmitMode);
       return;
     }
     await handleGeneralSubmit(text);
@@ -672,14 +946,54 @@ export function ChatPanel({
       : t("truth.overviewTitle");
 
   return (
-    <aside
+    <div
+      style={{ width: open ? width : 0 }}
       className={cn(
-        "h-full flex flex-col border-l border-border/40 bg-background/80 backdrop-blur-md chat-panel-enter shrink-0 overflow-hidden",
-        open ? (truthMode ? "w-[500px] xl:w-[540px] opacity-100" : "w-[380px] opacity-100") : "w-0 opacity-0",
+        "relative h-full shrink-0",
+        isResizing ? "opacity-100 transition-none" : "chat-panel-enter",
+        open ? "opacity-100" : "opacity-0",
       )}
     >
       {open && (
         <>
+          {onResizeStart ? (
+            <div
+              role="separator"
+              tabIndex={0}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onResizeStart(event.clientX);
+              }}
+              onKeyDown={(event) => {
+                if (!onResizeNudge) {
+                  return;
+                }
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  onResizeNudge(32);
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  onResizeNudge(-32);
+                }
+              }}
+              className="absolute inset-y-0 left-0 z-20 hidden w-4 items-center justify-center bg-transparent cursor-col-resize touch-none outline-none lg:flex"
+              aria-label="Resize assistant panel"
+              title="Resize assistant panel"
+              aria-controls="inkos-assistant-panel"
+              aria-orientation="vertical"
+              aria-valuemin={truthMode ? 420 : 320}
+              aria-valuenow={width}
+            >
+              <span className={`h-24 w-[3px] rounded-full transition-colors ${isResizing ? "bg-primary/70" : "bg-border/80 hover:bg-primary/50"}`} />
+            </div>
+          ) : null}
+
+          <aside
+            id="inkos-assistant-panel"
+            aria-label={truthHeaderTitle}
+            aria-busy={loading || truthSending}
+            className="h-full flex flex-col overflow-hidden border-l border-border/40 bg-background/80 backdrop-blur-md"
+          >
           <div className="h-12 shrink-0 px-4 flex items-center justify-between border-b border-border/40">
             <div className="flex items-center gap-2.5">
               <div className="relative">
@@ -704,6 +1018,7 @@ export function ChatPanel({
                 }}
                 className="p-1.5 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors group"
                 title="Clear conversation"
+                aria-label="Clear conversation"
               >
                 <Trash2 size={14} className="group-hover:animate-[shake_0.3s_ease-in-out]" />
               </button>
@@ -711,14 +1026,112 @@ export function ChatPanel({
                 onClick={onClose}
                 className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary transition-colors group"
                 title="Close panel"
+                aria-label="Close panel"
               >
                 <PanelRightClose size={14} className="group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
           </div>
 
+          <div className="shrink-0 border-b border-border/30 px-4 py-3">
+            <div className="rounded-xl border border-border/40 bg-background/60 px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                    {t("app.llmSettings")}
+                  </div>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <span className="rounded-full border border-border/40 bg-card/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      {projectProvider ? shortLabelForProvider(projectProvider) : "-"}
+                    </span>
+                    <span className="truncate text-xs text-foreground/85">
+                      {projectProvider ? compactModelLabel(projectProvider, projectModel || "-") : "-"}
+                    </span>
+                  </div>
+                </div>
+                {onOpenConfig ? (
+                  <button
+                    type="button"
+                    onClick={onOpenConfig}
+                    className="rounded-lg border border-border/40 bg-card/70 p-2 text-muted-foreground transition-colors hover:text-foreground"
+                    title={t("app.llmSettings")}
+                    aria-label={t("app.llmSettings")}
+                  >
+                    <Settings2 size={14} />
+                  </button>
+                ) : null}
+              </div>
+
+              {assistantLlmError ? (
+                <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" aria-live="assertive">
+                  {assistantLlmError}
+                </div>
+              ) : null}
+
+              <div className="mt-3 space-y-2">
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">{t("config.model")}</span>
+                  <input
+                    list={assistantModelListId}
+                    value={assistantLlmForm.model}
+                    onChange={(event) => setAssistantLlmForm((current) => ({ ...current, model: event.target.value }))}
+                    placeholder={defaultModelForProvider(projectProvider, llmCapabilities) || t("config.model")}
+                    disabled={!projectProvider || assistantLlmSaving}
+                    className="w-full rounded-lg border border-border/40 bg-card/70 px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40"
+                  />
+                  <datalist id={assistantModelListId}>
+                    {assistantModelSuggestions.map((model) => (
+                      <option key={model} value={model} />
+                    ))}
+                  </datalist>
+                </label>
+
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">{t("config.reasoningLevel")}</span>
+                    <select
+                      value={assistantSupportsReasoning ? assistantLlmForm.reasoningEffort : ""}
+                      onChange={(event) => setAssistantLlmForm((current) => ({
+                        ...current,
+                        reasoningEffort: event.target.value as ReasoningEffort,
+                      }))}
+                      disabled={!assistantSupportsReasoning || assistantLlmSaving}
+                      className="w-full rounded-lg border border-border/40 bg-card/70 px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 disabled:opacity-60"
+                    >
+                      <option value="">{assistantSupportsReasoning ? t("config.default") : t("config.reasoningUnsupported")}</option>
+                      {assistantReasoningEfforts.map((effort) => (
+                        <option key={effort} value={effort}>
+                          {effort === "none"
+                            ? t("config.reasoningNone")
+                            : effort === "minimal"
+                              ? t("config.reasoningMinimal")
+                              : effort === "low"
+                                ? t("config.reasoningLow")
+                                : effort === "medium"
+                                  ? t("config.reasoningMedium")
+                                  : effort === "high"
+                                    ? t("config.reasoningHigh")
+                                    : t("config.reasoningXHigh")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => void saveAssistantLlm()}
+                    disabled={assistantLlmSaving || !assistantLlmDirty || !projectProvider}
+                    className="self-end rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {assistantLlmSaving ? t("config.saving") : t("config.save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {(loading || truthSending) && (
-            <div className="shrink-0 px-4 py-2 border-b border-border/30 bg-primary/[0.03] fade-in">
+            <div className="shrink-0 px-4 py-2 border-b border-border/30 bg-primary/[0.03] fade-in" aria-live="polite">
               <div className="flex items-center gap-2.5">
                 <StatusIcon phase={truthMode ? t("truth.aiWorking") : currentPhase} />
                 <span className="text-xs font-medium text-primary truncate flex-1">
@@ -743,12 +1156,33 @@ export function ChatPanel({
                 <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {t("truth.agentHint")}
                 </div>
+                {truthAlignmentSummary.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {truthAlignmentSummary.map((item) => (
+                      <span
+                        key={`alignment-${item}`}
+                        className="rounded-full border border-border/40 bg-card/70 px-2 py-1 text-[10px] font-medium text-muted-foreground"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {truthContext.alignment?.mustDecide && (
+                  <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-5 text-foreground/85">
+                    <span className="font-medium text-primary">{t("truth.mustDecide")}: </span>
+                    {truthContext.alignment.mustDecide}
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
 
           <div
             ref={scrollRef}
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
             className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
           >
             {truthMode ? (
@@ -807,8 +1241,31 @@ export function ChatPanel({
 
           <div className="shrink-0 p-3 border-t border-border/40">
             {truthError ? (
-              <div className="mb-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <div className="mb-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive" aria-live="assertive">
                 {t("truth.aiError")}: {truthError}
+              </div>
+            ) : null}
+
+            {truthMode ? (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit("question")}
+                  disabled={truthSending || !canRequestTruthQuestion}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-background/70 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary disabled:opacity-40"
+                >
+                  <CircleHelp size={12} />
+                  {t("truth.agentAskFirst")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit("proposal")}
+                  disabled={truthSending || !canRequestTruthProposal}
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
+                >
+                  <WandSparkles size={12} />
+                  {t("truth.agentGenerateProposal")}
+                </button>
               </div>
             ) : null}
 
@@ -825,7 +1282,7 @@ export function ChatPanel({
                       void handleSubmit();
                     }
                   }}
-                  placeholder={t("truth.agentInputPlaceholder")}
+                  placeholder={awaitingTruthAnswer ? t("truth.agentAnswerPlaceholder") : t("truth.agentInputPlaceholder")}
                   disabled={truthSending}
                   className="min-h-[96px] flex-1 bg-transparent py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 outline-none ring-0 shadow-none disabled:opacity-50 resize-none"
                   style={{ outline: "none", boxShadow: "none" }}
@@ -850,7 +1307,7 @@ export function ChatPanel({
               )}
               <button
                 onClick={() => void handleSubmit()}
-                disabled={truthMode ? !normalizeTruthText(input) || truthSending : !input.trim() || loading}
+                disabled={truthMode ? truthSending || (awaitingTruthAnswer ? !canRequestTruthProposal : !canRequestTruthQuestion) : !input.trim() || loading}
                 className="mb-1 w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-20 disabled:scale-100 shadow-sm shadow-primary/20"
               >
                 {(loading || truthSending) ? (
@@ -865,7 +1322,7 @@ export function ChatPanel({
               <div className="mt-1.5 px-1 flex items-center gap-1.5">
                 <Lightbulb size={10} className="text-muted-foreground/30 shrink-0" />
                 <span className="text-[10px] text-muted-foreground/50">
-                  {t("truth.agentAutoScope")}
+                  {awaitingTruthAnswer ? t("truth.agentAwaitingAnswer") : t("truth.agentInterviewHint")}
                 </span>
               </div>
             ) : !input ? (
@@ -877,8 +1334,9 @@ export function ChatPanel({
               </div>
             ) : null}
           </div>
+          </aside>
         </>
       )}
-    </aside>
+    </div>
   );
 }

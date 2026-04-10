@@ -104,6 +104,7 @@ export function BookDetail({
   const [rewritingChapters, setRewritingChapters] = useState<ReadonlyArray<number>>([]);
   const [revisingChapters, setRevisingChapters] = useState<ReadonlyArray<number>>([]);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsTitle, setSettingsTitle] = useState<string | null>(null);
   const [settingsWordCount, setSettingsWordCount] = useState<number | null>(null);
   const [settingsTargetChapters, setSettingsTargetChapters] = useState<number | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<BookStatus | null>(null);
@@ -205,9 +206,15 @@ export function BookDetail({
 
   const handleSaveSettings = async () => {
     if (!data) return;
+    const normalizedTitle = settingsTitle === null ? null : settingsTitle.trim();
+    if (normalizedTitle !== null && normalizedTitle.length === 0) {
+      alert(t("book.titleRequired"));
+      return;
+    }
     setSavingSettings(true);
     try {
       const body: Record<string, unknown> = {};
+      if (normalizedTitle !== null && normalizedTitle !== book.title) body.title = normalizedTitle;
       if (settingsWordCount !== null) body.chapterWordCount = settingsWordCount;
       if (settingsTargetChapters !== null) body.targetChapters = settingsTargetChapters;
       if (settingsStatus !== null) body.status = settingsStatus;
@@ -257,6 +264,7 @@ export function BookDetail({
   const currentTargetChapters = settingsTargetChapters ?? book.targetChapters ?? 0;
   const currentStatus = settingsStatus ?? (book.status as BookStatus);
   const currentPlatform = settingsPlatform ?? fallbackPlatform;
+  const currentTitle = settingsTitle ?? book.title;
 
   const exportHref = `/api/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
 
@@ -433,6 +441,17 @@ export function BookDetail({
           </div>
         )}
         <div className="flex flex-wrap items-end gap-4">
+          <div className="flex min-w-[18rem] flex-1 flex-col gap-1">
+            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.bookTitle")}</label>
+            <input
+              type="text"
+              value={currentTitle}
+              onChange={(e) => setSettingsTitle(e.target.value)}
+              placeholder={t("create.placeholder")}
+              className="px-3 py-2 text-sm rounded-lg border border-border/50 bg-secondary/30 outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+            />
+            <span className="text-[11px] text-muted-foreground">{t("book.titleHint")}</span>
+          </div>
           <div className="flex min-w-[13rem] flex-col gap-1">
             <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.platform")}</label>
             <select

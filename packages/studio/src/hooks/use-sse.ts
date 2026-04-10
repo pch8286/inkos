@@ -10,6 +10,7 @@ export const STUDIO_SSE_EVENTS = [
   "book:creating",
   "book:create:progress",
   "book:created",
+  "book:updated",
   "book:deleted",
   "book:error",
   "write:start",

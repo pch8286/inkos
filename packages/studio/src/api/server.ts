@@ -34,6 +34,8 @@ import type {
   RadarResult,
   RadarStatusSummary,
   RadarFitCheckMetadata,
+  TruthAssistAlignmentPayload,
+  TruthAssistRequest,
 } from "../shared/contracts.js";
 
 // --- Event bus for SSE ---
@@ -384,6 +386,195 @@ function truthAssistDefaultInstruction(file: TruthFileName, exists: boolean, lan
     : "Draft a usable first version of this document for the book.";
 }
 
+function buildTruthAlignmentPrompt(
+  alignment: TruthAssistAlignmentPayload | undefined,
+  language: StudioLanguage,
+): string {
+  if (!alignment) return "";
+
+  const knownFacts = (alignment.knownFacts ?? []).filter((item) => typeof item === "string" && item.trim().length > 0);
+  const unknowns = (alignment.unknowns ?? []).filter((item) => typeof item === "string" && item.trim().length > 0);
+  const mustDecide = typeof alignment.mustDecide === "string" ? alignment.mustDecide.trim() : "";
+  const askFirst = typeof alignment.askFirst === "string" ? alignment.askFirst.trim() : "";
+  if (!knownFacts.length && !unknowns.length && !mustDecide && !askFirst) {
+    return "";
+  }
+
+  const knownLabel = language === "ko" ? "이미 확정된 사실" : language === "zh" ? "已确认事实" : "Settled facts";
+  const unknownLabel = language === "ko" ? "아직 모르는 것" : language === "zh" ? "待确认空白" : "Open unknowns";
+  const decideLabel = language === "ko" ? "이번 편집에서 반드시 결정할 것" : language === "zh" ? "本轮必须确定的决定" : "Decision required in this pass";
+  const askLabel = language === "ko" ? "먼저 물어볼 질문" : language === "zh" ? "优先提问" : "Ask first";
+
+  return [
+    knownFacts.length > 0 ? `${knownLabel}:\n${knownFacts.map((item) => `- ${item}`).join("\n")}` : "",
+    unknowns.length > 0 ? `${unknownLabel}:\n${unknowns.map((item) => `- ${item}`).join("\n")}` : "",
+    mustDecide ? `${decideLabel}:\n${mustDecide}` : "",
+    askFirst ? `${askLabel}:\n${askFirst}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function buildTruthAlignmentPolicy(
+  alignment: TruthAssistAlignmentPayload | undefined,
+  language: StudioLanguage,
+  mode: "proposal" | "question",
+): string {
+  const safeAlignment = {
+    knownFacts: (alignment?.knownFacts ?? []).filter((item) => typeof item === "string" && item.trim().length > 0),
+    unknowns: (alignment?.unknowns ?? []).filter((item) => typeof item === "string" && item.trim().length > 0),
+    mustDecide: typeof alignment?.mustDecide === "string" ? alignment.mustDecide.trim() : "",
+    askFirst: typeof alignment?.askFirst === "string" ? alignment.askFirst.trim() : "",
+  };
+  const hasConstraint = safeAlignment.knownFacts.length > 0
+    || safeAlignment.unknowns.length > 0
+    || Boolean(safeAlignment.mustDecide)
+    || Boolean(safeAlignment.askFirst);
+
+  if (mode === "question") {
+    let askRule = "";
+    if (safeAlignment.askFirst) {
+      if (language === "ko") {
+        askRule = `우선 묻는 질문을 그대로 사용: "${safeAlignment.askFirst}"`;
+      } else if (language === "zh") {
+        askRule = `先问的问题必须是：${safeAlignment.askFirst}`;
+      } else {
+        askRule = `Ask first: "${safeAlignment.askFirst}" must be asked first`;
+      }
+    } else if (language === "ko") {
+      askRule = "최우선 질문이 없으면 열린 의심을 가장 빠르게 줄일 수 있는 핵심 질문 하나만 하라.";
+    } else if (language === "zh") {
+      askRule = "若未提供优先问题，则提出一个能最快缩小关键不确定性的单一问题。";
+    } else {
+      askRule = "If no explicit first question is given, ask exactly one question that reduces the largest uncertainty.";
+    }
+
+    let knownRule = "";
+    if (safeAlignment.knownFacts.length > 0) {
+      if (language === "ko") {
+        knownRule = `이미 확정된 사실은 유지/수용한다: ${safeAlignment.knownFacts.join(" / ")}`;
+      } else if (language === "zh") {
+        knownRule = `已确认事实必须保留：${safeAlignment.knownFacts.join(" / ")}`;
+      } else {
+        knownRule = `Known facts must be preserved: ${safeAlignment.knownFacts.join(" / ")}`;
+      }
+    }
+
+    let unknownRule = "";
+    if (safeAlignment.unknowns.length > 0) {
+      if (language === "ko") {
+        unknownRule = `미해결 의문을 임의로 추측해 채우면 안 된다: ${safeAlignment.unknowns.join(" / ")}`;
+      } else if (language === "zh") {
+        unknownRule = `未确认空白不得凭空补充：${safeAlignment.unknowns.join(" / ")}`;
+      } else {
+        unknownRule = `Unresolved gaps must not be filled with speculation: ${safeAlignment.unknowns.join(" / ")}`;
+      }
+    }
+
+    let decisionRule = "";
+    if (safeAlignment.mustDecide) {
+      if (language === "ko") {
+        decisionRule = `반드시 남길 결정: ${safeAlignment.mustDecide}`;
+      } else if (language === "zh") {
+        decisionRule = `必须保留的决策：${safeAlignment.mustDecide}`;
+      } else {
+        decisionRule = `Must preserve decision target: ${safeAlignment.mustDecide}`;
+      }
+    }
+    const antiRule = language === "ko"
+      ? "근거가 없는 설정 확장/변형은 하지 않는다."
+      : language === "zh"
+        ? "禁止在缺乏证据的情况下扩展设定。"
+        : "Do not introduce setting changes without evidence.";
+
+    const questionRules = [
+      askRule,
+      knownRule,
+      unknownRule,
+      decisionRule,
+      antiRule,
+    ].filter(Boolean);
+
+    return [
+      language === "ko" ? "정렬 인터뷰어 제약:" : language === "zh" ? "对齐访谈约束：" : "Alignment interviewer constraints:",
+      ...questionRules.map((rule) => `- ${rule}`),
+    ].join("\n");
+  }
+
+  if (!hasConstraint) {
+    return language === "ko"
+      ? "문헌·대화·정렬 메모에서 근거 없는 내용은 쓰지 않는다."
+      : language === "zh"
+        ? "只使用现有文档、对话和对齐备忘中的支持信息，不得无凭证编造。"
+        : "Use only grounded source/context and alignment notes; do not invent unsupported details.";
+  }
+
+  const decided = safeAlignment.mustDecide
+    ? language === "ko"
+      ? `반드시 결정해야 할 항목 유지/반영: ${safeAlignment.mustDecide}`
+      : language === "zh"
+        ? `必须保留/呈现的核心决策：${safeAlignment.mustDecide}`
+        : `Must preserve the decision requirement: ${safeAlignment.mustDecide}`
+    : "";
+
+  const knownAnchor = language === "ko"
+    ? "\"이미 아는 것\"은 문서의 기준 정보로 고정하고 임의로 바꾸지 않는다."
+    : language === "zh"
+      ? "\"已确认事实\"视为基准信息，不得擅自改写。"
+      : "\"Known facts\" are fixed anchors and must not be rewritten arbitrarily.";
+  const unknownAnchor = language === "ko"
+    ? "\"아직 모르는 것\"은 대화 맥락 또는 지원 문맥으로만 보완하고, 근거가 없으면 유지한다."
+    : language === "zh"
+      ? "\"待确认空白\"只能根据现有上下文补充；无依据时保持原样。"
+      : "Fill \"open unknowns\" only from available context; keep unchanged if unsupported.";
+  const antiHallucination = language === "ko"
+    ? "근거가 없는 세계관 확장이나 설정 변경은 금지한다."
+    : language === "zh"
+      ? "禁止编造新的设定拓展或擅自改变既有设定。"
+      : "Never introduce new lore or setting shifts without evidence.";
+
+  const blocks = [
+    knownAnchor,
+    unknownAnchor,
+    decided,
+    language === "ko"
+      ? "필요한 결정은 반영하며, 대체안을 임의로 만들지 않는다."
+      : language === "zh"
+        ? "必须反映必要的决策，不得自行臆造替代方案。"
+        : "Keep required decisions in place and do not invent alternatives.",
+    antiHallucination,
+  ].filter(Boolean);
+
+  return [
+    language === "ko" ? "정렬 제약:" : language === "zh" ? "对齐约束：" : "Alignment constraints:",
+    ...blocks.map((block) => `- ${block}`),
+  ].join("\n");
+}
+
+function parseTruthInterviewResponse(content: string): { question: string; rationale: string } {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return { question: "", rationale: "" };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as { question?: unknown; rationale?: unknown; reason?: unknown };
+    return {
+      question: typeof parsed.question === "string" ? parsed.question.trim() : "",
+      rationale: typeof parsed.rationale === "string"
+        ? parsed.rationale.trim()
+        : typeof parsed.reason === "string"
+          ? parsed.reason.trim()
+          : "",
+    };
+  } catch {
+    const questionMatch = trimmed.match(/question\s*:\s*(.+)/i);
+    const rationaleMatch = trimmed.match(/(?:rationale|reason)\s*:\s*(.+)/i);
+    return {
+      question: questionMatch?.[1]?.trim() ?? trimmed.split("\n")[0]?.trim() ?? "",
+      rationale: rationaleMatch?.[1]?.trim() ?? "",
+    };
+  }
+}
+
 interface StoredRadarScan {
   readonly kind: "inkos-radar-scan";
   readonly version: 1;
@@ -695,6 +886,47 @@ async function writeGlobalConfig(payload: {
   if (apiKey) process.env.INKOS_LLM_API_KEY = apiKey;
   else delete process.env.INKOS_LLM_API_KEY;
   process.env.INKOS_DEFAULT_LANGUAGE = language;
+}
+
+function syncProjectRuntimeLlmEnv(llm: {
+  readonly provider?: unknown;
+  readonly model?: unknown;
+  readonly reasoningEffort?: unknown;
+  readonly baseUrl?: unknown;
+  readonly temperature?: unknown;
+  readonly maxTokens?: unknown;
+}): void {
+  const provider = String(llm.provider ?? "").trim();
+  const model = String(llm.model ?? "").trim() || defaultModelForProvider(provider);
+  const reasoningEffort = String(llm.reasoningEffort ?? "").trim();
+  const baseUrl = String(llm.baseUrl ?? "").trim();
+
+  if (provider) process.env.INKOS_LLM_PROVIDER = provider;
+  else delete process.env.INKOS_LLM_PROVIDER;
+
+  if (model) process.env.INKOS_LLM_MODEL = model;
+  else delete process.env.INKOS_LLM_MODEL;
+
+  if (["none", "minimal", "low", "medium", "high", "xhigh"].includes(reasoningEffort)) {
+    process.env.INKOS_LLM_REASONING_EFFORT = reasoningEffort;
+  } else {
+    delete process.env.INKOS_LLM_REASONING_EFFORT;
+  }
+
+  if (baseUrl) process.env.INKOS_LLM_BASE_URL = baseUrl;
+  else delete process.env.INKOS_LLM_BASE_URL;
+
+  if (typeof llm.temperature === "number" && Number.isFinite(llm.temperature)) {
+    process.env.INKOS_LLM_TEMPERATURE = String(llm.temperature);
+  } else {
+    delete process.env.INKOS_LLM_TEMPERATURE;
+  }
+
+  if (typeof llm.maxTokens === "number" && Number.isFinite(llm.maxTokens)) {
+    process.env.INKOS_LLM_MAX_TOKENS = String(llm.maxTokens);
+  } else {
+    delete process.env.INKOS_LLM_MAX_TOKENS;
+  }
 }
 
 async function initializeProjectAtRoot(root: string, options: {
@@ -1568,17 +1800,9 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.post("/api/books/:id/truth/assist", async (c) => {
     const id = c.req.param("id");
-    const body: {
-      fileName?: string;
-      fileNames?: ReadonlyArray<string>;
-      instruction?: string;
-      conversation?: ReadonlyArray<{ role?: string; content?: string }>;
-    } = await c.req.json<{
-      fileName?: string;
-      fileNames?: ReadonlyArray<string>;
-      instruction?: string;
-      conversation?: ReadonlyArray<{ role?: string; content?: string }>;
-    }>().catch(() => ({}));
+    const body = await c.req
+      .json<TruthAssistRequest>()
+      .catch(() => ({} as TruthAssistRequest));
     const requestedFiles = [
       ...(typeof body.fileName === "string" ? [body.fileName] : []),
       ...((body.fileNames ?? []).filter((file): file is string => typeof file === "string")),
@@ -1595,6 +1819,9 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const language = await resolveTruthFileLanguage(state, id, cachedConfig);
     const bookDir = state.bookDir(id);
     const book = await state.loadBookConfig(id).catch(() => null);
+    const assistMode = body.mode === "question" ? "question" : "proposal";
+    const alignmentPrompt = buildTruthAlignmentPrompt(body.alignment, language);
+    const alignmentPolicy = buildTruthAlignmentPolicy(body.alignment, language, assistMode);
     const conversation = (body.conversation ?? [])
       .filter((entry: { role?: string; content?: string }): entry is { role: "user" | "assistant"; content: string } => (
         (entry.role === "user" || entry.role === "assistant")
@@ -1612,6 +1839,96 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         ...currentConfig.llm,
         extra: { ...(currentConfig.llm.extra ?? {}), projectRoot: root },
       });
+      if (assistMode === "question") {
+        const focusFile = requestedFiles[0]!;
+        const currentContent = await readStoryFileSafe(bookDir, focusFile);
+        const targetContent = currentContent ?? truthFileTemplate(focusFile, language);
+        const supportNames = [
+          "author_intent.md",
+          "current_focus.md",
+          "story_bible.md",
+          "volume_outline.md",
+          "book_rules.md",
+          "current_state.md",
+          "pending_hooks.md",
+        ].filter((name): name is TruthFileName => name !== focusFile && isAllowedTruthFile(name));
+        const supportBlocks = await Promise.all(
+          supportNames.map(async (name) => {
+            const content = await readStoryFileSafe(bookDir, name);
+            if (!content?.trim()) return null;
+            return `### ${truthFileLabel(name, language)}\n${content.slice(0, 1400)}`;
+          }),
+        );
+        const interviewRequest = body.instruction?.trim()
+          || (language === "ko"
+            ? "지금 문서를 고치기 전에 가장 중요한 확인 질문 하나를 뽑아 줘."
+            : language === "zh"
+              ? "在改写文档前，请先提出最关键的确认问题。"
+              : "Before rewriting the binder file, ask the single most important clarifying question.");
+        const interviewPrompt = [
+          language === "ko"
+            ? `대상 문서: ${truthFileLabel(focusFile, language)} (${focusFile})`
+            : language === "zh"
+              ? `目标文档：${truthFileLabel(focusFile, language)} (${focusFile})`
+              : `Target file: ${truthFileLabel(focusFile, language)} (${focusFile})`,
+          requestedFiles.length > 1
+            ? language === "ko"
+              ? `묶음 편집 대상: ${requestedFiles.map((name) => truthFileLabel(name, language)).join(", ")}`
+              : language === "zh"
+                ? `本次联动编辑文档：${requestedFiles.map((name) => truthFileLabel(name, language)).join("、")}`
+                : `Bundle targets: ${requestedFiles.map((name) => truthFileLabel(name, language)).join(", ")}`
+            : "",
+          book
+            ? language === "ko"
+              ? `책 정보: ${book.title} / ${book.genre} / ${book.platform}`
+              : language === "zh"
+                ? `书籍信息：${book.title} / ${book.genre} / ${book.platform}`
+                : `Book: ${book.title} / ${book.genre} / ${book.platform}`
+            : "",
+          language === "ko"
+            ? `정렬 목표: ${interviewRequest}`
+            : language === "zh"
+              ? `对齐目标：${interviewRequest}`
+              : `Alignment request: ${interviewRequest}`,
+          alignmentPrompt
+            ? language === "ko"
+              ? `정렬 메모:\n${alignmentPrompt}`
+              : language === "zh"
+                ? `对齐备忘：\n${alignmentPrompt}`
+                : `Alignment notes:\n${alignmentPrompt}`
+            : "",
+          conversation.length > 0
+            ? language === "ko"
+              ? `최근 대화 맥락:\n${conversation.join("\n")}`
+              : language === "zh"
+                ? `最近对话上下文：\n${conversation.join("\n")}`
+                : `Recent conversation:\n${conversation.join("\n")}`
+            : "",
+          language === "ko" ? "현재 문서:" : language === "zh" ? "当前文档：" : "Current file:",
+          targetContent,
+          language === "ko" ? "참고 문맥:" : language === "zh" ? "参考上下文：" : "Reference context:",
+          supportBlocks.filter(Boolean).join("\n\n"),
+        ].filter(Boolean).join("\n\n");
+        const interviewSystemPrompt = language === "ko"
+          ? `당신은 InkOS 설정집 정렬 인터뷰어다. 문서를 다시 쓰기 전에 딱 한 개의 핵심 확인 질문만 골라야 한다. 모호함을 줄이고 추측 작성 가능성을 가장 크게 낮추는 질문이어야 한다. 사용자를 대신해 설정을 결정하거나 문서를 작성하면 안 된다. JSON만 반환하라. 형식: {"question":"...","rationale":"..."}\n${alignmentPolicy}`
+          : language === "zh"
+            ? `你是 InkOS 设定集对齐访谈助手。在改写前只提出一个最关键的问题，目标是最大限度降低臆测改写。不要代替用户完成设定决定。只返回 JSON：{"question":"...","rationale":"..."}\n${alignmentPolicy}`
+            : `You are an InkOS binder alignment interviewer. Ask exactly one clarifying question before any rewrite. Pick the question that most reduces speculation. Do not make the decision for the user. Return JSON only: {"question":"...","rationale":"..."}. ${alignmentPolicy}`;
+        const interviewResponse = await chatCompletion(client, currentConfig.llm.model, [
+          { role: "system", content: interviewSystemPrompt },
+          { role: "user", content: interviewPrompt },
+        ]);
+        const parsed = parseTruthInterviewResponse(interviewResponse.content);
+        const question = parsed.question || interviewResponse.content.trim();
+        return c.json({
+          mode: "question",
+          content: question,
+          changes: [],
+          question,
+          rationale: parsed.rationale,
+        });
+      }
+
       const changes = [];
 
       for (const fileName of requestedFiles) {
@@ -1635,10 +1952,10 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         );
         const instruction = body.instruction?.trim() || truthAssistDefaultInstruction(fileName, currentContent !== null, language);
         const systemPrompt = language === "ko"
-          ? "당신은 InkOS 설정집 편집 보조자다. 대화 맥락과 책 설정을 반영해 단 하나의 truth file만 다시 작성한다. 설명이나 해설 없이 최종 markdown 본문만 반환하라. 한국어 프로젝트라면 자연스러운 한국어로 쓰고, 기존 제목/표/frontmatter가 유용하면 유지하라."
+          ? `당신은 InkOS 설정집 편집 보조자다. 대화 맥락과 책 설정을 반영해 단 하나의 truth file만 다시 작성한다. 설명이나 해설 없이 최종 markdown 본문만 반환하라. 한국어 프로젝트라면 자연스러운 한국어로 쓰고, 기존 제목/표/frontmatter가 유용하면 유지하라.\n${alignmentPolicy}`
           : language === "zh"
-            ? "你是 InkOS 设定集编辑助手。结合对话上下文与书籍设定，只重写一个 truth file。不要解释，只返回最终 markdown 正文。若原文已有标题、表格或 frontmatter 且有用，请保留。"
-            : "You are an InkOS binder editor. Use the conversation context plus the book binder to rewrite exactly one truth file. Return only the final markdown body. Do not explain. Preserve useful headings, tables, and frontmatter.";
+            ? `你是 InkOS 设定集编辑助手。结合对话上下文与书籍设定，只重写一个 truth file。不要解释，只返回最终 markdown 正文。若原文已有标题、表格或 frontmatter 且有用，请保留。\n${alignmentPolicy}`
+            : `You are an InkOS binder editor. Use the conversation context plus the book binder to rewrite exactly one truth file. Return only the final markdown body. Do not explain. Preserve useful headings, tables, and frontmatter.\n${alignmentPolicy}`;
         const userPrompt = [
           language === "ko"
             ? `대상 문서: ${truthFileLabel(fileName, language)} (${fileName})`
@@ -1664,6 +1981,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
             : language === "zh"
               ? `要求：${instruction}`
               : `Instruction: ${instruction}`,
+          alignmentPrompt
+            ? language === "ko"
+              ? `정렬 메모:\n${alignmentPrompt}`
+              : language === "zh"
+                ? `对齐备忘：\n${alignmentPrompt}`
+                : `Alignment notes:\n${alignmentPrompt}`
+            : "",
           conversation.length > 0
             ? language === "ko"
               ? `최근 대화 맥락:\n${conversation.join("\n")}`
@@ -1689,7 +2013,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         });
       }
 
-      return c.json({ content: changes[0]?.content ?? "", changes });
+      return c.json({ mode: "proposal", content: changes[0]?.content ?? "", changes });
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
     }
@@ -1964,6 +2288,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       }
       const { writeFile: writeFileFs } = await import("node:fs/promises");
       await writeFileFs(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      syncProjectRuntimeLlmEnv(existing.llm);
       cachedConfig = await loadProjectConfig(root, { requireApiKey: false });
       return c.json({ ok: true });
     } catch (e) {
@@ -2454,6 +2779,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   app.put("/api/books/:id", async (c) => {
     const id = c.req.param("id");
     const updates = await c.req.json<{
+      title?: string;
       chapterWordCount?: number;
       targetChapters?: number;
       status?: string;
@@ -2462,8 +2788,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     }>();
     try {
       const book = await state.loadBookConfig(id);
+      const nextTitle = updates.title === undefined ? undefined : updates.title.trim();
+      if (nextTitle !== undefined && nextTitle.length === 0) {
+        return c.json({ error: "Book title cannot be empty" }, 400);
+      }
       const updated = {
         ...book,
+        ...(nextTitle !== undefined ? { title: nextTitle } : {}),
         ...(updates.chapterWordCount !== undefined ? { chapterWordCount: Number(updates.chapterWordCount) } : {}),
         ...(updates.targetChapters !== undefined ? { targetChapters: Number(updates.targetChapters) } : {}),
         ...(updates.status !== undefined ? { status: updates.status as typeof book.status } : {}),
@@ -2472,6 +2803,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         updatedAt: new Date().toISOString(),
       };
       await state.saveBookConfig(id, updated);
+      broadcast("book:updated", { bookId: id, title: updated.title });
       return c.json({ ok: true, book: updated });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
