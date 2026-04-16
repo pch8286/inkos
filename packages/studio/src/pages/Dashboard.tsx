@@ -53,7 +53,7 @@ interface BookCreateJob {
 interface Nav {
   toBook: (id: string) => void;
   toAnalytics: (id: string) => void;
-  toBookCreate: () => void;
+  toCockpit: () => void;
   toConfig: () => void;
   toRadar: () => void;
 }
@@ -207,11 +207,11 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
               </p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row md:justify-start">
                 <button
-                  onClick={nav.toBookCreate}
+                  onClick={nav.toCockpit}
                   className="group inline-flex items-center justify-center gap-2 rounded-xl px-8 py-3.5 text-sm font-bold studio-cta transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <Plus size={18} />
-                  {t("nav.newBook")}
+                  {t("nav.openCockpit")}
                 </button>
                 <button
                   onClick={nav.toConfig}
@@ -236,10 +236,10 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
             <QuickStartCard
               icon={<Plus size={16} />}
               step="02"
-              title={t("nav.newBook")}
+              title={t("dash.quickStepCockpit")}
               description={t("dash.quickStepBookBody")}
               ctaLabel={t("common.open")}
-              onClick={nav.toBookCreate}
+              onClick={nav.toCockpit}
             />
             <QuickStartCard
               icon={<FileInput size={16} />}
@@ -263,11 +263,11 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
           <p className="text-sm text-muted-foreground">{t("dash.subtitle")}</p>
         </div>
         <button
-          onClick={nav.toBookCreate}
+          onClick={nav.toCockpit}
           className="group inline-flex items-center justify-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-bold studio-cta transition-all hover:scale-105 active:scale-95 sm:self-auto"
         >
           <Plus size={16} />
-          {t("nav.newBook")}
+          {t("nav.openCockpit")}
         </button>
       </div>
 

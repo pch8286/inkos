@@ -57,6 +57,12 @@ export function defaultStudioPlatformForLanguage(language: StudioLanguage): Plat
   return "other";
 }
 
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && typeof value === "number" && value > 0
+    ? Math.round(value)
+    : fallback;
+}
+
 export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): StudioBookConfigDraft {
   return {
     id: body.title
@@ -71,8 +77,8 @@ export function buildStudioBookConfig(body: StudioCreateBookBody, now: string): 
       : defaultStudioPlatformForLanguage(body.language ?? "ko"),
     genre: body.genre,
     status: "outlining",
-    targetChapters: body.targetChapters ?? 200,
-    chapterWordCount: body.chapterWordCount ?? 3000,
+    targetChapters: normalizePositiveInteger(body.targetChapters, 200),
+    chapterWordCount: normalizePositiveInteger(body.chapterWordCount, 3000),
     ...(body.language === "en"
       ? { language: "en" as const }
       : body.language === "zh"

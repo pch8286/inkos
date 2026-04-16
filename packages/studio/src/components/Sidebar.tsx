@@ -15,6 +15,7 @@ import {
   FileInput,
   TrendingUp,
   Stethoscope,
+  MessageSquareText,
   X,
 } from "lucide-react";
 
@@ -39,6 +40,7 @@ interface Nav {
   toDashboard: () => void;
   toBook: (id: string) => void;
   toBookCreate: () => void;
+  toCockpit: () => void;
   toConfig: () => void;
   toDaemon: () => void;
   toLogs: () => void;
@@ -121,15 +123,22 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
               {t("nav.books")}
             </span>
             <button
-              onClick={nav.toBookCreate}
+              onClick={nav.toCockpit}
               className="p-1 rounded-md studio-icon-btn transition-all group"
-              title={t("nav.newBook")}
+              title={t("nav.openCockpit")}
             >
               <Plus size={14} className="group-hover:rotate-90 transition-transform duration-300" />
             </button>
           </div>
 
           <div className="space-y-1">
+            <SidebarItem
+              label={t("nav.cockpit")}
+              icon={<MessageSquareText size={16} />}
+              active={activePage === "cockpit"}
+              onClick={() => nav.toCockpit()}
+            />
+
             {(createStatusData?.entries ?? []).map((job) => (
               <div
                 key={`create-${job.bookId}`}

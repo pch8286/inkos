@@ -47,6 +47,74 @@ export interface BookDetail extends BookSummary {
   readonly language: "ko" | "zh" | "en" | null;
 }
 
+export interface BookSetupConversationEntry {
+  readonly role: "user" | "assistant";
+  readonly content: string;
+}
+
+export interface BookSetupProposalRequest {
+  readonly title: string;
+  readonly genre: string;
+  readonly language?: "ko" | "zh" | "en";
+  readonly platform?: string;
+  readonly chapterWordCount?: number;
+  readonly targetChapters?: number;
+  readonly sessionId?: string;
+  readonly expectedRevision?: number;
+  readonly brief?: string;
+  readonly conversation?: ReadonlyArray<BookSetupConversationEntry>;
+}
+
+export interface BookSetupProposalPayload {
+  readonly content: string;
+  readonly createdAt: string;
+  readonly revision: number;
+}
+
+export interface BookSetupFoundationPreviewPayload {
+  readonly createdAt: string;
+  readonly revision: number;
+  readonly digest: string;
+  readonly storyBible: string;
+  readonly volumeOutline: string;
+  readonly bookRules: string;
+  readonly currentState: string;
+  readonly pendingHooks: string;
+}
+
+export interface BookSetupRevisionRequest {
+  readonly expectedRevision: number;
+}
+
+export interface BookSetupCreateRequest extends BookSetupRevisionRequest {
+  readonly expectedPreviewDigest: string;
+}
+
+export type BookSetupSessionStatus = "proposed" | "approved" | "creating";
+
+export interface BookSetupSessionPayload {
+  readonly id: string;
+  readonly revision: number;
+  readonly status: BookSetupSessionStatus;
+  readonly bookId: string;
+  readonly title: string;
+  readonly genre: string;
+  readonly language: "ko" | "zh" | "en";
+  readonly platform: string;
+  readonly chapterWordCount: number;
+  readonly targetChapters: number;
+  readonly brief: string;
+  readonly proposal: BookSetupProposalPayload;
+  readonly previousProposal?: BookSetupProposalPayload;
+  readonly foundationPreview?: BookSetupFoundationPreviewPayload;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BookSetupSessionListPayload {
+  readonly sessions: ReadonlyArray<BookSetupSessionPayload>;
+}
+
 // --- Chapters ---
 
 export interface ChapterSummary {
@@ -112,14 +180,44 @@ export interface TruthAssistChange {
   readonly content: string;
 }
 
-export interface TruthAssistRequest {
-  readonly fileName?: string;
-  readonly fileNames?: ReadonlyArray<string>;
+export type TruthWriteScope =
+  | { readonly kind: "read-only" }
+  | { readonly kind: "file"; readonly fileName: string };
+
+export interface TruthSaveRequest {
+  readonly content: string;
+  readonly scope: TruthWriteScope;
+}
+
+interface TruthAssistRequestBase {
   readonly instruction?: string;
-  readonly mode?: "proposal" | "question";
   readonly alignment?: TruthAssistAlignmentPayload;
   readonly conversation?: ReadonlyArray<{ readonly role?: string; readonly content?: string }>;
 }
+
+type TruthAssistSingleTarget =
+  | {
+    readonly fileName: string;
+    readonly fileNames?: never;
+  }
+  | {
+    readonly fileName?: never;
+    readonly fileNames: readonly [string, ...string[]];
+  };
+
+type TruthQuestionAssistRequest = TruthAssistRequestBase & {
+  readonly mode: "question";
+  readonly scope?: TruthWriteScope;
+};
+
+type TruthProposalAssistRequest = TruthAssistRequestBase & {
+  readonly mode: "proposal";
+  readonly scope: { readonly kind: "file"; readonly fileName: string };
+};
+
+export type TruthAssistRequest =
+  (TruthQuestionAssistRequest | TruthProposalAssistRequest)
+  & TruthAssistSingleTarget;
 
 export interface TruthAssistAlignmentPayload {
   readonly knownFacts?: ReadonlyArray<string>;

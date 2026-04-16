@@ -1,3 +1,5 @@
+import type { TruthWriteScope } from "./contracts.js";
+
 export type BinderMode = "overview" | "workspace";
 
 export interface TruthAssistantFile {
@@ -23,6 +25,9 @@ export interface TruthAssistantContext {
   readonly files: ReadonlyArray<TruthAssistantFile>;
   readonly alignment: TruthAlignmentContext | null;
   readonly currentContents: Readonly<Record<string, string>>;
+  readonly writeScope?: TruthWriteScope;
+  readonly setWriteScopeFile?: (fileName: string) => void;
+  readonly setWriteScopeReadOnly?: () => void;
   readonly applySuggestion: (fileName: string, proposalMarkdown: string) => void;
   readonly applyInterviewAnswer: (question: string, answer: string) => void;
   readonly openDetail: (fileName: string) => void;

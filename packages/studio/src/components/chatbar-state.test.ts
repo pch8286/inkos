@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveDirectWriteTarget } from "./ChatBar";
+import { resolveDirectWriteTarget, resolveTruthAssistScope } from "./ChatBar";
 
 describe("resolveDirectWriteTarget", () => {
   it("prefers the active book when the user is already inside a book flow", () => {
@@ -34,5 +34,39 @@ describe("resolveDirectWriteTarget", () => {
       bookId: null,
       reason: "ambiguous",
     });
+  });
+});
+
+describe("resolveTruthAssistScope", () => {
+  it("keeps matching file scope for single-file proposals", () => {
+    expect(resolveTruthAssistScope(
+      { writeScope: { kind: "file", fileName: "author_intent.md" } },
+      ["author_intent.md"],
+      "proposal",
+    )).toEqual({ kind: "file", fileName: "author_intent.md" });
+  });
+
+  it("falls back to read-only for proposal mode without an armed file scope", () => {
+    expect(resolveTruthAssistScope(
+      { writeScope: { kind: "read-only" } },
+      ["author_intent.md"],
+      "proposal",
+    )).toEqual({ kind: "read-only" });
+  });
+
+  it("falls back to read-only for bundled proposal targets", () => {
+    expect(resolveTruthAssistScope(
+      { writeScope: { kind: "file", fileName: "author_intent.md" } },
+      ["author_intent.md", "book_rules.md"],
+      "proposal",
+    )).toEqual({ kind: "read-only" });
+  });
+
+  it("keeps question mode usable in read-only scope", () => {
+    expect(resolveTruthAssistScope(
+      { writeScope: { kind: "read-only" } },
+      ["author_intent.md"],
+      "question",
+    )).toEqual({ kind: "read-only" });
   });
 });

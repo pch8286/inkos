@@ -1,15 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRouteSearch,
   clampAssistantPaneWidth,
   deriveActiveBookId,
   deriveActiveLlm,
   deriveLatestAlertTimestamp,
   deriveUnreadAlertCount,
+  parseRouteFromSearch,
   resolveAssistantPaneWidths,
 } from "./App";
 
+describe("route search helpers", () => {
+  it("parses cockpit route without a selected book", () => {
+    expect(parseRouteFromSearch("?page=cockpit")).toEqual({ page: "cockpit" });
+  });
+
+  it("parses cockpit route with a selected book", () => {
+    expect(parseRouteFromSearch("?page=cockpit&bookId=alpha")).toEqual({
+      page: "cockpit",
+      bookId: "alpha",
+    });
+  });
+
+  it("serializes cockpit routes into query strings", () => {
+    expect(buildRouteSearch({ page: "cockpit", bookId: "alpha" })).toBe("?page=cockpit&bookId=alpha");
+    expect(buildRouteSearch({ page: "dashboard" })).toBe("");
+  });
+});
+
 describe("deriveActiveBookId", () => {
   it("returns the current book across book-centered routes", () => {
+    expect(deriveActiveBookId({ page: "cockpit", bookId: "alpha" })).toBe("alpha");
     expect(deriveActiveBookId({ page: "book", bookId: "alpha" })).toBe("alpha");
     expect(deriveActiveBookId({ page: "chapter", bookId: "beta", chapterNumber: 3 })).toBe("beta");
     expect(deriveActiveBookId({ page: "truth", bookId: "gamma" })).toBe("gamma");

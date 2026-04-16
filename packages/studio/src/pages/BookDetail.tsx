@@ -8,7 +8,7 @@ import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-act
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
-import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "./BookCreate";
+import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "../shared/book-create-form";
 import {
   ChevronLeft,
   Zap,

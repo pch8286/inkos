@@ -3,7 +3,7 @@ import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
 import { cn } from "../lib/utils";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
-import type { TruthAssistResponse, TruthFileDetail } from "../shared/contracts";
+import type { TruthAssistResponse, TruthFileDetail, TruthWriteScope } from "../shared/contracts";
 import type { TruthAssistantContext } from "../shared/truth-assistant";
 import {
   buildTruthLineDiff,
@@ -14,6 +14,7 @@ import {
   truthThreadKey,
 } from "../shared/truth-assistant";
 import { readStoredTruthThreads, writeStoredTruthThreads, type StoredTruthThreads } from "../shared/truth-session";
+import { buildTruthAssistRequest, isTruthProposalApplicable } from "../shared/truth-write-scope";
 import { mergeInterviewAnswerIntoAlignmentContext } from "../shared/truth-workspace";
 import {
   compactModelLabel,
@@ -108,6 +109,21 @@ export function resolveDirectWriteTarget(
     return { bookId: null, reason: "missing" };
   }
   return { bookId: null, reason: "ambiguous" };
+}
+
+export function resolveTruthAssistScope(
+  context: Pick<TruthAssistantContext, "writeScope"> | null | undefined,
+  fileNames: ReadonlyArray<string>,
+  mode: TruthSubmitMode,
+): TruthWriteScope {
+  const scope = context?.writeScope ?? { kind: "read-only" };
+  if (mode === "question") {
+    return scope;
+  }
+  if (fileNames.length !== 1) {
+    return { kind: "read-only" };
+  }
+  return isTruthProposalApplicable(scope, fileNames[0]!) ? scope : { kind: "read-only" };
 }
 
 function addTruthMessage(
@@ -538,9 +554,10 @@ export function ChatPanel({
     || truthContext?.detailFile
     || truthContext?.workspaceTargetFile,
   );
+  const hasWritableTruthScope = truthContext?.writeScope?.kind === "file";
   const canRequestTruthProposal = awaitingTruthAnswer
-    ? Boolean(trimmedTruthInput)
-    : Boolean(trimmedTruthInput || truthContext?.alignment?.mustDecide);
+    ? Boolean(trimmedTruthInput && hasWritableTruthScope)
+    : Boolean((trimmedTruthInput || truthContext?.alignment?.mustDecide) && hasWritableTruthScope);
 
   useEffect(() => {
     setAssistantLlmForm({
@@ -776,11 +793,23 @@ export function ChatPanel({
     const resolvedUserMessage = { ...userMessage, targetFiles: inference.fileNames };
     setTruthThreads((current) => addTruthMessage(current, truthKey, resolvedUserMessage));
     setTruthError(null);
-    setTruthSending(true);
-
-    if (!truthContext.detailFile && inference.fileNames[0]) {
-      truthContext.setWorkspaceTargetFile(inference.fileNames[0]!);
+    const requestScope = resolveTruthAssistScope(truthContext, inference.fileNames, submitMode);
+    if (submitMode === "proposal" && requestScope.kind !== "file") {
+      const message = inference.fileNames.length === 1
+        ? t("truth.agentSelectWritableFile")
+        : t("truth.agentSingleFileProposalOnly");
+      setTruthError(message);
+      setTruthThreads((current) => addTruthMessage(current, truthKey, {
+        id: `truth-scope-${Date.now()}-${Math.random()}`,
+        role: "assistant",
+        content: message,
+        createdAt: Date.now(),
+        kind: "chat",
+        targetFiles: inference.fileNames,
+      }));
+      return;
     }
+    setTruthSending(true);
 
     try {
       if (awaitingTruthAnswer && submitMode === "proposal" && text) {
@@ -807,14 +836,14 @@ export function ChatPanel({
       const payload = await fetchJson<TruthAssistResponse>(`/books/${truthContext.bookId}/truth/assist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: inference.fileNames.length === 1 ? inference.fileNames[0] : undefined,
-          fileNames: inference.fileNames.length > 1 ? inference.fileNames : undefined,
+        body: JSON.stringify(buildTruthAssistRequest({
+          fileNames: inference.fileNames,
           instruction,
           conversation: apiConversation,
           mode: submitMode,
           alignment: effectiveAlignment ?? undefined,
-        }),
+          scope: requestScope,
+        })),
       });
 
       if ((payload.mode ?? submitMode) === "question" || payload.question) {
@@ -939,11 +968,15 @@ export function ChatPanel({
   }, [input, tips.length, truthMode]);
 
   const truthHeaderTitle = truthMode ? t("truth.agentTitle") : "InkOS Assistant";
-  const truthScopeLabel = truthContext?.detailFile
-    ? truthContext.files.find((file) => file.name === truthContext.detailFile)?.label ?? truthContext.detailFile
-    : truthContext?.mode === "workspace"
-      ? t("truth.workspaceTitle")
-      : t("truth.overviewTitle");
+  const activeTruthWriteFile = truthContext?.writeScope?.kind === "file"
+    ? truthContext.writeScope.fileName
+    : null;
+  const truthScopeLabel = activeTruthWriteFile
+    ? truthContext?.files.find((file) => file.name === activeTruthWriteFile)?.label ?? activeTruthWriteFile
+    : t("truth.readOnly");
+  const truthScopeHint = truthContext?.writeScope?.kind === "file"
+    ? t("truth.agentHint")
+    : t("truth.agentReadOnlyHint");
 
   return (
     <div
@@ -1149,12 +1182,10 @@ export function ChatPanel({
           {truthMode && truthContext ? (
             <div className="shrink-0 border-b border-border/30 px-4 py-3">
               <div className="rounded-xl border border-border/40 bg-background/60 px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                  {truthContext.detailFile ? t("truth.agentTargetLocked") : t("truth.agentAutoScope")}
-                </div>
+                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{t("truth.writeScope")}</div>
                 <div className="mt-1 text-sm font-medium text-foreground">{truthScopeLabel}</div>
                 <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {t("truth.agentHint")}
+                  {truthScopeHint}
                 </div>
                 {truthAlignmentSummary.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">

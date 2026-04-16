@@ -5,6 +5,14 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      input: {
+        studio: resolve(__dirname, "index.html"),
+        cockpit: resolve(__dirname, "cockpit/index.html"),
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

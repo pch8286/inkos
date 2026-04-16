@@ -28,6 +28,7 @@ import type {
   TruthFileDetail,
   TruthFileSummary,
   TruthSectionSummary,
+  TruthWriteScope,
 } from "../shared/contracts";
 import type { BinderMode, TruthAssistantContext } from "../shared/truth-assistant";
 import {
@@ -37,6 +38,7 @@ import {
   writeStoredTruthSession,
 } from "../shared/truth-session";
 import { countCharacters, parseTruthMarkdown, serializeTruthMarkdown } from "../shared/truth-editor";
+import { buildTruthSaveRequest } from "../shared/truth-write-scope";
 import {
   computeTruthMentions,
   mergeInterviewAnswerIntoAlignmentDraft,
@@ -399,6 +401,21 @@ export function TruthFiles({
     if (workspaceTargetFile) return workspaceTargetFile;
     return activeMode === "overview" ? "__binder__" : "__workspace__";
   }, [activeMode, selected, workspaceTargetFile]);
+  const writeScope = useMemo<TruthWriteScope>(() => {
+    if (selected && data?.files.some((entry) => entry.name === selected)) {
+      return { kind: "file", fileName: selected };
+    }
+    if (workspaceTargetFile && workspaceFiles.some((file) => file.name === workspaceTargetFile)) {
+      return { kind: "file", fileName: workspaceTargetFile };
+    }
+    return { kind: "read-only" };
+  }, [data?.files, selected, workspaceFiles, workspaceTargetFile]);
+  const writeScopeLabel = useMemo(() => {
+    if (writeScope.kind !== "file") {
+      return t("truth.readOnly");
+    }
+    return data?.files.find((file) => file.name === writeScope.fileName)?.label ?? writeScope.fileName;
+  }, [data?.files, t, writeScope]);
 
   const seededAlignmentDraft = useMemo(
     () => createAlignmentDraft(structuredInsights?.knownItems ?? [], structuredInsights?.emptyBlocks ?? []),
@@ -608,14 +625,14 @@ export function TruthFiles({
   }, [data?.files]);
 
   useEffect(() => {
-    if (selected || workspaceFiles.length === 0) {
+    if (!workspaceTargetFile) {
       return;
     }
     if (workspaceFiles.some((file) => file.name === workspaceTargetFile)) {
       return;
     }
-    setWorkspaceTargetFile(workspaceFiles[0]!.name);
-  }, [selected, workspaceFiles, workspaceTargetFile]);
+    setWorkspaceTargetFile("");
+  }, [workspaceFiles, workspaceTargetFile]);
 
   useEffect(() => {
     if (!selected || fileLoading || fileError) return;
@@ -682,6 +699,24 @@ export function TruthFiles({
     setCollapsedSections({});
     setActiveEditorKey("doc-title");
   }, []);
+  const setExplicitWriteScopeFile = useCallback((fileName: string) => {
+    const normalized = fileName.trim();
+    if (!normalized) {
+      return;
+    }
+    if (workspaceFileSet.has(normalized)) {
+      setActiveMode("workspace");
+      setSelected(null);
+      setWorkspaceTargetFile(normalized);
+      return;
+    }
+    handleSelect(normalized);
+  }, [handleSelect, workspaceFileSet]);
+  const setExplicitReadOnlyScope = useCallback(() => {
+    if (!selected) {
+      setWorkspaceTargetFile("");
+    }
+  }, [selected]);
 
   const startBookTitleRename = useCallback(() => {
     setBookTitleDraft(bookMeta?.book.title ?? "");
@@ -933,6 +968,9 @@ export function TruthFiles({
         askFirst: activeAlignmentDraft.askFirst.trim(),
       },
       currentContents: deferredAgentCurrentContents,
+      writeScope,
+      setWriteScopeFile: setExplicitWriteScopeFile,
+      setWriteScopeReadOnly: setExplicitReadOnlyScope,
       applySuggestion: applyAgentSuggestion,
       applyInterviewAnswer,
       openDetail: handleSelect,
@@ -952,6 +990,9 @@ export function TruthFiles({
     handleSelect,
     selected,
     selectedSummary,
+    setExplicitReadOnlyScope,
+    setExplicitWriteScopeFile,
+    writeScope,
     workspaceTargetFile,
   ]);
 
@@ -990,7 +1031,10 @@ export function TruthFiles({
       await fetchJson(`/books/${bookId}/truth/${name}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: draft.content }),
+        body: JSON.stringify(buildTruthSaveRequest(draft.content, {
+          kind: "file",
+          fileName: name,
+        })),
       });
       setBulkDrafts((current) => ({
         ...current,
@@ -1218,7 +1262,10 @@ export function TruthFiles({
       await fetchJson(`/books/${bookId}/truth/${selected}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(buildTruthSaveRequest(content, {
+          kind: "file",
+          fileName: selected,
+        })),
       });
       setBulkDrafts((current) => ({
         ...current,
@@ -1482,7 +1529,23 @@ export function TruthFiles({
               ) : (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm text-muted-foreground">{t("truth.workspaceHint")}</div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground">{t("truth.workspaceHint")}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="rounded-full border border-border/40 bg-background/70 px-2.5 py-1 font-medium text-foreground/85">
+                          {t("truth.writeScope")}: {writeScopeLabel}
+                        </span>
+                        {workspaceTargetFile ? (
+                          <button
+                            type="button"
+                            onClick={setExplicitReadOnlyScope}
+                            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 ${c.btnSecondary}`}
+                          >
+                            {t("truth.clearWriteScope")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => void saveAllWorkspaceDrafts()}
@@ -1524,6 +1587,15 @@ export function TruthFiles({
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
+                                onClick={() => setExplicitWriteScopeFile(file.name)}
+                                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs ${
+                                  workspaceTargetFile === file.name ? c.btnPrimary : c.btnSecondary
+                                }`}
+                              >
+                                {workspaceTargetFile === file.name ? t("truth.currentWriteScope") : t("truth.useForProposal")}
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleSelect(file.name)}
                                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs ${c.btnSecondary}`}
                               >
@@ -1549,6 +1621,7 @@ export function TruthFiles({
                               <textarea
                                 value={draftContent}
                                 onChange={(event) => updateBulkDraft(file.name, event.target.value)}
+                                onFocus={() => setExplicitWriteScopeFile(file.name)}
                                 className={`${c.input} min-h-[18rem] w-full rounded-xl p-4 text-sm leading-relaxed`}
                               />
                             )}

@@ -21,3 +21,5 @@ autoresearch/
 .playwright-cli/
 .superpowers/
 _*.md
+
+.inkos/

@@ -24,6 +24,18 @@ export function deriveInvalidationPaths(path: string): ReadonlyArray<string> {
     return ["/api/books"];
   }
 
+  if (normalized === "/api/book-setup/propose") {
+    return ["/api/book-setup"];
+  }
+
+  if (/^\/api\/book-setup\/[^/]+\/(approve|foundation-preview)$/.test(normalized)) {
+    return ["/api/book-setup"];
+  }
+
+  if (/^\/api\/book-setup\/[^/]+\/create$/.test(normalized)) {
+    return ["/api/books", "/api/book-setup"];
+  }
+
   if (normalized === "/api/project") {
     return ["/api/project"];
   }
@@ -69,6 +81,14 @@ export function invalidateApiPaths(paths: ReadonlyArray<string>): void {
   window.dispatchEvent(new CustomEvent<ApiInvalidateDetail>(API_INVALIDATE_EVENT, {
     detail: { paths: [...new Set(paths)] },
   }));
+}
+
+export function createIdempotencyKey(): string {
+  const generated = globalThis.crypto?.randomUUID?.();
+  if (typeof generated === "string" && generated.trim().length > 0) {
+    return generated;
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -179,11 +199,17 @@ export function useApi<T>(path: string) {
   return { data, loading, error, refetch };
 }
 
-export async function postApi<T>(path: string, body?: unknown): Promise<T> {
+export async function postApi<T>(path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const result = await fetchJson<T>(path, {
+    ...init,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : init.body,
   });
   invalidateApiPaths(deriveInvalidationPaths(path));
   return result;

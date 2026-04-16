@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchJson, useApi, postApi } from "../hooks/use-api";
+import { createIdempotencyKey, fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { resolveStudioLanguage, type StudioLanguage } from "../shared/language";
+import { defaultChapterWordsForLanguage, pickValidValue, platformOptionsForLanguage } from "../shared/book-create-form";
 
 interface Nav {
   toDashboard: () => void;
@@ -15,62 +16,6 @@ interface GenreInfo {
   readonly name: string;
   readonly source: "project" | "builtin";
   readonly language: StudioLanguage;
-}
-
-interface PlatformOption {
-  readonly value: string;
-  readonly label: string;
-}
-
-const PLATFORMS_ZH: ReadonlyArray<PlatformOption> = [
-  { value: "tomato", label: "番茄小说" },
-  { value: "qidian", label: "起点中文网" },
-  { value: "feilu", label: "飞卢" },
-  { value: "other", label: "其他" },
-];
-
-const PLATFORMS_EN: ReadonlyArray<PlatformOption> = [
-  { value: "royal-road", label: "Royal Road" },
-  { value: "kindle-unlimited", label: "Kindle Unlimited" },
-  { value: "scribble-hub", label: "Scribble Hub" },
-  { value: "other", label: "Other" },
-];
-
-const PLATFORMS_KO: ReadonlyArray<PlatformOption> = [
-  { value: "naver-series", label: "네이버 시리즈" },
-  { value: "kakao-page", label: "카카오페이지" },
-  { value: "munpia", label: "문피아" },
-  { value: "novelpia", label: "노벨피아" },
-  { value: "other", label: "기타" },
-];
-
-export function pickValidValue(current: string, available: ReadonlyArray<string>): string {
-  if (current && available.includes(current)) {
-    return current;
-  }
-  return available[0] ?? "";
-}
-
-export function defaultChapterWordsForLanguage(language: StudioLanguage): string {
-  return language === "en" ? "2000" : "3000";
-}
-
-export function platformOptionsForLanguage(language: StudioLanguage): ReadonlyArray<PlatformOption> {
-  if (language === "en") {
-    return PLATFORMS_EN;
-  }
-  if (language === "ko") {
-    return PLATFORMS_KO;
-  }
-  return PLATFORMS_ZH;
-}
-
-export function platformLabelForLanguage(
-  language: StudioLanguage,
-  platform: string,
-): string {
-  const options = platformOptionsForLanguage(language);
-  return options.find((option) => option.value === platform)?.label ?? platform;
 }
 
 interface WaitForBookReadyOptions {
@@ -157,11 +102,30 @@ export async function waitForBookReady(
   throw lastError instanceof Error ? lastError : new Error(`Book "${bookId}" was not ready`);
 }
 
+function buildBookCreateRequestFingerprint(input: {
+  readonly title: string;
+  readonly genre: string;
+  readonly language: StudioLanguage;
+  readonly platform: string;
+  readonly chapterWordCount: number;
+  readonly targetChapters: number;
+}): string {
+  return JSON.stringify({
+    title: input.title.trim(),
+    genre: input.genre,
+    language: input.language,
+    platform: input.platform,
+    chapterWordCount: input.chapterWordCount,
+    targetChapters: input.targetChapters,
+  });
+}
+
 export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
   const { data: genreData } = useApi<{ genres: ReadonlyArray<GenreInfo> }>("/genres");
   const { data: project } = useApi<{ language: string }>("/project");
   const mountedRef = useRef(true);
+  const createAttemptRef = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null);
 
   const projectLang = resolveStudioLanguage(project?.language);
 
@@ -226,13 +190,23 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
     setError(null);
     setCreateProgress(null);
     try {
-      const result = await postApi<{ bookId: string }>("/books/create", {
+      const request = {
         title: title.trim(),
         genre,
         language: projectLang,
         platform,
         chapterWordCount: parseInt(chapterWords, 10),
         targetChapters: parseInt(targetChapters, 10),
+      } as const;
+      const fingerprint = buildBookCreateRequestFingerprint(request);
+      const currentAttempt = createAttemptRef.current;
+      const idempotencyKey = currentAttempt?.fingerprint === fingerprint
+        ? currentAttempt.key
+        : createIdempotencyKey();
+      createAttemptRef.current = { fingerprint, key: idempotencyKey };
+
+      const result = await postApi<{ bookId: string }>("/books/create", request, {
+        headers: { "Idempotency-Key": idempotencyKey },
       });
       if (mountedRef.current) {
         setCreateProgress({ bookId: result.bookId });
@@ -267,10 +241,10 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <button onClick={nav.toDashboard} className={c.link}>{t("bread.books")}</button>
         <span className="text-border">/</span>
-        <span>{t("bread.newBook")}</span>
+        <span>{t("bread.legacyCreate")}</span>
       </div>
 
-      <h1 className="font-serif text-3xl">{t("create.title")}</h1>
+      <h1 className="font-serif text-3xl">{t("create.legacyTitle")}</h1>
 
       {error && (
         <div className={`border ${c.error} rounded-md px-4 py-3`}>
@@ -400,7 +374,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         disabled={creating || !title.trim()}
         className={`w-full px-4 py-3 ${c.btnPrimary} rounded-md disabled:opacity-50 font-medium text-base`}
       >
-        {creating ? t("create.creating") : t("create.submit")}
+        {creating ? t("create.creating") : t("create.legacySubmit")}
       </button>
     </div>
   );

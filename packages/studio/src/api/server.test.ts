@@ -5,10 +5,13 @@ import { tmpdir } from "node:os";
 
 const schedulerStartMock = vi.fn<() => Promise<void>>();
 const initBookMock = vi.fn();
+const proposeBookMock = vi.fn();
+const applyBookProposalMock = vi.fn();
 const runRadarMock = vi.fn();
 const createLLMClientMock = vi.fn(() => ({}));
 const chatCompletionMock = vi.fn();
 const loadProjectConfigMock = vi.fn();
+const serveMock = vi.fn();
 const pipelineConfigs: unknown[] = [];
 const globalEnvPath = join(tmpdir(), "inkos-global.env");
 
@@ -70,6 +73,8 @@ vi.mock("@actalk/inkos-core", () => {
     }
 
     initBook = initBookMock;
+    proposeBook = proposeBookMock;
+    applyBookProposal = applyBookProposalMock;
     runRadar = runRadarMock;
   }
 
@@ -126,6 +131,10 @@ vi.mock("@actalk/inkos-core", () => {
   };
 });
 
+vi.mock("@hono/node-server", () => ({
+  serve: serveMock,
+}));
+
 const projectConfig = {
   name: "studio-test",
   version: "0.1.0",
@@ -156,6 +165,105 @@ const projectConfig = {
 
 function cloneProjectConfig() {
   return structuredClone(projectConfig);
+}
+
+function makeBookInitProposal(input: { id?: string; title?: string; genre?: string; language?: string; platform?: string; targetChapters?: number; chapterWordCount?: number } = {}) {
+  return {
+    book: {
+      id: input.id ?? "proposal-book",
+      title: input.title ?? "Proposal Book",
+      genre: input.genre ?? "modern-fantasy",
+      platform: input.platform ?? "naver-series",
+      status: "outlining",
+      targetChapters: input.targetChapters ?? 200,
+      chapterWordCount: input.chapterWordCount ?? 3000,
+      language: input.language ?? "ko",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    foundation: {
+      storyBible: "# story_bible",
+      volumeOutline: "# volume_outline",
+      bookRules: "# book_rules",
+      currentState: "# current_state",
+      pendingHooks: "# pending_hooks",
+    },
+  };
+}
+
+interface StudioAppLike {
+  readonly request: (input: string, init?: RequestInit) => Response | Promise<Response>;
+}
+
+function setupRevisionBody(expectedRevision: number): { readonly expectedRevision: number } {
+  return { expectedRevision };
+}
+
+function jsonHeaders(idempotencyKey?: string): HeadersInit {
+  return idempotencyKey
+    ? { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }
+    : { "Content-Type": "application/json" };
+}
+
+function setupCreateBody(expectedRevision: number, expectedPreviewDigest?: string): { readonly expectedRevision: number; readonly expectedPreviewDigest?: string } {
+  return expectedPreviewDigest
+    ? { expectedRevision, expectedPreviewDigest }
+    : { expectedRevision };
+}
+
+function requestHeaders(idempotencyKey?: string): Record<string, string> {
+  return idempotencyKey
+    ? { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }
+    : { "Content-Type": "application/json" };
+}
+
+function quickCreateRequest(body: Record<string, unknown>, idempotencyKey?: string): RequestInit {
+  return {
+    method: "POST",
+    headers: requestHeaders(idempotencyKey),
+    body: JSON.stringify(body),
+  };
+}
+
+async function approveSetupSession(app: StudioAppLike, sessionId: string, expectedRevision: number): Promise<Response> {
+  return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/approve", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(setupRevisionBody(expectedRevision)),
+  }));
+}
+
+async function previewSetupSession(app: StudioAppLike, sessionId: string, expectedRevision: number): Promise<Response> {
+  return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/foundation-preview", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(setupRevisionBody(expectedRevision)),
+  }));
+}
+
+async function createSetupSession(app: StudioAppLike, sessionId: string, expectedRevision: number, expectedPreviewDigest?: string, idempotencyKey?: string): Promise<Response> {
+  return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/create", {
+    method: "POST",
+    headers: jsonHeaders(idempotencyKey),
+    body: JSON.stringify(setupCreateBody(expectedRevision, expectedPreviewDigest)),
+  }));
+}
+
+async function createStaticServerRequest(
+  root: string,
+  staticDir: string,
+): Promise<(path: string, init?: RequestInit) => Promise<Response>> {
+  const { startStudioServer } = await import("./server.js");
+  await startStudioServer(root, 4567, { staticDir });
+
+  const served = serveMock.mock.calls.at(-1)?.[0] as { fetch?: (request: Request) => Response | Promise<Response> } | undefined;
+  if (!served?.fetch) {
+    throw new Error("Expected startStudioServer to register a fetch handler");
+  }
+
+  return async (path: string, init?: RequestInit) => {
+    return await Promise.resolve(served.fetch!(new Request(`http://localhost${path}`, init)));
+  };
 }
 
 const PROJECT_LLM_ENV_KEYS = [
@@ -244,6 +352,18 @@ describe("createStudioServer daemon lifecycle", () => {
     schedulerStartMock.mockReset();
     initBookMock.mockReset();
     initBookMock.mockResolvedValue(undefined);
+    proposeBookMock.mockReset();
+    proposeBookMock.mockImplementation(async (book) => makeBookInitProposal({
+      id: (book as { id?: string }).id,
+      title: (book as { title?: string }).title,
+      genre: (book as { genre?: string }).genre,
+      language: (book as { language?: string }).language,
+      platform: (book as { platform?: string }).platform,
+      targetChapters: (book as { targetChapters?: number }).targetChapters,
+      chapterWordCount: (book as { chapterWordCount?: number }).chapterWordCount,
+    }));
+    applyBookProposalMock.mockReset();
+    applyBookProposalMock.mockResolvedValue(undefined);
     runRadarMock.mockReset();
     runRadarMock.mockResolvedValue({
       marketSummary: "Fresh market summary",
@@ -257,6 +377,7 @@ describe("createStudioServer daemon lifecycle", () => {
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
     });
     loadProjectConfigMock.mockReset();
+    serveMock.mockReset();
     loadProjectConfigMock.mockImplementation(async () => {
       const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as Record<string, unknown>;
       return applyMockLlmEnvOverrides({
@@ -356,7 +477,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const save = await app.request("http://localhost/api/project", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         provider: "codex-cli",
         model: "gpt-5.3-codex-spark",
@@ -469,7 +590,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/radar/scan", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ mode: "idea-mining" }),
     });
 
@@ -495,7 +616,7 @@ describe("createStudioServer daemon lifecycle", () => {
     const app = createStudioServer(cloneProjectConfig() as never, root);
     const response = await app.request("http://localhost/api/radar/scan", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         mode: "fit-check",
         bookId: "fit-check-book",
@@ -544,7 +665,7 @@ describe("createStudioServer daemon lifecycle", () => {
     const app = createStudioServer(cloneProjectConfig() as never, root);
     const response = await app.request("http://localhost/api/radar/fit-check/preview", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         mode: "fit-check",
         bookId: "fit-check-book",
@@ -625,8 +746,11 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saveResponse = await app.request("http://localhost/api/books/editable-book/truth/author_intent.md", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "# 작가 의도\n\n수정된 의도." }),
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        content: "# 작가 의도\n\n수정된 의도.",
+        scope: { kind: "file", fileName: "author_intent.md" },
+      }),
     });
     expect(saveResponse.status).toBe(200);
     await expect(saveResponse.json()).resolves.toMatchObject({ ok: true });
@@ -640,11 +764,72 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const invalidSave = await app.request("http://localhost/api/books/editable-book/truth/notes.md", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ content: "# ignore" }),
     });
     expect(invalidSave.status).toBe(400);
     await expect(invalidSave.json()).resolves.toMatchObject({ error: "Invalid truth file" });
+  });
+
+  it("rejects truth saves without explicit file scope", async () => {
+    await seedFitCheckBook(root, "editable-scope-book", "작성 권한 검증", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n의도 원본." },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/editable-scope-book/truth/author_intent.md", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ content: "# 작가 의도\n\n수정된 의도." }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_REQUIRED" });
+  });
+
+  it("rejects truth saves in read-only scope", async () => {
+    await seedFitCheckBook(root, "editable-readonly-book", "작성 권한 검증", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n의도 원본." },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/editable-readonly-book/truth/author_intent.md", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        content: "# 작가 의도\n\n수정된 의도.",
+        scope: { kind: "read-only" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_READ_ONLY" });
+  });
+
+  it("rejects truth saves when file scope does not match the route file", async () => {
+    await seedFitCheckBook(root, "editable-mismatch-book", "작성 권한 검증", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n의도 원본." },
+      { file: "book_rules.md", content: "# 작품 규칙\n\n- 원본 규칙." },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/editable-mismatch-book/truth/author_intent.md", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        content: "# 작가 의도\n\n수정된 의도.",
+        scope: { kind: "file", fileName: "book_rules.md" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_FILE_MISMATCH" });
   });
 
   it("returns a localized starter skeleton for missing truth files", async () => {
@@ -683,10 +868,11 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/assist-book/truth/assist", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         fileName: "author_intent.md",
         instruction: "통치와 정당성 축을 더 선명하게",
+        scope: { kind: "file", fileName: "author_intent.md" },
         alignment: {
           knownFacts: ["왕권과 제도의 충돌을 다룬다."],
           unknowns: ["주인공의 통치 원칙은 아직 정리되지 않았다."],
@@ -717,6 +903,75 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(persisted).toContain("왕권과 제도의 충돌");
   });
 
+  it("rejects proposal mode without explicit truth write scope", async () => {
+    await seedFitCheckBook(root, "assist-scope-book", "scope 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-scope-book/truth/assist", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        mode: "proposal",
+        instruction: "통치와 정당성 축을 더 선명하게",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_REQUIRED" });
+  });
+
+  it("rejects proposal mode when the scope is read-only", async () => {
+    await seedFitCheckBook(root, "assist-readonly-book", "scope readonly 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-readonly-book/truth/assist", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        mode: "proposal",
+        instruction: "통치와 정당성 축을 더 선명하게",
+        scope: { kind: "read-only" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_READ_ONLY" });
+  });
+
+  it("rejects proposal mode when the file scope does not match the target file", async () => {
+    await seedFitCheckBook(root, "assist-mismatch-book", "scope mismatch 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+      { file: "book_rules.md", content: "# 작품 규칙\n\n- 원본 규칙.\n" },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-mismatch-book/truth/assist", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        fileName: "author_intent.md",
+        mode: "proposal",
+        instruction: "통치와 정당성 축을 더 선명하게",
+        scope: { kind: "file", fileName: "book_rules.md" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_FILE_MISMATCH" });
+  });
+
   it("returns a single alignment question before drafting when question mode is requested", async () => {
     await seedFitCheckBook(root, "assist-question-book", "질문 테스트", [
       { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
@@ -735,7 +990,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/assist-question-book/truth/assist", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         fileName: "author_intent.md",
         mode: "question",
@@ -792,7 +1047,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/assist-question-fallback-book/truth/assist", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         fileName: "author_intent.md",
         mode: "question",
@@ -813,49 +1068,61 @@ describe("createStudioServer daemon lifecycle", () => {
     });
   });
 
-  it("returns bundled truth-file proposals and keeps files untouched until saved", async () => {
+  it("rejects bundled truth-file proposals in proposal mode for v1", async () => {
     await seedFitCheckBook(root, "assist-bundle-book", "묶음 제안 테스트", [
       { file: "author_intent.md", content: "# 작가 의도\n\n제도와 권력을 다룬다.\n" },
       { file: "book_rules.md", content: "# 작품 규칙\n\n- 잔혹함은 제한적으로만 사용한다.\n" },
       { file: "story_bible.md", content: "# 스토리 바이블\n\n- 마왕국은 아직 미완성 체제다.\n" },
     ]);
-    chatCompletionMock
-      .mockResolvedValueOnce({
-        content: "# 작가 의도\n\n제도와 통치 정당성의 충돌을 장기적으로 추적한다.\n",
-        usage: { promptTokens: 5, completionTokens: 7, totalTokens: 12 },
-      })
-      .mockResolvedValueOnce({
-        content: "# 작품 규칙\n\n- 통치 비용과 제도 균열을 반드시 드러낸다.\n",
-        usage: { promptTokens: 5, completionTokens: 7, totalTokens: 12 },
-      });
 
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
 
     const response = await app.request("http://localhost/api/books/assist-bundle-book/truth/assist", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         fileNames: ["author_intent.md", "book_rules.md"],
         instruction: "통치 질서와 제도 비용이 더 잘 보이게 둘 다 조정해줘",
         conversation: [{ role: "user", content: "이번에는 작품의 냉정함을 더 살리고 싶어." }],
+        scope: { kind: "file", fileName: "author_intent.md" },
       }),
     });
-    expect(response.status).toBe(200);
-    const body = await response.json() as {
-      content: string;
-      changes: ReadonlyArray<{ fileName: string; label: string; content: string }>;
-    };
-    expect(body.content).toContain("통치 정당성");
-    expect(body.changes).toHaveLength(2);
-    expect(body.changes[0]).toMatchObject({ fileName: "author_intent.md", label: "작가 의도" });
-    expect(body.changes[1]).toMatchObject({ fileName: "book_rules.md", label: "작품 규칙" });
-    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" });
+    expect(chatCompletionMock).not.toHaveBeenCalled();
 
     const persistedIntent = await readFile(join(root, "books", "assist-bundle-book", "story", "author_intent.md"), "utf-8");
     const persistedRules = await readFile(join(root, "books", "assist-bundle-book", "story", "book_rules.md"), "utf-8");
     expect(persistedIntent).toContain("제도와 권력을 다룬다");
     expect(persistedRules).toContain("잔혹함은 제한적으로만 사용한다");
+  });
+
+  it("rejects proposal mode when the request names mixed valid and invalid targets", async () => {
+    await seedFitCheckBook(root, "assist-mixed-bundle-book", "혼합 묶음 제안 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n제도와 권력을 다룬다.\n" },
+    ]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-mixed-bundle-book/truth/assist", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        fileNames: ["author_intent.md", "notes.md"],
+        mode: "proposal",
+        instruction: "통치 질서에 대한 의도를 더 선명하게 조정해줘",
+        scope: { kind: "file", fileName: "author_intent.md" },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" });
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+
+    const persistedIntent = await readFile(join(root, "books", "assist-mixed-bundle-book", "story", "author_intent.md"), "utf-8");
+    expect(persistedIntent).toContain("제도와 권력을 다룬다");
   });
 
   it("keeps radar scan status after the start request returns", async () => {
@@ -962,7 +1229,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/radar/scan", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ mode: "fit-check" }),
     });
 
@@ -988,7 +1255,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const save = await app.request("http://localhost/api/project/language", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ language: "en" }),
     });
 
@@ -1036,7 +1303,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const initResponse = await app.request("http://localhost/api/project/init", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ name: "studio-init", language: "ko" }),
     });
     expect(initResponse.status).toBe(200);
@@ -1060,7 +1327,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saveResponse = await app.request("http://localhost/api/global-config", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         language: "ko",
         provider: "codex-cli",
@@ -1094,7 +1361,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saveResponse = await app.request("http://localhost/api/global-config", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         language: "ko",
         provider: "codex-cli",
@@ -1127,7 +1394,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saveResponse = await app.request("http://localhost/api/global-config", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         language: "ko",
         provider: "openai",
@@ -1156,7 +1423,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const initResponse = await app.request("http://localhost/api/project/init", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ name: "global-defaults", language: "ko" }),
     });
     expect(initResponse.status).toBe(200);
@@ -1175,7 +1442,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const save = await app.request("http://localhost/api/project/language", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ language: "ko" }),
     });
 
@@ -1194,7 +1461,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         title: "korean-smoke-book",
         genre: "modern-fantasy",
@@ -1221,6 +1488,1586 @@ describe("createStudioServer daemon lifecycle", () => {
     );
   });
 
+  it("rejects duplicate quick-create requests for the same book while creation is in flight", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const request = {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Concurrent Create Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    } satisfies RequestInit;
+
+    const responses = await Promise.all([
+      app.request("http://localhost/api/books/create", request),
+      app.request("http://localhost/api/books/create", request),
+    ]);
+
+    expect(responses.map((response) => response.status).sort((left, right) => left - right)).toEqual([200, 409]);
+    const accepted = responses.find((response) => response.status === 200);
+    const rejected = responses.find((response) => response.status === 409);
+    expect(accepted).toBeDefined();
+    expect(rejected).toBeDefined();
+    await expect(accepted!.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "concurrent-create-book",
+    });
+    await expect(rejected!.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_CREATE_ALREADY_IN_PROGRESS",
+        message: expect.stringContaining('already being created'),
+      },
+    });
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+
+    resolveInit?.();
+    await Promise.resolve();
+  });
+
+
+  it("replays quick-create requests with the same idempotency key and payload", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const request = {
+      method: "POST",
+      headers: jsonHeaders("quick-create-replay"),
+      body: JSON.stringify({
+        title: "Idempotent Create Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    } satisfies RequestInit;
+
+    const first = await app.request("http://localhost/api/books/create", request);
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "idempotent-create-book",
+    });
+
+    const replay = await app.request("http://localhost/api/books/create", request);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "idempotent-create-book",
+    });
+
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+    resolveInit?.();
+    await Promise.resolve();
+  });
+
+  it("replays quick-create idempotency keys after a server restart", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const firstApp = createStudioServer(cloneProjectConfig() as never, root);
+    const request = quickCreateRequest({
+      title: "Durable Idempotent Create Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+    }, "quick-create-restart");
+
+    const first = await firstApp.request("http://localhost/api/books/create", request);
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "durable-idempotent-create-book",
+    });
+
+    const restartedApp = createStudioServer(cloneProjectConfig() as never, root);
+    const replay = await restartedApp.request("http://localhost/api/books/create", request);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "durable-idempotent-create-book",
+    });
+
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+    resolveInit?.();
+    await Promise.resolve();
+  });
+
+  it("rejects reused idempotency keys when the quick-create payload changes", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const first = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders("quick-create-conflict"),
+      body: JSON.stringify({
+        title: "Idempotency Conflict Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    });
+    expect(first.status).toBe(200);
+
+    const conflict = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders("quick-create-conflict"),
+      body: JSON.stringify({
+        title: "Different Conflict Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    });
+    expect(conflict.status).toBe(422);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error: {
+        code: "IDEMPOTENCY_KEY_REUSED",
+        message: expect.stringContaining('already used'),
+      },
+    });
+
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+    resolveInit?.();
+    await Promise.resolve();
+  });
+
+  it("rejects concurrent quick-create retries while the same idempotency key is in flight", async () => {
+    let resolveConfig: ((value: unknown) => void) | undefined;
+    loadProjectConfigMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveConfig = resolve;
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(null, root);
+    const request = quickCreateRequest({
+      title: "In Flight Idempotent Create",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+    }, "quick-create-in-flight");
+
+    const firstPromise = Promise.resolve(app.request("http://localhost/api/books/create", request));
+    for (let attempt = 0; attempt < 40 && !resolveConfig; attempt += 1) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    }
+    expect(loadProjectConfigMock).toHaveBeenCalledTimes(1);
+    expect(resolveConfig).toBeTypeOf("function");
+
+    const conflict = await app.request("http://localhost/api/books/create", request);
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error: {
+        code: "IDEMPOTENCY_KEY_IN_FLIGHT",
+        message: expect.stringContaining('still in progress'),
+      },
+    });
+
+    resolveConfig?.(cloneProjectConfig());
+    const first = await firstPromise;
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "in-flight-idempotent-create",
+    });
+    expect(initBookMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a book setup proposal without queuing book creation", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Grounded political fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Setup Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- How harsh should the family politics be?",
+        "",
+        "## Approved Creative Brief",
+        "Keep the setup politically grounded and focus on inheritance pressure.",
+        "",
+        "## Why This Shape",
+        "It keeps the premise narrow enough for clean alignment.",
+      ].join("\n"),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Setup Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "A succession struggle inside a declining guild family.",
+        conversation: [
+          { role: "user", content: "Keep it politically grounded." },
+          { role: "assistant", content: "Understood. We will avoid flashy late-stage lore." },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "proposed",
+      bookId: "setup-book",
+      title: "Setup Book",
+      proposal: {
+        content: expect.stringContaining("## Approved Creative Brief"),
+      },
+    });
+    expect(initBookMock).not.toHaveBeenCalled();
+  });
+
+  it("revises a setup proposal in place and exposes the previous proposal", async () => {
+    chatCompletionMock
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "Grounded succession fantasy.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Revision Setup Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- How visible should the family debt be?",
+          "",
+          "## Approved Creative Brief",
+          "Keep the setup politically grounded and focus on inheritance pressure.",
+          "",
+          "## Why This Shape",
+          "It keeps the premise narrow enough for clean alignment.",
+        ].join("\n"),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "Sharper succession fantasy with financial pressure.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Revision Setup Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- Which faction benefits most from the debt?",
+          "",
+          "## Approved Creative Brief",
+          "Lean harder into debt leverage and succession brinkmanship.",
+          "",
+          "## Why This Shape",
+          "It gives the revision a clearer source of pressure.",
+        ].join("\n"),
+        usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+      });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const initialResponse = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Revision Setup Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Keep the first pass conservative.",
+      }),
+    });
+    expect(initialResponse.status).toBe(200);
+    const initialSession = await initialResponse.json() as {
+      id: string;
+      revision: number;
+      proposal: { content: string; revision: number };
+    };
+
+    const reviseResponse = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        sessionId: initialSession.id,
+        expectedRevision: initialSession.revision,
+        title: "Revision Setup Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Push the revision toward debt politics.",
+      }),
+    });
+
+    expect(reviseResponse.status).toBe(200);
+    await expect(reviseResponse.json()).resolves.toMatchObject({
+      id: initialSession.id,
+      revision: 2,
+      status: "proposed",
+      proposal: {
+        revision: 2,
+        content: expect.stringContaining("debt leverage"),
+      },
+      previousProposal: {
+        revision: 1,
+        content: initialSession.proposal.content,
+      },
+    });
+
+    const restored = await app.request("http://localhost/api/book-setup/" + initialSession.id);
+    expect(restored.status).toBe(200);
+    await expect(restored.json()).resolves.toMatchObject({
+      id: initialSession.id,
+      revision: 2,
+      previousProposal: {
+        content: initialSession.proposal.content,
+      },
+    });
+  });
+
+  it("clears the exact foundation preview state when revising a setup proposal", async () => {
+    chatCompletionMock
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "Focused family succession fantasy.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Reset Preview Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- None for the MVP proposal.",
+          "",
+          "## Approved Creative Brief",
+          "Keep the foundation tightly scoped around inheritance politics.",
+          "",
+          "## Why This Shape",
+          "It stays reviewable before any write.",
+        ].join("\n"),
+        usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "Refocused inheritance fantasy with stricter political cost.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Reset Preview Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- Which family ally breaks first?",
+          "",
+          "## Approved Creative Brief",
+          "Reframe the setup around brittle alliances and visible succession costs.",
+          "",
+          "## Why This Shape",
+          "The revision should force a fresh exact preview.",
+        ].join("\n"),
+        usage: { promptTokens: 12, completionTokens: 22, totalTokens: 34 },
+      });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "reset-preview-book",
+      title: "Reset Preview Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Reset Preview Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number; proposal: { content: string } };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    await expect(preview.json()).resolves.toMatchObject({
+      foundationPreview: {
+        revision: 3,
+      },
+    });
+
+    const revise = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        sessionId: session.id,
+        expectedRevision: 3,
+        title: "Reset Preview Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Make the faction collapse more brittle.",
+      }),
+    });
+
+    expect(revise.status).toBe(200);
+    const revisedPayload = await revise.json() as {
+      id: string;
+      revision: number;
+      status: string;
+      proposal: { content: string; revision: number };
+      previousProposal: { content: string; revision: number };
+      foundationPreview?: { revision: number };
+    };
+    expect(revisedPayload).toMatchObject({
+      id: session.id,
+      revision: 4,
+      status: "proposed",
+      proposal: {
+        revision: 4,
+        content: expect.stringContaining("brittle alliances"),
+      },
+      previousProposal: {
+        revision: 1,
+        content: session.proposal.content,
+      },
+    });
+    expect(revisedPayload).not.toHaveProperty("foundationPreview");
+
+    const persistedRaw = await readFile(join(root, ".inkos", "studio", "book-setup", session.id + ".json"), "utf-8");
+    const persisted = JSON.parse(persistedRaw) as { session: Record<string, unknown> };
+    expect(persisted.session).toMatchObject({
+      id: session.id,
+      revision: 4,
+      status: "proposed",
+      previousProposal: {
+        content: session.proposal.content,
+      },
+    });
+    expect(persisted.session).not.toHaveProperty("foundationPreview");
+    expect(persisted.session).not.toHaveProperty("exactProposal");
+
+    const restored = await app.request("http://localhost/api/book-setup/" + session.id);
+    expect(restored.status).toBe(200);
+    const restoredPayload = await restored.json() as Record<string, unknown>;
+    expect(restoredPayload).toMatchObject({
+      id: session.id,
+      revision: 4,
+      status: "proposed",
+      previousProposal: {
+        content: session.proposal.content,
+      },
+    });
+    expect(restoredPayload).not.toHaveProperty("foundationPreview");
+  });
+
+  it("rejects stale expected revisions when revising a setup proposal", async () => {
+    chatCompletionMock
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "Focused family succession fantasy.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Stale Proposal Revision Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- None for the MVP proposal.",
+          "",
+          "## Approved Creative Brief",
+          "Keep the setup tightly scoped around inheritance politics.",
+          "",
+          "## Why This Shape",
+          "It stays reviewable before any write.",
+        ].join("\n"),
+        usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "A revised take with clearer factional pressure.",
+          "",
+          "## Chosen Parameters",
+          "- Title: Stale Proposal Revision Book",
+          "- Genre: modern-fantasy",
+          "",
+          "## Open Questions",
+          "- Which sibling breaks first?",
+          "",
+          "## Approved Creative Brief",
+          "Dial the revision toward brittle alliances and debt pressure.",
+          "",
+          "## Why This Shape",
+          "It sharpens the conflict without widening scope.",
+        ].join("\n"),
+        usage: { promptTokens: 12, completionTokens: 22, totalTokens: 34 },
+      });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Stale Proposal Revision Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const firstRevision = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        sessionId: session.id,
+        expectedRevision: session.revision,
+        title: "Stale Proposal Revision Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Make the second pass sharper.",
+      }),
+    });
+    expect(firstRevision.status).toBe(200);
+
+    const staleRevision = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        sessionId: session.id,
+        expectedRevision: session.revision,
+        title: "Stale Proposal Revision Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Try to revise again from stale data.",
+      }),
+    });
+
+    expect(staleRevision.status).toBe(412);
+    await expect(staleRevision.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_REVISION_MISMATCH",
+        message: expect.stringContaining("changed while you were reviewing it"),
+      },
+    });
+  });
+
+  it("approves a setup proposal without queuing book creation", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Brief Locked Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Write a grounded inheritance struggle with strict family rules and visible political costs.",
+        "Keep the scope narrow and avoid surprise mythology dumps.",
+        "",
+        "## Why This Shape",
+        "This preserves clarity before any file write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Brief Locked Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+
+    expect(approve.status).toBe(200);
+    await expect(approve.json()).resolves.toMatchObject({
+      id: session.id,
+      revision: 2,
+      bookId: "brief-locked-book",
+      status: "approved",
+      proposal: {
+        content: expect.stringContaining("## Approved Creative Brief"),
+      },
+    });
+
+    await Promise.resolve();
+    expect(initBookMock).not.toHaveBeenCalled();
+  });
+
+  it("prepares an exact foundation preview without writing book files", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Exact Preview Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "exact-preview-book",
+      title: "Exact Preview Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Exact Preview Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+    expect(approve.status).toBe(200);
+
+    const preview = await previewSetupSession(app, session.id, 2);
+
+    expect(preview.status).toBe(200);
+    await expect(preview.json()).resolves.toMatchObject({
+      id: session.id,
+      revision: 3,
+      status: "approved",
+      foundationPreview: {
+        revision: 3,
+        storyBible: "# story_bible",
+        volumeOutline: "# volume_outline",
+        bookRules: "# book_rules",
+        currentState: "# current_state",
+        pendingHooks: "# pending_hooks",
+      },
+    });
+    expect(proposeBookMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).not.toHaveBeenCalled();
+    expect(initBookMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a book from an exact foundation preview without regenerating it", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Exact Apply Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    const exactProposal = makeBookInitProposal({
+      id: "exact-apply-book",
+      title: "Exact Apply Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    });
+    proposeBookMock.mockResolvedValueOnce(exactProposal);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Exact Apply Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+    expect(approve.status).toBe(200);
+
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewPayload = await preview.json() as { foundationPreview: { digest: string } };
+    expect(previewPayload.foundationPreview.digest).toMatch(/^sha256:/);
+
+    const create = await createSetupSession(app, session.id, 3, previewPayload.foundationPreview.digest);
+
+    expect(create.status).toBe(200);
+    await expect(create.json()).resolves.toMatchObject({
+      bookId: "exact-apply-book",
+      session: {
+        id: session.id,
+        revision: 4,
+        status: "creating",
+        foundationPreview: {
+          storyBible: "# story_bible",
+        },
+      },
+    });
+
+    await Promise.resolve();
+    expect(proposeBookMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledWith(exactProposal);
+    expect(initBookMock).not.toHaveBeenCalled();
+    expect(pipelineConfigs.at(-1)).toMatchObject({
+      externalContext: "Keep the foundation tightly scoped around inheritance politics.",
+    });
+  });
+
+  it("replays setup create requests with the same idempotency key and payload", async () => {
+    let resolveApply: (() => void) | undefined;
+    applyBookProposalMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveApply = resolve;
+    }));
+
+    const exactProposal = makeBookInitProposal({
+      id: "setup-idempotent-book",
+      title: "Setup Idempotent Book",
+      genre: "modern-fantasy",
+      language: "ko",
+      platform: "naver-series",
+    });
+    proposeBookMock.mockResolvedValueOnce(exactProposal);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Setup Idempotent Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        chapterWordCount: 3000,
+        targetChapters: 180,
+        brief: "Replay setup create while the first request is still active.",
+      }),
+    });
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewPayload = await preview.json() as { foundationPreview: { digest: string } };
+
+    const first = await createSetupSession(app, session.id, 3, previewPayload.foundationPreview.digest, "setup-create-replay");
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      bookId: "setup-idempotent-book",
+      session: {
+        status: "creating",
+      },
+    });
+
+    const replay = await createSetupSession(app, session.id, 3, previewPayload.foundationPreview.digest, "setup-create-replay");
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      bookId: "setup-idempotent-book",
+      session: {
+        status: "creating",
+      },
+    });
+
+    expect(applyBookProposalMock).toHaveBeenCalledTimes(1);
+    resolveApply?.();
+    await Promise.resolve();
+  });
+
+  it("replays setup create idempotency keys after a server restart", async () => {
+    let resolveApply: (() => void) | undefined;
+    applyBookProposalMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveApply = resolve;
+    }));
+
+    const exactProposal = makeBookInitProposal({
+      id: "setup-idempotent-restart-book",
+      title: "Setup Idempotent Restart Book",
+      genre: "modern-fantasy",
+      language: "ko",
+      platform: "naver-series",
+    });
+    proposeBookMock.mockResolvedValueOnce(exactProposal);
+
+    const { createStudioServer } = await import("./server.js");
+    const firstApp = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await firstApp.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Setup Idempotent Restart Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(firstApp, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(firstApp, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewPayload = await preview.json() as { foundationPreview: { digest: string } };
+
+    const first = await createSetupSession(firstApp, session.id, 3, previewPayload.foundationPreview.digest, "setup-create-restart");
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      bookId: "setup-idempotent-restart-book",
+      session: {
+        status: "creating",
+      },
+    });
+
+    const restartedApp = createStudioServer(cloneProjectConfig() as never, root);
+    const replay = await createSetupSession(restartedApp, session.id, 3, previewPayload.foundationPreview.digest, "setup-create-restart");
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      bookId: "setup-idempotent-restart-book",
+      session: {
+        status: "creating",
+      },
+    });
+
+    expect(applyBookProposalMock).toHaveBeenCalledTimes(1);
+    resolveApply?.();
+    await Promise.resolve();
+  });
+
+  it("recovers persisted exact-review sessions after a server restart", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Restart Preview Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    const exactProposal = makeBookInitProposal({
+      id: "restart-preview-book",
+      title: "Restart Preview Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    });
+    proposeBookMock.mockResolvedValueOnce(exactProposal);
+
+    const { createStudioServer } = await import("./server.js");
+    const firstApp = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await firstApp.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Restart Preview Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(firstApp, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(firstApp, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewPayload = await preview.json() as { foundationPreview: { digest: string } };
+    expect(previewPayload.foundationPreview.digest).toMatch(/^sha256:/);
+
+    const persisted = await readFile(join(root, ".inkos", "studio", "book-setup", `${session.id}.json`), "utf-8");
+    expect(persisted).toContain("\"exactProposal\"");
+
+    const restartedApp = createStudioServer(cloneProjectConfig() as never, root);
+
+    const restored = await restartedApp.request(`http://localhost/api/book-setup/${session.id}`);
+    expect(restored.status).toBe(200);
+    const restoredPayload = await restored.json() as { foundationPreview: { digest: string } };
+    expect(restoredPayload).toMatchObject({
+      id: session.id,
+      status: "approved",
+      bookId: "restart-preview-book",
+      foundationPreview: {
+        storyBible: "# story_bible",
+      },
+    });
+    expect(restoredPayload.foundationPreview.digest).toMatch(/^sha256:/);
+
+    const create = await createSetupSession(restartedApp, session.id, 3, restoredPayload.foundationPreview.digest);
+    expect(create.status).toBe(200);
+    await expect(create.json()).resolves.toMatchObject({
+      bookId: "restart-preview-book",
+      session: {
+        id: session.id,
+        status: "creating",
+        foundationPreview: {
+          storyBible: "# story_bible",
+        },
+      },
+    });
+
+    await Promise.resolve();
+    expect(proposeBookMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledWith(exactProposal);
+  });
+
+  it("lists recent persisted book setup sessions after a server restart", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const firstApp = createStudioServer(cloneProjectConfig() as never, root);
+
+    const firstResponse = await firstApp.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Restart Session One",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(firstResponse.status).toBe(200);
+    const firstSession = await firstResponse.json() as { id: string; revision: number };
+
+    const secondResponse = await firstApp.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Restart Session Two",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(secondResponse.status).toBe(200);
+    const secondSession = await secondResponse.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(firstApp, firstSession.id, 1)).status).toBe(200);
+
+    const restartedApp = createStudioServer(cloneProjectConfig() as never, root);
+
+    const list = await restartedApp.request("http://localhost/api/book-setup");
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      sessions: [
+        {
+          id: firstSession.id,
+          status: "approved",
+          bookId: "restart-session-one",
+        },
+        {
+          id: secondSession.id,
+          status: "proposed",
+          bookId: "restart-session-two",
+        },
+      ],
+    });
+  });
+
+  it("trims persisted book setup sessions alongside the recent-session limit", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    for (let index = 0; index < 26; index += 1) {
+      const response = await app.request("http://localhost/api/book-setup/propose", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          title: `Trim Session ${index}`,
+          genre: "modern-fantasy",
+          language: "ko",
+          platform: "naver-series",
+        }),
+      });
+      expect(response.status).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+
+    const storedFiles = (await readdir(join(root, ".inkos", "studio", "book-setup")))
+      .filter((fileName) => fileName.endsWith(".json"));
+    expect(storedFiles).toHaveLength(24);
+
+    const restartedApp = createStudioServer(cloneProjectConfig() as never, root);
+    const list = await restartedApp.request("http://localhost/api/book-setup");
+    expect(list.status).toBe(200);
+    const payload = await list.json() as { sessions: Array<{ bookId: string }> };
+    expect(payload.sessions).toHaveLength(24);
+    expect(payload.sessions.map((session) => session.bookId)).not.toContain("trim-session-0");
+    expect(payload.sessions.map((session) => session.bookId)).not.toContain("trim-session-1");
+    expect(payload.sessions.map((session) => session.bookId)).toContain("trim-session-25");
+  });
+
+  it("persists setup sessions to disk and rehydrates them after restart", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Persisted Setup Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    const exactProposal = makeBookInitProposal({
+      id: "persisted-setup-book",
+      title: "Persisted Setup Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    });
+    proposeBookMock.mockResolvedValueOnce(exactProposal);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Persisted Setup Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+    expect(approve.status).toBe(200);
+
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+
+    const persistedRaw = await readFile(join(root, ".inkos", "studio", "book-setup", session.id + ".json"), "utf-8");
+    expect(JSON.parse(persistedRaw)).toMatchObject({
+      kind: "inkos-book-setup-session",
+      version: 1,
+      session: {
+        id: session.id,
+        revision: 3,
+        status: "approved",
+        foundationPreview: {
+          storyBible: "# story_bible",
+        },
+      },
+    });
+
+    const restarted = createStudioServer(cloneProjectConfig() as never, root);
+
+    const list = await restarted.request("http://localhost/api/book-setup");
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          id: session.id,
+          title: "Persisted Setup Book",
+          status: "approved",
+        }),
+      ],
+    });
+
+    const restored = await restarted.request("http://localhost/api/book-setup/" + session.id);
+    expect(restored.status).toBe(200);
+    const restoredPayload = await restored.json() as { foundationPreview: { digest: string } };
+    expect(restoredPayload).toMatchObject({
+      id: session.id,
+      revision: 3,
+      status: "approved",
+      foundationPreview: {
+        revision: 3,
+        storyBible: "# story_bible",
+        volumeOutline: "# volume_outline",
+      },
+    });
+    expect(restoredPayload.foundationPreview.digest).toMatch(/^sha256:/);
+
+    const create = await createSetupSession(restarted, session.id, 3, restoredPayload.foundationPreview.digest);
+    expect(create.status).toBe(200);
+    await expect(create.json()).resolves.toMatchObject({
+      bookId: "persisted-setup-book",
+      session: {
+        id: session.id,
+        revision: 4,
+        status: "creating",
+      },
+    });
+
+    await Promise.resolve();
+    expect(proposeBookMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledTimes(1);
+    expect(applyBookProposalMock).toHaveBeenCalledWith(exactProposal);
+  });
+
+  it("rejects setup creation until the exact foundation preview is prepared", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Brief Locked Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Write a grounded inheritance struggle with strict family rules and visible political costs.",
+        "Keep the scope narrow and avoid surprise mythology dumps.",
+        "",
+        "## Why This Shape",
+        "This preserves clarity before any file write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Brief Locked Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+    expect(approve.status).toBe(200);
+
+    const create = await createSetupSession(app, session.id, 2);
+
+    expect(create.status).toBe(409);
+    await expect(create.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_FOUNDATION_PREVIEW_REQUIRED",
+        message: expect.stringContaining("exact foundation preview"),
+      },
+    });
+
+    await Promise.resolve();
+    expect(initBookMock).not.toHaveBeenCalled();
+    expect(applyBookProposalMock).not.toHaveBeenCalled();
+  });
+  it("requires setup revision preconditions for approval", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Revision Guard Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the setup tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Revision Guard Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await app.request("http://localhost/api/book-setup/" + session.id + "/approve", {
+      method: "POST",
+    });
+    expect(approve.status).toBe(428);
+    await expect(approve.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_PRECONDITION_REQUIRED",
+        message: expect.stringContaining("expected revision"),
+      },
+    });
+  });
+
+  it("rejects stale setup approval revisions", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Stale Approval Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the setup tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Stale Approval Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+
+    const staleApprove = await approveSetupSession(app, session.id, session.revision);
+    expect(staleApprove.status).toBe(412);
+    await expect(staleApprove.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_REVISION_MISMATCH",
+        message: expect.stringContaining("changed while you were reviewing it"),
+      },
+    });
+  });
+
+  it("rejects stale setup create revisions after preview review moved forward", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Stale Create Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "stale-create-book",
+      title: "Stale Create Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Stale Create Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    expect((await previewSetupSession(app, session.id, 2)).status).toBe(200);
+
+    const staleCreate = await createSetupSession(app, session.id, 2);
+    expect(staleCreate.status).toBe(412);
+    await expect(staleCreate.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_REVISION_MISMATCH",
+        message: expect.stringContaining("changed while you were reviewing it"),
+      },
+    });
+  });
+
+  it("requires preview digests when creating from an exact foundation preview", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Digest Guard Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "digest-guard-book",
+      title: "Digest Guard Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Digest Guard Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    expect((await previewSetupSession(app, session.id, 2)).status).toBe(200);
+
+    const create = await createSetupSession(app, session.id, 3);
+    expect(create.status).toBe(428);
+    await expect(create.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_PRECONDITION_REQUIRED",
+        message: expect.stringContaining("expected preview digest"),
+      },
+    });
+  });
+
+  it("rejects stale preview digests when creating from an exact foundation preview", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Digest Drift Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "digest-drift-book",
+      title: "Digest Drift Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Digest Drift Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewPayload = await preview.json() as { foundationPreview: { digest: string } };
+    expect(previewPayload.foundationPreview.digest).toMatch(/^sha256:/);
+
+    const staleCreate = await createSetupSession(app, session.id, 3, previewPayload.foundationPreview.digest + "-stale");
+    expect(staleCreate.status).toBe(412);
+    await expect(staleCreate.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_PREVIEW_DIGEST_MISMATCH",
+        message: expect.stringContaining("changed while you were reviewing it"),
+      },
+    });
+  });
+
   it("rejects create requests when a complete book with the same id already exists", async () => {
     await mkdir(join(root, "books", "existing-book", "story"), { recursive: true });
     await writeFile(join(root, "books", "existing-book", "book.json"), JSON.stringify({ id: "existing-book" }), "utf-8");
@@ -1231,7 +3078,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         title: "Existing Book",
         genre: "xuanhuan",
@@ -1242,7 +3089,9 @@ describe("createStudioServer daemon lifecycle", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining('Book "existing-book" already exists'),
+      error: {
+        message: expect.stringContaining('Book "existing-book" already exists'),
+      },
     });
     expect(initBookMock).not.toHaveBeenCalled();
     await expect(access(join(root, "books", "existing-book", "story", "story_bible.md"))).resolves.toBeUndefined();
@@ -1256,7 +3105,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         title: "Broken Book",
         genre: "xuanhuan",
@@ -1289,7 +3138,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         title: "Queued Book",
         genre: "modern-fantasy",
@@ -1356,7 +3205,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/legacy-book", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ platform: "munpia" }),
     });
 
@@ -1393,7 +3242,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/rename-book", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ title: "After Rename" }),
     });
 
@@ -1430,7 +3279,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/books/rename-book", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ title: "   " }),
     });
 
@@ -1439,5 +3288,49 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const saved = JSON.parse(await readFile(join(root, "books", "rename-book", "book.json"), "utf-8")) as Record<string, unknown>;
     expect(saved.title).toBe("Before Rename");
+  });
+
+  it("serves the cockpit shell on /cockpit and keeps the root shell for compatibility routes", async () => {
+    const staticDir = join(root, "studio-dist");
+    await mkdir(join(staticDir, "cockpit"), { recursive: true });
+    await writeFile(join(staticDir, "index.html"), "<html><body>studio-root-shell</body></html>", "utf-8");
+    await writeFile(join(staticDir, "cockpit", "index.html"), "<html><body>cockpit-shell</body></html>", "utf-8");
+
+    const request = await createStaticServerRequest(root, staticDir);
+
+    const rootResponse = await request("/");
+    expect(rootResponse.status).toBe(200);
+    await expect(rootResponse.text()).resolves.toContain("studio-root-shell");
+
+    const compatibilityResponse = await request("/?page=cockpit&bookId=alpha");
+    expect(compatibilityResponse.status).toBe(200);
+    await expect(compatibilityResponse.text()).resolves.toContain("studio-root-shell");
+
+    const cockpitResponse = await request("/cockpit");
+    expect(cockpitResponse.status).toBe(200);
+    await expect(cockpitResponse.text()).resolves.toContain("cockpit-shell");
+
+    const cockpitTrailingSlashResponse = await request("/cockpit/");
+    expect(cockpitTrailingSlashResponse.status).toBe(200);
+    await expect(cockpitTrailingSlashResponse.text()).resolves.toContain("cockpit-shell");
+
+    const apiRootResponse = await request("/api");
+    expect(apiRootResponse.status).toBe(404);
+  });
+
+  it("continues serving static assets from /assets while the cockpit shell is enabled", async () => {
+    const staticDir = join(root, "studio-dist");
+    await mkdir(join(staticDir, "assets"), { recursive: true });
+    await mkdir(join(staticDir, "cockpit"), { recursive: true });
+    await writeFile(join(staticDir, "index.html"), "<html><body>studio-root-shell</body></html>", "utf-8");
+    await writeFile(join(staticDir, "cockpit", "index.html"), "<html><body>cockpit-shell</body></html>", "utf-8");
+    await writeFile(join(staticDir, "assets", "app.js"), "console.log('asset-ok');", "utf-8");
+
+    const request = await createStaticServerRequest(root, staticDir);
+
+    const response = await request("/assets/app.js");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/javascript");
+    await expect(response.text()).resolves.toContain("asset-ok");
   });
 });

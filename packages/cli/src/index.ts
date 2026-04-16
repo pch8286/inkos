@@ -27,6 +27,7 @@ import { evalCommand } from "./commands/eval.js";
 import { importCommand } from "./commands/import.js";
 import { fanficCommand } from "./commands/fanfic.js";
 import { studioCommand } from "./commands/studio.js";
+import { cockpitCommand } from "./commands/cockpit.js";
 import { consolidateCommand } from "./commands/consolidate.js";
 
 const require = createRequire(import.meta.url);
@@ -65,6 +66,7 @@ program.addCommand(evalCommand);
 program.addCommand(importCommand);
 program.addCommand(fanficCommand);
 program.addCommand(studioCommand);
+program.addCommand(cockpitCommand);
 program.addCommand(consolidateCommand);
 
 program.parse();

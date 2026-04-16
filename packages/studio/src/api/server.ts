@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
@@ -14,12 +14,13 @@ import {
   type PipelineConfig,
   type ProjectConfig,
   type LogSink,
-  type LogEntry,
+  type LogEntry
 } from "@actalk/inkos-core";
-import { access, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isSafeBookId } from "./safety.js";
@@ -36,6 +37,15 @@ import type {
   RadarFitCheckMetadata,
   TruthAssistAlignmentPayload,
   TruthAssistRequest,
+  BookSetupProposalPayload,
+  BookSetupProposalRequest,
+  BookSetupSessionPayload,
+  BookSetupFoundationPreviewPayload,
+  BookSetupRevisionRequest,
+  BookSetupCreateRequest,
+  BookSetupSessionListPayload,
+  TruthSaveRequest,
+  TruthWriteScope,
 } from "../shared/contracts.js";
 
 // --- Event bus for SSE ---
@@ -60,8 +70,666 @@ interface BookCreateStatusEntry {
 }
 
 const bookCreateStatus = new Map<string, BookCreateStatusEntry>();
+interface IdempotentCreateResponseRecord {
+  readonly status: 200;
+  readonly body: Readonly<Record<string, unknown>>;
+}
+
+interface CreateIdempotencyRecord {
+  readonly fingerprint: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly state: "in_flight" | "completed";
+  readonly response?: IdempotentCreateResponseRecord;
+}
+
+type CreateIdempotencyScope = "book-create" | "book-setup-create";
+
+const createIdempotencyRecords = new Map<string, CreateIdempotencyRecord>();
+const BOOK_CREATE_IDEMPOTENCY_TTL_MS = 1000 * 60 * 60 * 24;
+const CREATE_IDEMPOTENCY_STORE_DIR = join(".inkos", "studio", "create-idempotency");
+const CREATE_IDEMPOTENCY_STORE_KIND = "inkos-create-idempotency";
+const CREATE_IDEMPOTENCY_STORE_VERSION = 1;
+
+interface StoredCreateIdempotencyRecord {
+  readonly kind: typeof CREATE_IDEMPOTENCY_STORE_KIND;
+  readonly version: typeof CREATE_IDEMPOTENCY_STORE_VERSION;
+  readonly cacheKey: string;
+  readonly record: CreateIdempotencyRecord;
+}
+
+interface ExactBookProposal {
+  readonly book: {
+    readonly id: string;
+    readonly title: string;
+    readonly genre: string;
+    readonly platform: string;
+    readonly status: string;
+    readonly targetChapters: number;
+    readonly chapterWordCount: number;
+    readonly language?: string | null;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+  };
+  readonly foundation: {
+    readonly storyBible: string;
+    readonly volumeOutline: string;
+    readonly bookRules: string;
+    readonly currentState: string;
+    readonly pendingHooks: string;
+  };
+}
+
+function withExactBookProposalSupport(pipeline: PipelineRunner): PipelineRunner & {
+  proposeBook: (book: ExactBookProposal["book"]) => Promise<ExactBookProposal>;
+  applyBookProposal: (proposal: ExactBookProposal) => Promise<void>;
+} {
+  return pipeline as PipelineRunner & {
+    proposeBook: (book: ExactBookProposal["book"]) => Promise<ExactBookProposal>;
+    applyBookProposal: (proposal: ExactBookProposal) => Promise<void>;
+  };
+}
+
+interface BookSetupSessionRecord extends BookSetupSessionPayload {
+  readonly proposal: BookSetupProposalPayload;
+  readonly previousProposal?: BookSetupProposalPayload;
+  readonly externalContext: string;
+  readonly foundationPreview?: BookSetupFoundationPreviewPayload;
+  readonly exactProposal?: ExactBookProposal;
+}
+const bookSetupSessions = new Map<string, BookSetupSessionRecord>();
+const BOOK_SETUP_SESSION_LIMIT = 24;
+const BOOK_SETUP_SESSION_STORE_DIR = join(".inkos", "studio", "book-setup");
+const BOOK_SETUP_SESSION_STORE_KIND = "inkos-book-setup-session";
+const BOOK_SETUP_SESSION_STORE_VERSION = 1;
 type StudioLanguage = "ko" | "zh" | "en";
 type CliOAuthProvider = "gemini-cli" | "codex-cli";
+
+interface StoredBookSetupSession {
+  readonly kind: typeof BOOK_SETUP_SESSION_STORE_KIND;
+  readonly version: typeof BOOK_SETUP_SESSION_STORE_VERSION;
+  readonly session: BookSetupSessionRecord;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isBookSetupSessionStatus(value: unknown): value is BookSetupSessionPayload["status"] {
+  return value === "proposed" || value === "approved" || value === "creating";
+}
+
+function isBookSetupProposalPayloadValue(value: unknown): value is BookSetupProposalPayload {
+  return isObjectRecord(value)
+    && typeof value.content === "string"
+    && typeof value.createdAt === "string"
+    && typeof value.revision === "number"
+    && Number.isInteger(value.revision)
+    && value.revision > 0;
+}
+
+function isBookSetupFoundationPreviewPayloadValue(value: unknown): value is BookSetupFoundationPreviewPayload {
+  return isObjectRecord(value)
+    && typeof value.createdAt === "string"
+    && typeof value.revision === "number"
+    && Number.isInteger(value.revision)
+    && value.revision > 0
+    && typeof value.digest === "string"
+    && value.digest.trim().length > 0
+    && typeof value.storyBible === "string"
+    && typeof value.volumeOutline === "string"
+    && typeof value.bookRules === "string"
+    && typeof value.currentState === "string"
+    && typeof value.pendingHooks === "string";
+}
+
+function isExactBookProposal(value: unknown): value is ExactBookProposal {
+  if (!isObjectRecord(value) || !isObjectRecord(value.book) || !isObjectRecord(value.foundation)) {
+    return false;
+  }
+
+  return typeof value.book.id === "string"
+    && typeof value.book.title === "string"
+    && typeof value.book.genre === "string"
+    && typeof value.book.platform === "string"
+    && typeof value.book.status === "string"
+    && typeof value.book.targetChapters === "number"
+    && typeof value.book.chapterWordCount === "number"
+    && (value.book.language === undefined || value.book.language === null || typeof value.book.language === "string")
+    && typeof value.book.createdAt === "string"
+    && typeof value.book.updatedAt === "string"
+    && typeof value.foundation.storyBible === "string"
+    && typeof value.foundation.volumeOutline === "string"
+    && typeof value.foundation.bookRules === "string"
+    && typeof value.foundation.currentState === "string"
+    && typeof value.foundation.pendingHooks === "string";
+}
+
+function computeLabeledDigest(fields: ReadonlyArray<readonly [string, string | number | null | undefined]>): string {
+  const hash = createHash("sha256");
+  for (const [label, value] of fields) {
+    hash.update(label);
+    hash.update("\0");
+    hash.update(String(value ?? ""));
+    hash.update("\0");
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+function computeBookSetupFoundationPreviewDigest(preview: {
+  readonly storyBible: string;
+  readonly volumeOutline: string;
+  readonly bookRules: string;
+  readonly currentState: string;
+  readonly pendingHooks: string;
+}): string {
+  return computeLabeledDigest([
+    ["storyBible", preview.storyBible],
+    ["volumeOutline", preview.volumeOutline],
+    ["bookRules", preview.bookRules],
+    ["currentState", preview.currentState],
+    ["pendingHooks", preview.pendingHooks],
+  ]);
+}
+
+function inferLegacyBookSetupFoundationPreviewDigest(
+  foundationPreview: Record<string, unknown>,
+  exactProposal: unknown,
+): string | undefined {
+  if (typeof foundationPreview.storyBible === "string"
+    && typeof foundationPreview.volumeOutline === "string"
+    && typeof foundationPreview.bookRules === "string"
+    && typeof foundationPreview.currentState === "string"
+    && typeof foundationPreview.pendingHooks === "string") {
+    return computeBookSetupFoundationPreviewDigest({
+      storyBible: foundationPreview.storyBible,
+      volumeOutline: foundationPreview.volumeOutline,
+      bookRules: foundationPreview.bookRules,
+      currentState: foundationPreview.currentState,
+      pendingHooks: foundationPreview.pendingHooks,
+    });
+  }
+  if (isExactBookProposal(exactProposal)) {
+    return computeBookSetupFoundationPreviewDigest(exactProposal.foundation);
+  }
+  return undefined;
+}
+function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessionRecord {
+  return isObjectRecord(value)
+    && typeof value.id === "string"
+    && typeof value.revision === "number"
+    && Number.isInteger(value.revision)
+    && value.revision > 0
+    && isBookSetupSessionStatus(value.status)
+    && typeof value.bookId === "string"
+    && typeof value.title === "string"
+    && typeof value.genre === "string"
+    && isStudioLanguage(value.language)
+    && typeof value.platform === "string"
+    && typeof value.chapterWordCount === "number"
+    && typeof value.targetChapters === "number"
+    && typeof value.brief === "string"
+    && isBookSetupProposalPayloadValue(value.proposal)
+    && (value.previousProposal === undefined || isBookSetupProposalPayloadValue(value.previousProposal))
+    && typeof value.externalContext === "string"
+    && typeof value.createdAt === "string"
+    && typeof value.updatedAt === "string"
+    && (value.foundationPreview === undefined || isBookSetupFoundationPreviewPayloadValue(value.foundationPreview))
+    && (value.exactProposal === undefined || isExactBookProposal(value.exactProposal));
+}
+
+function isStoredBookSetupSession(value: unknown): value is StoredBookSetupSession {
+  return isObjectRecord(value)
+    && value.kind === BOOK_SETUP_SESSION_STORE_KIND
+    && value.version === BOOK_SETUP_SESSION_STORE_VERSION
+    && isBookSetupSessionRecordValue(value.session);
+}
+
+function inferLegacyBookSetupSessionRevision(session: Record<string, unknown>): number {
+  if (typeof session.revision === "number" && Number.isInteger(session.revision) && session.revision > 0) {
+    return session.revision;
+  }
+  if (session.status === "creating") {
+    return 4;
+  }
+  if (session.foundationPreview && typeof session.foundationPreview === "object") {
+    return 3;
+  }
+  if (session.status === "approved") {
+    return 2;
+  }
+  return 1;
+}
+
+function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord | null {
+  if (isStoredBookSetupSession(value)) {
+    return value.session;
+  }
+  if (!isObjectRecord(value) || value.kind !== BOOK_SETUP_SESSION_STORE_KIND || value.version !== BOOK_SETUP_SESSION_STORE_VERSION || !isObjectRecord(value.session)) {
+    return null;
+  }
+
+  const legacySession = value.session;
+  const revision = inferLegacyBookSetupSessionRevision(legacySession);
+  const proposal = isObjectRecord(legacySession.proposal)
+    ? { ...legacySession.proposal, revision: typeof legacySession.proposal.revision === "number" ? legacySession.proposal.revision : 1 }
+    : legacySession.proposal;
+  const previousProposal = isObjectRecord(legacySession.previousProposal)
+    ? {
+        ...legacySession.previousProposal,
+        revision: typeof legacySession.previousProposal.revision === "number"
+          ? legacySession.previousProposal.revision
+          : 1,
+      }
+    : legacySession.previousProposal;
+  const foundationPreview = isObjectRecord(legacySession.foundationPreview)
+    ? {
+        ...legacySession.foundationPreview,
+        revision: typeof legacySession.foundationPreview.revision === "number"
+          ? legacySession.foundationPreview.revision
+          : revision >= 3
+            ? revision
+            : 3,
+        digest: typeof legacySession.foundationPreview.digest === "string" && legacySession.foundationPreview.digest.trim().length > 0
+          ? legacySession.foundationPreview.digest
+          : inferLegacyBookSetupFoundationPreviewDigest(legacySession.foundationPreview, legacySession.exactProposal),
+      }
+    : legacySession.foundationPreview;
+  const upgraded = {
+    ...legacySession,
+    revision,
+    proposal,
+    ...(previousProposal ? { previousProposal } : {}),
+    ...(foundationPreview ? { foundationPreview } : {}),
+  };
+  return isBookSetupSessionRecordValue(upgraded) ? upgraded : null;
+}
+
+function bookSetupSessionStoreDir(root: string): string {
+  return join(root, BOOK_SETUP_SESSION_STORE_DIR);
+}
+
+function bookSetupSessionStorePath(root: string, sessionId: string): string {
+  return join(bookSetupSessionStoreDir(root), sessionId + ".json");
+}
+
+async function readStoredBookSetupSession(root: string, sessionId: string): Promise<BookSetupSessionRecord | null> {
+  try {
+    const raw = await readFile(bookSetupSessionStorePath(root, sessionId), "utf-8");
+    const payload = JSON.parse(raw) as unknown;
+    return normalizeStoredBookSetupSession(payload);
+  } catch {
+    return null;
+  }
+}
+
+async function readStoredBookSetupSessions(root: string): Promise<ReadonlyArray<BookSetupSessionRecord>> {
+  let files: string[];
+  try {
+    files = (await readdir(bookSetupSessionStoreDir(root)))
+      .filter((name) => name.endsWith(".json"));
+  } catch {
+    return [];
+  }
+
+  const sessions = await Promise.all(files.map(async (fileName) => {
+    try {
+      const raw = await readFile(join(bookSetupSessionStoreDir(root), fileName), "utf-8");
+      const payload = JSON.parse(raw) as unknown;
+      return normalizeStoredBookSetupSession(payload);
+    } catch {
+      return null;
+    }
+  }));
+
+  return sessions
+    .filter((session): session is BookSetupSessionRecord => session !== null)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+async function persistBookSetupSession(root: string, session: BookSetupSessionRecord): Promise<void> {
+  await mkdir(bookSetupSessionStoreDir(root), { recursive: true });
+  const payload: StoredBookSetupSession = {
+    kind: BOOK_SETUP_SESSION_STORE_KIND,
+    version: BOOK_SETUP_SESSION_STORE_VERSION,
+    session,
+  };
+  await writeFile(bookSetupSessionStorePath(root, session.id), JSON.stringify(payload, null, 2), "utf-8");
+}
+
+async function deleteStoredBookSetupSession(root: string, sessionId: string): Promise<void> {
+  await rm(bookSetupSessionStorePath(root, sessionId), { force: true });
+}
+
+async function trimStoredBookSetupSessions(root: string, limit = BOOK_SETUP_SESSION_LIMIT): Promise<void> {
+  const overflow = (await readStoredBookSetupSessions(root)).slice(limit);
+  await Promise.all(overflow.map(async (session) => {
+    await deleteStoredBookSetupSession(root, session.id);
+  }));
+}
+
+async function upsertBookSetupSession(root: string, session: BookSetupSessionRecord): Promise<void> {
+  bookSetupSessions.set(session.id, session);
+  const trimmed = trimBookSetupSessions();
+  await persistBookSetupSession(root, session);
+  await Promise.all(trimmed.map(async (entry) => {
+    await deleteStoredBookSetupSession(root, entry.id);
+  }));
+  await trimStoredBookSetupSessions(root);
+}
+
+async function findBookSetupSession(root: string, sessionId: string): Promise<BookSetupSessionRecord | null> {
+  const cached = bookSetupSessions.get(sessionId);
+  if (cached) {
+    return cached;
+  }
+
+  const stored = await readStoredBookSetupSession(root, sessionId);
+  if (!stored) {
+    return null;
+  }
+
+  bookSetupSessions.set(stored.id, stored);
+  trimBookSetupSessions();
+  return stored;
+}
+
+async function listBookSetupSessions(root: string, limit = BOOK_SETUP_SESSION_LIMIT): Promise<ReadonlyArray<BookSetupSessionRecord>> {
+  const merged = new Map<string, BookSetupSessionRecord>();
+  for (const session of await readStoredBookSetupSessions(root)) {
+    merged.set(session.id, session);
+  }
+  for (const session of bookSetupSessions.values()) {
+    merged.set(session.id, session);
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit);
+}
+
+function createIdempotencyStoreDir(root: string): string {
+  return join(root, CREATE_IDEMPOTENCY_STORE_DIR);
+}
+
+function createIdempotencyStorePath(root: string, cacheKey: string): string {
+  return join(
+    createIdempotencyStoreDir(root),
+    createHash("sha256").update(cacheKey).digest("hex") + ".json",
+  );
+}
+
+function isIdempotentCreateResponseRecordValue(value: unknown): value is IdempotentCreateResponseRecord {
+  return isObjectRecord(value)
+    && value.status === 200
+    && isObjectRecord(value.body);
+}
+
+function isCreateIdempotencyRecordValue(value: unknown): value is CreateIdempotencyRecord {
+  return isObjectRecord(value)
+    && typeof value.fingerprint === "string"
+    && typeof value.createdAt === "number"
+    && Number.isFinite(value.createdAt)
+    && typeof value.updatedAt === "number"
+    && Number.isFinite(value.updatedAt)
+    && (value.state === "in_flight" || value.state === "completed")
+    && (value.state !== "completed" || isIdempotentCreateResponseRecordValue(value.response));
+}
+
+function isStoredCreateIdempotencyRecordValue(value: unknown): value is StoredCreateIdempotencyRecord {
+  return isObjectRecord(value)
+    && value.kind === CREATE_IDEMPOTENCY_STORE_KIND
+    && value.version === CREATE_IDEMPOTENCY_STORE_VERSION
+    && typeof value.cacheKey === "string"
+    && isCreateIdempotencyRecordValue(value.record)
+    && value.record.state === "completed";
+}
+
+async function readStoredCreateIdempotencyRecord(root: string, cacheKey: string): Promise<CreateIdempotencyRecord | null> {
+  try {
+    const raw = await readFile(createIdempotencyStorePath(root, cacheKey), "utf-8");
+    const payload = JSON.parse(raw) as unknown;
+    if (!isStoredCreateIdempotencyRecordValue(payload) || payload.cacheKey !== cacheKey) {
+      return null;
+    }
+    return payload.record;
+  } catch {
+    return null;
+  }
+}
+
+async function persistCreateIdempotencyRecord(root: string, cacheKey: string, record: CreateIdempotencyRecord): Promise<void> {
+  if (record.state !== "completed" || !record.response) {
+    return;
+  }
+  await mkdir(createIdempotencyStoreDir(root), { recursive: true });
+  const payload: StoredCreateIdempotencyRecord = {
+    kind: CREATE_IDEMPOTENCY_STORE_KIND,
+    version: CREATE_IDEMPOTENCY_STORE_VERSION,
+    cacheKey,
+    record,
+  };
+  await writeFile(createIdempotencyStorePath(root, cacheKey), JSON.stringify(payload, null, 2), "utf-8");
+}
+
+async function deleteStoredCreateIdempotencyRecord(root: string, cacheKey: string): Promise<void> {
+  await rm(createIdempotencyStorePath(root, cacheKey), { force: true });
+}
+
+async function purgeExpiredStoredCreateIdempotencyRecords(root: string, now = Date.now()): Promise<void> {
+  let files: string[];
+  try {
+    files = (await readdir(createIdempotencyStoreDir(root)))
+      .filter((name) => name.endsWith(".json"));
+  } catch {
+    return;
+  }
+
+  await Promise.all(files.map(async (fileName) => {
+    const fullPath = join(createIdempotencyStoreDir(root), fileName);
+    try {
+      const raw = await readFile(fullPath, "utf-8");
+      const payload = JSON.parse(raw) as unknown;
+      if (!isStoredCreateIdempotencyRecordValue(payload) || now - payload.record.updatedAt > BOOK_CREATE_IDEMPOTENCY_TTL_MS) {
+        await rm(fullPath, { force: true });
+      }
+    } catch {
+      await rm(fullPath, { force: true }).catch(() => undefined);
+    }
+  }));
+}
+
+function readBookSetupExpectedRevision(body: Partial<BookSetupRevisionRequest> | null | undefined, sessionId: string): number {
+  const expectedRevision = body?.expectedRevision;
+  if (typeof expectedRevision === "number" && Number.isInteger(expectedRevision) && expectedRevision > 0) {
+    return expectedRevision;
+  }
+  throw new ApiError(428, "BOOK_SETUP_PRECONDITION_REQUIRED", `Book setup session "${sessionId}" requires an expected revision.`);
+}
+
+function assertBookSetupExpectedRevision(
+  session: BookSetupSessionRecord,
+  expectedRevision: number,
+  nextAction: string,
+): void {
+  if (session.revision === expectedRevision) {
+    return;
+  }
+  throw new ApiError(
+    412,
+    "BOOK_SETUP_REVISION_MISMATCH",
+    `Book setup session "${session.id}" changed while you were reviewing it. Refresh the latest setup before you ${nextAction}.`,
+  );
+}
+
+function readBookSetupExpectedPreviewDigest(body: Partial<BookSetupCreateRequest> | null | undefined, sessionId: string): string {
+  const expectedPreviewDigest = typeof body?.expectedPreviewDigest === "string"
+    ? body.expectedPreviewDigest.trim()
+    : "";
+  if (expectedPreviewDigest.length > 0) {
+    return expectedPreviewDigest;
+  }
+  throw new ApiError(428, "BOOK_SETUP_PRECONDITION_REQUIRED", `Book setup session "${sessionId}" requires an expected preview digest.`);
+}
+
+function assertBookSetupExpectedPreviewDigest(
+  session: BookSetupSessionRecord,
+  expectedPreviewDigest: string,
+  nextAction: string,
+): void {
+  const currentDigest = session.foundationPreview?.digest ?? "";
+  if (currentDigest.length > 0 && currentDigest === expectedPreviewDigest) {
+    return;
+  }
+  throw new ApiError(
+    412,
+    "BOOK_SETUP_PREVIEW_DIGEST_MISMATCH",
+    `Book setup session "${session.id}" changed while you were reviewing it. Refresh the latest setup before you ${nextAction}.`,
+  );
+}
+
+function readIdempotencyKey(value: string | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function hashCreateIdempotencyFingerprint(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function computeBookCreateIdempotencyFingerprint(body: {
+  readonly title: string;
+  readonly genre: string;
+  readonly language?: StudioLanguage;
+  readonly platform?: string;
+  readonly chapterWordCount?: number;
+  readonly targetChapters?: number;
+  readonly brief?: string;
+}): string {
+  const normalized = buildStudioBookConfig(body, "idempotency");
+  return hashCreateIdempotencyFingerprint({
+    route: "books:create",
+    bookId: normalized.id,
+    title: body.title.trim(),
+    genre: normalized.genre,
+    language: normalized.language ?? null,
+    platform: normalized.platform,
+    chapterWordCount: normalized.chapterWordCount,
+    targetChapters: normalized.targetChapters,
+    brief: typeof body.brief === "string" ? body.brief.trim() : "",
+  });
+}
+
+function computeBookSetupCreateIdempotencyFingerprint(
+  sessionId: string,
+  body: Partial<BookSetupCreateRequest> | null | undefined,
+): string {
+  return hashCreateIdempotencyFingerprint({
+    route: "book-setup:create",
+    sessionId,
+    expectedRevision: typeof body?.expectedRevision === "number" ? body.expectedRevision : null,
+    expectedPreviewDigest: typeof body?.expectedPreviewDigest === "string" ? body.expectedPreviewDigest.trim() : "",
+  });
+}
+
+function createIdempotencyCacheKey(scope: CreateIdempotencyScope, idempotencyKey: string): string {
+  return `${scope}:${idempotencyKey}`;
+}
+
+function purgeExpiredCreateIdempotencyRecords(now = Date.now()): void {
+  for (const [cacheKey, record] of createIdempotencyRecords.entries()) {
+    if (now - record.updatedAt > BOOK_CREATE_IDEMPOTENCY_TTL_MS) {
+      createIdempotencyRecords.delete(cacheKey);
+    }
+  }
+}
+
+async function beginCreateIdempotency(
+  root: string,
+  scope: CreateIdempotencyScope,
+  headerValue: string | undefined,
+  fingerprint: string,
+): Promise<{ readonly cacheKey: string | null; readonly replay?: IdempotentCreateResponseRecord }> {
+  const idempotencyKey = readIdempotencyKey(headerValue);
+  if (!idempotencyKey) {
+    return { cacheKey: null };
+  }
+
+  const now = Date.now();
+  purgeExpiredCreateIdempotencyRecords(now);
+  await purgeExpiredStoredCreateIdempotencyRecords(root, now);
+  const cacheKey = createIdempotencyCacheKey(scope, idempotencyKey);
+  let existing = createIdempotencyRecords.get(cacheKey) ?? await readStoredCreateIdempotencyRecord(root, cacheKey);
+  if (!existing) {
+    createIdempotencyRecords.set(cacheKey, {
+      fingerprint,
+      createdAt: now,
+      updatedAt: now,
+      state: "in_flight",
+    });
+    return { cacheKey };
+  }
+
+  if (!createIdempotencyRecords.has(cacheKey)) {
+    createIdempotencyRecords.set(cacheKey, existing);
+  }
+
+  if (existing.fingerprint !== fingerprint) {
+    throw new ApiError(422, "IDEMPOTENCY_KEY_REUSED", `Idempotency-Key "${idempotencyKey}" was already used for a different create request.`);
+  }
+
+  if (existing.state === "completed" && existing.response) {
+    const response = {
+      status: existing.response.status,
+      body: structuredClone(existing.response.body),
+    } satisfies IdempotentCreateResponseRecord;
+    createIdempotencyRecords.set(cacheKey, {
+      ...existing,
+      updatedAt: now,
+      response,
+    });
+    return { cacheKey, replay: response };
+  }
+
+  throw new ApiError(409, "IDEMPOTENCY_KEY_IN_FLIGHT", `Create request with Idempotency-Key "${idempotencyKey}" is still in progress.`);
+}
+
+async function completeCreateIdempotency(root: string, cacheKey: string | null, body: Readonly<Record<string, unknown>>): Promise<void> {
+  if (!cacheKey) {
+    return;
+  }
+  const existing = createIdempotencyRecords.get(cacheKey);
+  if (!existing) {
+    return;
+  }
+  const record: CreateIdempotencyRecord = {
+    ...existing,
+    updatedAt: Date.now(),
+    state: "completed",
+    response: {
+      status: 200,
+      body: structuredClone(body),
+    },
+  };
+  createIdempotencyRecords.set(cacheKey, record);
+  await persistCreateIdempotencyRecord(root, cacheKey, record).catch(() => undefined);
+}
+
+function abandonCreateIdempotency(cacheKey: string | null): void {
+  if (!cacheKey) {
+    return;
+  }
+  const existing = createIdempotencyRecords.get(cacheKey);
+  if (existing?.state === "in_flight") {
+    createIdempotencyRecords.delete(cacheKey);
+  }
+}
 
 interface AuthStatus {
   readonly available: boolean;
@@ -182,6 +850,50 @@ function isStudioLanguage(value: unknown): value is StudioLanguage {
 function truthFileDefinition(name: TruthFileName): TruthFileDefinition {
   return TRUTH_FILE_DEFINITIONS.find((entry) => entry.name === name)
     ?? { name, section: "reference", optional: true };
+}
+
+function readTruthWriteScope(value: unknown): TruthWriteScope | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.kind === "read-only") {
+    return { kind: "read-only" };
+  }
+  if (record.kind === "file" && typeof record.fileName === "string" && isAllowedTruthFile(record.fileName)) {
+    return { kind: "file", fileName: record.fileName };
+  }
+
+  return null;
+}
+
+function validateTruthWriteScope(params: {
+  readonly scope: TruthWriteScope | null;
+  readonly targetFile?: TruthFileName;
+  readonly requestedFiles?: ReadonlyArray<TruthFileName>;
+  readonly writeOperation: boolean;
+}): { readonly status: 400 | 409; readonly error: string } | null {
+  if (!params.writeOperation) {
+    return null;
+  }
+
+  if (!params.scope) {
+    return { status: 400, error: "TRUTH_SCOPE_REQUIRED" };
+  }
+  if (params.scope.kind === "read-only") {
+    return { status: 409, error: "TRUTH_SCOPE_READ_ONLY" };
+  }
+  if (params.requestedFiles && params.requestedFiles.length !== 1) {
+    return { status: 400, error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" };
+  }
+
+  const targetFile = params.targetFile ?? params.requestedFiles?.[0];
+  if (!targetFile || params.scope.fileName !== targetFile) {
+    return { status: 409, error: "TRUTH_SCOPE_FILE_MISMATCH" };
+  }
+
+  return null;
 }
 
 function truthFileSectionLabel(section: TruthFileSection, language: StudioLanguage): string {
@@ -683,6 +1395,99 @@ function trimBookCreateHistory(
   return entries.slice(-limit);
 }
 
+function summarizeBookSetupFoundationPreview(proposal: ExactBookProposal, createdAt: string, revision: number): BookSetupFoundationPreviewPayload {
+  return {
+    createdAt,
+    revision,
+    digest: computeBookSetupFoundationPreviewDigest(proposal.foundation),
+    storyBible: proposal.foundation.storyBible,
+    volumeOutline: proposal.foundation.volumeOutline,
+    bookRules: proposal.foundation.bookRules,
+    currentState: proposal.foundation.currentState,
+    pendingHooks: proposal.foundation.pendingHooks,
+  };
+}
+
+function summarizeBookSetupSession(session: BookSetupSessionRecord): BookSetupSessionPayload {
+  return {
+    id: session.id,
+    revision: session.revision,
+    status: session.status,
+    bookId: session.bookId,
+    title: session.title,
+    genre: session.genre,
+    language: session.language,
+    platform: session.platform,
+    chapterWordCount: session.chapterWordCount,
+    targetChapters: session.targetChapters,
+    brief: session.brief,
+    proposal: session.proposal,
+    previousProposal: session.previousProposal,
+    foundationPreview: session.foundationPreview,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
+function trimBookSetupSessions(limit = BOOK_SETUP_SESSION_LIMIT): ReadonlyArray<BookSetupSessionRecord> {
+  const overflow = bookSetupSessions.size - limit;
+  if (overflow <= 0) return [];
+  const oldest = [...bookSetupSessions.values()]
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    .slice(0, overflow);
+  for (const entry of oldest) {
+    bookSetupSessions.delete(entry.id);
+  }
+  return oldest;
+}
+
+function normalizeBookSetupConversation(
+  conversation: BookSetupProposalRequest["conversation"],
+  language: StudioLanguage,
+): string {
+  return (conversation ?? [])
+    .filter((entry): entry is NonNullable<BookSetupProposalRequest["conversation"]>[number] => (
+      (entry?.role === "user" || entry?.role === "assistant")
+      && typeof entry.content === "string"
+      && entry.content.trim().length > 0
+    ))
+    .slice(-10)
+    .map((entry) => `${entry.role === "user"
+      ? language === "ko"
+        ? "사용자"
+        : language === "zh"
+          ? "用户"
+          : "User"
+      : language === "ko"
+        ? "어시스턴트"
+        : language === "zh"
+          ? "助手"
+          : "Assistant"}: ${entry.content.trim()}`)
+    .join("\n");
+}
+
+function extractMarkdownSection(markdown: string, heading: string): string | null {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const normalizedHeading = `## ${heading}`.toLowerCase();
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === normalizedHeading);
+  if (start < 0) return null;
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (lines[index]?.trim().startsWith("## ")) {
+      end = index;
+      break;
+    }
+  }
+
+  const content = lines.slice(start + 1, end).join("\n").trim();
+  return content || null;
+}
+
+function extractApprovedCreativeBrief(markdown: string): string {
+  return extractMarkdownSection(markdown, "Approved Creative Brief") ?? markdown.trim();
+}
+
 async function resolveCommandPath(command: string): Promise<string | null> {
   const trimmed = command.trim();
   if (!trimmed) return null;
@@ -989,7 +1794,7 @@ async function initializeProjectAtRoot(root: string, options: {
         "# INKOS_LLM_MODEL=",
       ];
   await writeFile(join(root, ".env"), `${envLines.join("\n")}\n`, "utf-8");
-  await writeFile(join(root, ".gitignore"), [".env", "node_modules/", ".DS_Store"].join("\n"), "utf-8");
+  await writeFile(join(root, ".gitignore"), [".env", "node_modules/", ".DS_Store", ".inkos/"].join("\n"), "utf-8");
 }
 
 function summarizeAuthSession(session: AuthSessionRecord): AuthSessionPayload {
@@ -1430,6 +2235,8 @@ function radarStatusFromHistory(entry: RadarHistoryEntry): RadarStatusSummary {
 
 export function createStudioServer(initialConfig: ProjectConfig | null, root: string) {
   bookCreateStatus.clear();
+  bookSetupSessions.clear();
+  createIdempotencyRecords.clear();
   const app = new Hono();
   const state = new StateManager(root);
   let cachedConfig = initialConfig;
@@ -1515,6 +2322,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     options?: {
       readonly onStreamProgress?: NonNullable<PipelineConfig["onStreamProgress"]>;
       readonly extraSinks?: ReadonlyArray<LogSink>;
+      readonly externalContext?: string;
     },
   ): Promise<PipelineConfig> {
     const resolvedConfig = currentConfig ?? await loadCurrentProjectConfig();
@@ -1530,6 +2338,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       defaultLLMConfig: resolvedConfig.llm,
       modelOverrides: resolvedConfig.modelOverrides,
       notifyChannels: resolvedConfig.notify,
+      externalContext: options?.externalContext,
       logger,
       onStreamProgress: (progress) => {
         if (progress.status === "streaming") {
@@ -1590,6 +2399,613 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   // --- Book Create ---
 
+  const inFlightBookCreates = new Set<string>();
+  function reserveStudioBookCreate(bookId: string): () => void {
+    const current = bookCreateStatus.get(bookId);
+    if (inFlightBookCreates.has(bookId) || current?.status === "creating") {
+      throw new ApiError(409, "BOOK_CREATE_ALREADY_IN_PROGRESS", `Book "${bookId}" is already being created.`);
+    }
+    inFlightBookCreates.add(bookId);
+    return () => {
+      inFlightBookCreates.delete(bookId);
+    };
+  }
+
+  async function ensureStudioBookCreateAvailable(bookId: string): Promise<void> {
+    const bookDir = state.bookDir(bookId);
+    try {
+      await access(join(bookDir, "book.json"));
+      await access(join(bookDir, "story", "story_bible.md"));
+    } catch {
+      return;
+    }
+    throw new ApiError(409, "BOOK_ALREADY_EXISTS", `Book "${bookId}" already exists`);
+  }
+
+  async function queueStudioBookCreate(
+    body: {
+      readonly title: string;
+      readonly genre: string;
+      readonly language?: StudioLanguage;
+      readonly platform?: string;
+      readonly chapterWordCount?: number;
+      readonly targetChapters?: number;
+    },
+    options?: {
+      readonly externalContext?: string;
+    },
+  ): Promise<{ status: "creating"; bookId: string }> {
+    const now = new Date().toISOString();
+    const bookConfig = buildStudioBookConfig(body, now);
+    const bookId = bookConfig.id;
+
+    if (!bookId.trim()) {
+      throw new ApiError(400, "INVALID_BOOK_TITLE", "Title must include letters or numbers.");
+    }
+
+    const releaseBookCreate = reserveStudioBookCreate(bookId);
+    try {
+      await ensureStudioBookCreateAvailable(bookId);
+
+      broadcast("book:creating", { bookId, title: body.title });
+      const startedAt = new Date().toISOString();
+      bookCreateStatus.set(bookId, {
+        bookId,
+        title: body.title,
+        status: "creating",
+        startedAt,
+        updatedAt: startedAt,
+        stage: null,
+        message: null,
+        history: [
+          {
+            timestamp: startedAt,
+            kind: "start",
+            label: "book creation queued",
+            detail: body.title,
+          },
+        ],
+      });
+
+      const statusSink: LogSink = {
+        write(entry: LogEntry): void {
+          const current = bookCreateStatus.get(bookId);
+          if (!current || current.status !== "creating") return;
+          const stage = parseProgressStage(entry.message);
+          const updatedAt = new Date().toISOString();
+          const kind = stage ? "stage" : "info";
+          const label = stage ?? entry.message;
+          const lastHistory = current.history.at(-1);
+          const nextHistory = lastHistory && lastHistory.kind === kind && lastHistory.label === label
+            ? current.history
+            : trimBookCreateHistory([
+                ...current.history,
+                {
+                  timestamp: updatedAt,
+                  kind,
+                  label,
+                  detail: stage ? entry.message : null,
+                },
+              ]);
+          const next: BookCreateStatusEntry = {
+            ...current,
+            updatedAt,
+            stage: stage ?? current.stage,
+            message: entry.message,
+            history: nextHistory,
+          };
+          bookCreateStatus.set(bookId, next);
+          broadcast("book:create:progress", {
+            bookId,
+            title: current.title,
+            stage: next.stage,
+            message: next.message,
+            updatedAt,
+          });
+        },
+      };
+
+      const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [statusSink],
+        externalContext: options?.externalContext,
+      }));
+      pipeline.initBook(bookConfig).then(
+        () => {
+          releaseBookCreate();
+          bookCreateStatus.delete(bookId);
+          broadcast("book:created", { bookId });
+        },
+        (e: unknown) => {
+          releaseBookCreate();
+          const error = e instanceof Error ? e.message : String(e);
+          const current = bookCreateStatus.get(bookId);
+          bookCreateStatus.set(bookId, {
+            bookId,
+            title: current?.title ?? body.title,
+            status: "error",
+            startedAt: current?.startedAt ?? startedAt,
+            updatedAt: new Date().toISOString(),
+            stage: current?.stage ?? null,
+            message: current?.message ?? null,
+            history: trimBookCreateHistory([
+              ...(current?.history ?? []),
+              {
+                timestamp: new Date().toISOString(),
+                kind: "error",
+                label: "book creation failed",
+                detail: error,
+              },
+            ]),
+            error,
+          });
+          broadcast("book:error", { bookId, title: body.title, error });
+        },
+      );
+
+      return { status: "creating", bookId };
+    } catch (error) {
+      releaseBookCreate();
+      bookCreateStatus.delete(bookId);
+      throw error;
+    }
+  }
+
+  async function queueStudioBookProposalApply(
+    proposal: ExactBookProposal,
+    options?: {
+      readonly externalContext?: string;
+    },
+  ): Promise<{ status: "creating"; bookId: string }> {
+    const bookId = proposal.book.id;
+    if (!bookId.trim()) {
+      throw new ApiError(400, "INVALID_BOOK_TITLE", "Title must include letters or numbers.");
+    }
+
+    const releaseBookCreate = reserveStudioBookCreate(bookId);
+    try {
+      await ensureStudioBookCreateAvailable(bookId);
+
+      broadcast("book:creating", { bookId, title: proposal.book.title });
+      const startedAt = new Date().toISOString();
+      bookCreateStatus.set(bookId, {
+        bookId,
+        title: proposal.book.title,
+        status: "creating",
+        startedAt,
+        updatedAt: startedAt,
+        stage: null,
+        message: null,
+        history: [
+          {
+            timestamp: startedAt,
+            kind: "start",
+            label: "book creation queued",
+            detail: proposal.book.title,
+          },
+        ],
+      });
+
+      const statusSink: LogSink = {
+        write(entry: LogEntry): void {
+          const current = bookCreateStatus.get(bookId);
+          if (!current || current.status !== "creating") return;
+          const stage = parseProgressStage(entry.message);
+          const updatedAt = new Date().toISOString();
+          const kind = stage ? "stage" : "info";
+          const label = stage ?? entry.message;
+          const lastHistory = current.history.at(-1);
+          const nextHistory = lastHistory && lastHistory.kind === kind && lastHistory.label === label
+            ? current.history
+            : trimBookCreateHistory([
+                ...current.history,
+                {
+                  timestamp: updatedAt,
+                  kind,
+                  label,
+                  detail: stage ? entry.message : null,
+                },
+              ]);
+          const next: BookCreateStatusEntry = {
+            ...current,
+            updatedAt,
+            stage: stage ?? current.stage,
+            message: entry.message,
+            history: nextHistory,
+          };
+          bookCreateStatus.set(bookId, next);
+          broadcast("book:create:progress", {
+            bookId,
+            title: current.title,
+            stage: next.stage,
+            message: next.message,
+            updatedAt,
+          });
+        },
+      };
+
+      const pipeline = withExactBookProposalSupport(new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [statusSink],
+        externalContext: options?.externalContext,
+      })));
+      pipeline.applyBookProposal(proposal).then(
+        () => {
+          releaseBookCreate();
+          bookCreateStatus.delete(bookId);
+          broadcast("book:created", { bookId });
+        },
+        (e: unknown) => {
+          releaseBookCreate();
+          const error = e instanceof Error ? e.message : String(e);
+          const current = bookCreateStatus.get(bookId);
+          bookCreateStatus.set(bookId, {
+            bookId,
+            title: current?.title ?? proposal.book.title,
+            status: "error",
+            startedAt: current?.startedAt ?? startedAt,
+            updatedAt: new Date().toISOString(),
+            stage: current?.stage ?? null,
+            message: current?.message ?? null,
+            history: trimBookCreateHistory([
+              ...(current?.history ?? []),
+              {
+                timestamp: new Date().toISOString(),
+                kind: "error",
+                label: "book creation failed",
+                detail: error,
+              },
+            ]),
+            error,
+          });
+          broadcast("book:error", { bookId, title: proposal.book.title, error });
+        },
+      );
+
+      return { status: "creating", bookId };
+    } catch (error) {
+      releaseBookCreate();
+      bookCreateStatus.delete(bookId);
+      throw error;
+    }
+  }
+
+  app.post("/api/book-setup/propose", async (c) => {
+    const body = await c.req.json<BookSetupProposalRequest>().catch(() => ({} as BookSetupProposalRequest));
+    const title = String(body.title ?? "").trim();
+    const genre = String(body.genre ?? "").trim();
+    const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    if (!title) {
+      throw new ApiError(400, "TITLE_REQUIRED", "Title is required.");
+    }
+    if (!genre) {
+      throw new ApiError(400, "GENRE_REQUIRED", "Genre is required.");
+    }
+
+    const currentConfig = await loadCurrentProjectConfig();
+    const language = resolveStudioLanguage(body.language, resolveStudioLanguage(currentConfig.language, "ko"));
+    const now = new Date().toISOString();
+    const draft = buildStudioBookConfig({
+      title,
+      genre,
+      language,
+      platform: body.platform,
+      chapterWordCount: body.chapterWordCount,
+      targetChapters: body.targetChapters,
+    }, now);
+    if (!draft.id.trim()) {
+      throw new ApiError(400, "INVALID_BOOK_TITLE", "Title must include letters or numbers.");
+    }
+
+    const revisingSession = requestedSessionId
+      ? await findBookSetupSession(root, requestedSessionId)
+      : null;
+    if (requestedSessionId && !revisingSession) {
+      throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${requestedSessionId}" not found.`);
+    }
+    if (revisingSession) {
+      const expectedRevision = readBookSetupExpectedRevision(body, revisingSession.id);
+      assertBookSetupExpectedRevision(revisingSession, expectedRevision, "revise the setup proposal");
+      if (revisingSession.status === "creating") {
+        throw new ApiError(409, "BOOK_SETUP_ALREADY_CREATING", `Book setup session "${revisingSession.id}" is already creating a book.`);
+      }
+    }
+
+    const brief = typeof body.brief === "string" ? body.brief.trim() : "";
+    const conversation = normalizeBookSetupConversation(body.conversation, language);
+    const client = createLLMClient({
+      ...currentConfig.llm,
+      extra: { ...(currentConfig.llm.extra ?? {}), projectRoot: root },
+    });
+    const { chatCompletion } = await import("@actalk/inkos-core");
+    const systemPrompt = language === "ko"
+      ? [
+          "당신은 InkOS의 책 생성 전 제안 설계자다.",
+          "아직 어떤 파일도 만들지 않는다.",
+          "사용자가 이미 정한 값은 존중하고, 모르는 것은 단정하지 말고 열린 질문으로 남겨라.",
+          "반드시 마크다운만 반환하고 아래 섹션 제목을 그대로 사용하라.",
+          "# Setup Proposal",
+          "## Alignment Summary",
+          "## Chosen Parameters",
+          "## Open Questions",
+          "## Approved Creative Brief",
+          "## Why This Shape",
+          "Approved Creative Brief 섹션은 실제 책 생성기에 넘길 수 있도록 구체적이고 보수적으로 작성하라.",
+        ].join("\n")
+      : language === "zh"
+        ? [
+            "你是 InkOS 在建书前的提案规划助手。",
+            "此阶段不能创建任何文件。",
+            "尊重用户已经指定的参数，未知内容不要擅自补完，而是放入开放问题。",
+            "只返回 Markdown，并严格使用这些标题：",
+            "# Setup Proposal",
+            "## Alignment Summary",
+            "## Chosen Parameters",
+            "## Open Questions",
+            "## Approved Creative Brief",
+            "## Why This Shape",
+            "其中 Approved Creative Brief 要写成可以直接交给建书流程的创作说明。",
+          ].join("\n")
+        : [
+            "You are InkOS's pre-creation setup planner.",
+            "Do not create or imply any files yet.",
+            "Respect parameters the user has already chosen.",
+            "Do not invent unresolved canon details; list them as open questions instead.",
+            "Return Markdown only and use these exact headings:",
+            "# Setup Proposal",
+            "## Alignment Summary",
+            "## Chosen Parameters",
+            "## Open Questions",
+            "## Approved Creative Brief",
+            "## Why This Shape",
+            "The Approved Creative Brief section should be specific enough to pass into the book-creation pipeline.",
+          ].join("\n");
+    const parameterLines = language === "ko"
+      ? [
+          `제목: ${draft.title}`,
+          `장르: ${draft.genre}`,
+          `플랫폼: ${draft.platform}`,
+          `장당 분량: ${draft.chapterWordCount}`,
+          `목표 장 수: ${draft.targetChapters}`,
+          `Book ID: ${draft.id}`,
+        ]
+      : language === "zh"
+        ? [
+            `标题：${draft.title}`,
+            `题材：${draft.genre}`,
+            `平台：${draft.platform}`,
+            `每章字数：${draft.chapterWordCount}`,
+            `目标章节：${draft.targetChapters}`,
+            `Book ID：${draft.id}`,
+          ]
+        : [
+            `Title: ${draft.title}`,
+            `Genre: ${draft.genre}`,
+            `Platform: ${draft.platform}`,
+            `Words / Chapter: ${draft.chapterWordCount}`,
+            `Target Chapters: ${draft.targetChapters}`,
+            `Book ID: ${draft.id}`,
+          ];
+    const userPrompt = [
+      parameterLines.join("\n"),
+      brief
+        ? language === "ko"
+          ? `사용자 메모:\n${brief}`
+          : language === "zh"
+            ? `用户备注：\n${brief}`
+            : `User brief:\n${brief}`
+        : "",
+      conversation
+        ? language === "ko"
+          ? `최근 설정 논의:\n${conversation}`
+          : language === "zh"
+            ? `最近设定讨论：\n${conversation}`
+            : `Recent setup discussion:\n${conversation}`
+        : "",
+      language === "ko"
+        ? "Chosen Parameters 섹션에는 사용자가 고른 값을 그대로 bullet로 적고, Alignment Summary / Open Questions / Why This Shape 는 짧고 검증 가능하게 써라."
+        : language === "zh"
+          ? "Chosen Parameters 部分要逐项复述用户已选择的参数；Alignment Summary / Open Questions / Why This Shape 保持简洁、可核对。"
+          : "In Chosen Parameters, restate the selected values exactly. Keep Alignment Summary, Open Questions, and Why This Shape concise and checkable.",
+    ].filter(Boolean).join("\n\n");
+
+    const response = await chatCompletion(client, currentConfig.llm.model, [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+
+    const proposalCreatedAt = new Date().toISOString();
+    const proposalContent = response.content.trim();
+    const nextRevision = revisingSession ? revisingSession.revision + 1 : 1;
+    const nextProposal: BookSetupProposalPayload = {
+      content: proposalContent,
+      createdAt: proposalCreatedAt,
+      revision: nextRevision,
+    };
+    const session: BookSetupSessionRecord = revisingSession
+      ? {
+          ...revisingSession,
+          revision: nextRevision,
+          status: "proposed",
+          bookId: draft.id,
+          title: draft.title,
+          genre: draft.genre,
+          language: resolveStudioLanguage(draft.language, language),
+          platform: draft.platform,
+          chapterWordCount: draft.chapterWordCount,
+          targetChapters: draft.targetChapters,
+          brief,
+          proposal: nextProposal,
+          previousProposal: revisingSession.proposal,
+          foundationPreview: undefined,
+          exactProposal: undefined,
+          externalContext: extractApprovedCreativeBrief(proposalContent),
+          updatedAt: proposalCreatedAt,
+        }
+      : {
+          id: randomUUID(),
+          revision: 1,
+          status: "proposed",
+          bookId: draft.id,
+          title: draft.title,
+          genre: draft.genre,
+          language: resolveStudioLanguage(draft.language, language),
+          platform: draft.platform,
+          chapterWordCount: draft.chapterWordCount,
+          targetChapters: draft.targetChapters,
+          brief,
+          proposal: nextProposal,
+          externalContext: extractApprovedCreativeBrief(proposalContent),
+          createdAt: now,
+          updatedAt: proposalCreatedAt,
+        };
+    await upsertBookSetupSession(root, session);
+    broadcast("book:setup:proposed", { sessionId: session.id, bookId: session.bookId, title: session.title });
+    return c.json(summarizeBookSetupSession(session));
+  });
+
+
+  app.get("/api/book-setup", async (c) => {
+    const payload: BookSetupSessionListPayload = {
+      sessions: (await listBookSetupSessions(root)).map(summarizeBookSetupSession),
+    };
+    return c.json(payload);
+  });
+
+  app.get("/api/book-setup/:sessionId", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = await findBookSetupSession(root, sessionId);
+    if (!session) {
+      throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${sessionId}" not found.`);
+    }
+    return c.json(summarizeBookSetupSession(session));
+  });
+
+  app.post("/api/book-setup/:sessionId/approve", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = await findBookSetupSession(root, sessionId);
+    if (!session) {
+      throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${sessionId}" not found.`);
+    }
+    const body = await c.req.json<Partial<BookSetupRevisionRequest>>().catch(() => null);
+    const expectedRevision = readBookSetupExpectedRevision(body, sessionId);
+    assertBookSetupExpectedRevision(session, expectedRevision, "approve it");
+    if (session.status === "creating") {
+      throw new ApiError(409, "BOOK_SETUP_ALREADY_CREATING", `Book setup session "${sessionId}" is already creating a book.`);
+    }
+    if (session.status === "approved") {
+      return c.json(summarizeBookSetupSession(session));
+    }
+
+    const updated: BookSetupSessionRecord = {
+      ...session,
+      revision: session.revision + 1,
+      status: "approved",
+      updatedAt: new Date().toISOString(),
+    };
+    await upsertBookSetupSession(root, updated);
+    broadcast("book:setup:approved", { sessionId: session.id, bookId: session.bookId, title: session.title });
+    return c.json(summarizeBookSetupSession(updated));
+  });
+
+  app.post("/api/book-setup/:sessionId/foundation-preview", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = await findBookSetupSession(root, sessionId);
+    if (!session) {
+      throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${sessionId}" not found.`);
+    }
+    const body = await c.req.json<Partial<BookSetupRevisionRequest>>().catch(() => null);
+    const expectedRevision = readBookSetupExpectedRevision(body, sessionId);
+    assertBookSetupExpectedRevision(session, expectedRevision, "prepare the exact foundation preview");
+    if (session.status === "creating") {
+      throw new ApiError(409, "BOOK_SETUP_ALREADY_CREATING", `Book setup session "${sessionId}" is already creating a book.`);
+    }
+    if (session.status !== "approved") {
+      throw new ApiError(409, "BOOK_SETUP_NOT_APPROVED", `Book setup session "${sessionId}" must be approved before preparing an exact foundation preview.`);
+    }
+    if (session.exactProposal && session.foundationPreview) {
+      return c.json(summarizeBookSetupSession(session));
+    }
+
+    const previewCreatedAt = new Date().toISOString();
+    const bookConfig = buildStudioBookConfig({
+      title: session.title,
+      genre: session.genre,
+      language: session.language,
+      platform: session.platform,
+      chapterWordCount: session.chapterWordCount,
+      targetChapters: session.targetChapters,
+    }, previewCreatedAt);
+    const pipeline = withExactBookProposalSupport(new PipelineRunner(await buildPipelineConfig(undefined, {
+      externalContext: session.externalContext,
+    })));
+    const exactProposal = await pipeline.proposeBook(bookConfig);
+    const nextRevision = session.revision + 1;
+    const updated: BookSetupSessionRecord = {
+      ...session,
+      revision: nextRevision,
+      foundationPreview: summarizeBookSetupFoundationPreview(exactProposal, previewCreatedAt, nextRevision),
+      exactProposal,
+      updatedAt: previewCreatedAt,
+    };
+    await upsertBookSetupSession(root, updated);
+    broadcast("book:setup:foundation-previewed", { sessionId: session.id, bookId: session.bookId, title: session.title });
+    return c.json(summarizeBookSetupSession(updated));
+  });
+
+  app.post("/api/book-setup/:sessionId/create", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const body = await c.req.json<Partial<BookSetupCreateRequest>>().catch(() => null);
+    const idempotency = await beginCreateIdempotency(
+      root,
+      "book-setup-create",
+      c.req.header("Idempotency-Key"),
+      computeBookSetupCreateIdempotencyFingerprint(sessionId, body),
+    );
+    if (idempotency.replay) {
+      return c.json(idempotency.replay.body, idempotency.replay.status);
+    }
+
+    try {
+      const session = await findBookSetupSession(root, sessionId);
+      if (!session) {
+        throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${sessionId}" not found.`);
+      }
+      const expectedRevision = readBookSetupExpectedRevision(body, sessionId);
+      assertBookSetupExpectedRevision(session, expectedRevision, "create the book");
+      if (session.status === "creating") {
+        throw new ApiError(409, "BOOK_SETUP_ALREADY_CREATING", `Book setup session "${sessionId}" is already creating a book.`);
+      }
+      if (session.status !== "approved") {
+        throw new ApiError(409, "BOOK_SETUP_NOT_APPROVED", `Book setup session "${sessionId}" must be approved before creation.`);
+      }
+
+      if (!session.foundationPreview || !session.exactProposal) {
+        throw new ApiError(409, "BOOK_SETUP_FOUNDATION_PREVIEW_REQUIRED", `Book setup session "${sessionId}" must prepare an exact foundation preview before creation.`);
+      }
+
+      const expectedPreviewDigest = readBookSetupExpectedPreviewDigest(body, sessionId);
+      assertBookSetupExpectedPreviewDigest(session, expectedPreviewDigest, "create the book");
+
+      const result = await queueStudioBookProposalApply(session.exactProposal, {
+        externalContext: session.externalContext,
+      });
+
+      const updated: BookSetupSessionRecord = {
+        ...session,
+        revision: session.revision + 1,
+        status: "creating",
+        updatedAt: new Date().toISOString(),
+      };
+      await upsertBookSetupSession(root, updated);
+      broadcast("book:setup:creating", { sessionId: session.id, bookId: result.bookId, title: session.title });
+      const responseBody = { ...result, session: summarizeBookSetupSession(updated) };
+      await completeCreateIdempotency(root, idempotency.cacheKey, responseBody);
+      return c.json(responseBody);
+    } catch (error) {
+      abandonCreateIdempotency(idempotency.cacheKey);
+      throw error;
+    }
+  });
+
   app.post("/api/books/create", async (c) => {
     const body = await c.req.json<{
       title: string;
@@ -1598,114 +3014,30 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       platform?: string;
       chapterWordCount?: number;
       targetChapters?: number;
+      brief?: string;
     }>();
-
-    const now = new Date().toISOString();
-    const bookConfig = buildStudioBookConfig(body, now);
-    const bookId = bookConfig.id;
-    const bookDir = state.bookDir(bookId);
-
-    try {
-      await access(join(bookDir, "book.json"));
-      await access(join(bookDir, "story", "story_bible.md"));
-      return c.json({ error: `Book "${bookId}" already exists` }, 409);
-    } catch {
-      // The target book is not fully initialized yet, so creation can continue.
+    const idempotency = await beginCreateIdempotency(
+      root,
+      "book-create",
+      c.req.header("Idempotency-Key"),
+      computeBookCreateIdempotencyFingerprint(body),
+    );
+    if (idempotency.replay) {
+      return c.json(idempotency.replay.body, idempotency.replay.status);
     }
 
-    broadcast("book:creating", { bookId, title: body.title });
-    const startedAt = new Date().toISOString();
-    bookCreateStatus.set(bookId, {
-      bookId,
-      title: body.title,
-      status: "creating",
-      startedAt,
-      updatedAt: startedAt,
-      stage: null,
-      message: null,
-      history: [
-        {
-          timestamp: startedAt,
-          kind: "start",
-          label: "book creation queued",
-          detail: body.title,
-        },
-      ],
-    });
-
-    const statusSink: LogSink = {
-      write(entry: LogEntry): void {
-        const current = bookCreateStatus.get(bookId);
-        if (!current || current.status !== "creating") return;
-        const stage = parseProgressStage(entry.message);
-        const updatedAt = new Date().toISOString();
-        const kind = stage ? "stage" : "info";
-        const label = stage ?? entry.message;
-        const lastHistory = current.history.at(-1);
-        const nextHistory = lastHistory && lastHistory.kind === kind && lastHistory.label === label
-          ? current.history
-          : trimBookCreateHistory([
-              ...current.history,
-              {
-                timestamp: updatedAt,
-                kind,
-                label,
-                detail: stage ? entry.message : null,
-              },
-            ]);
-        const next: BookCreateStatusEntry = {
-          ...current,
-          updatedAt,
-          stage: stage ?? current.stage,
-          message: entry.message,
-          history: nextHistory,
-        };
-        bookCreateStatus.set(bookId, next);
-        broadcast("book:create:progress", {
-          bookId,
-          title: current.title,
-          stage: next.stage,
-          message: next.message,
-          updatedAt,
-        });
-      },
-    };
-
-    const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
-      extraSinks: [statusSink],
-    }));
-    pipeline.initBook(bookConfig).then(
-      () => {
-        bookCreateStatus.delete(bookId);
-        broadcast("book:created", { bookId });
-      },
-      (e) => {
-        const error = e instanceof Error ? e.message : String(e);
-        const current = bookCreateStatus.get(bookId);
-        bookCreateStatus.set(bookId, {
-          bookId,
-          title: current?.title ?? body.title,
-          status: "error",
-          startedAt: current?.startedAt ?? startedAt,
-          updatedAt: new Date().toISOString(),
-          stage: current?.stage ?? null,
-          message: current?.message ?? null,
-          history: trimBookCreateHistory([
-            ...(current?.history ?? []),
-            {
-              timestamp: new Date().toISOString(),
-              kind: "error",
-              label: "book creation failed",
-              detail: error,
-            },
-          ]),
-          error,
-        });
-        broadcast("book:error", { bookId, title: body.title, error });
-      },
-    );
-
-    return c.json({ status: "creating", bookId });
+    try {
+      const result = await queueStudioBookCreate(body, {
+        externalContext: typeof body.brief === "string" && body.brief.trim().length > 0
+          ? body.brief.trim()
+          : undefined,
+      });
+      await completeCreateIdempotency(root, idempotency.cacheKey, result);
+      return c.json(result);
+    } catch (error) {
+      abandonCreateIdempotency(idempotency.cacheKey);
+      throw error;
+    }
   });
 
   app.get("/api/book-create-status", async (c) => {
@@ -1803,14 +3135,16 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const body = await c.req
       .json<TruthAssistRequest>()
       .catch(() => ({} as TruthAssistRequest));
-    const requestedFiles = [
+    const requestedTargets = [
       ...(typeof body.fileName === "string" ? [body.fileName] : []),
       ...((body.fileNames ?? []).filter((file): file is string => typeof file === "string")),
     ]
-      .filter(isAllowedTruthFile)
+      .map((file) => file.trim())
+      .filter(Boolean)
       .filter((file, index, files) => files.indexOf(file) === index);
+    const requestedFiles = requestedTargets.filter(isAllowedTruthFile);
 
-    if (requestedFiles.length === 0) {
+    if (requestedTargets.length === 0 || requestedFiles.length === 0) {
       return c.json({ error: "Invalid truth file" }, 400);
     }
 
@@ -1820,6 +3154,17 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const bookDir = state.bookDir(id);
     const book = await state.loadBookConfig(id).catch(() => null);
     const assistMode = body.mode === "question" ? "question" : "proposal";
+    if (assistMode === "proposal" && requestedTargets.length !== 1) {
+      return c.json({ error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" }, 400);
+    }
+    const scopeError = validateTruthWriteScope({
+      scope: readTruthWriteScope(body.scope),
+      requestedFiles,
+      writeOperation: assistMode === "proposal",
+    });
+    if (scopeError) {
+      return c.json({ error: scopeError.error }, scopeError.status);
+    }
     const alignmentPrompt = buildTruthAlignmentPrompt(body.alignment, language);
     const alignmentPolicy = buildTruthAlignmentPolicy(body.alignment, language, assistMode);
     const conversation = (body.conversation ?? [])
@@ -2045,7 +3390,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       (result) => {
         broadcast("write:complete", { bookId: id, chapterNumber: result.chapterNumber, status: result.status, title: result.title, wordCount: result.wordCount });
       },
-      (e) => {
+      (e: unknown) => {
         broadcast("write:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
       },
     );
@@ -2064,7 +3409,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       (result) => {
         broadcast("draft:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount });
       },
-      (e) => {
+      (e: unknown) => {
         broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
       },
     );
@@ -2358,7 +3703,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       });
       schedulerInstance = scheduler;
       broadcast("daemon:started", {});
-      void scheduler.start().catch((e) => {
+      void scheduler.start().catch((e: unknown) => {
         const error = e instanceof Error ? e : new Error(String(e));
         if (schedulerInstance === scheduler) {
           scheduler.stop();
@@ -2747,7 +4092,17 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     if (!isAllowedTruthFile(file)) {
       return c.json({ error: "Invalid truth file" }, 400);
     }
-    const { content } = await c.req.json<{ content: string }>();
+    const body = await c.req.json<Partial<TruthSaveRequest>>()
+      .catch(() => ({} as Partial<TruthSaveRequest>));
+    const scopeError = validateTruthWriteScope({
+      scope: readTruthWriteScope(body.scope),
+      targetFile: file,
+      writeOperation: true,
+    });
+    if (scopeError) {
+      return c.json({ error: scopeError.error }, scopeError.status);
+    }
+    const content = typeof body.content === "string" ? body.content : "";
     const bookDir = state.bookDir(id);
     const { writeFile: writeFileFs, mkdir: mkdirFs } = await import("node:fs/promises");
     await mkdirFs(join(bookDir, "story"), { recursive: true });
@@ -3379,13 +4734,20 @@ export async function startStudioServer(
       }
     });
 
-    // SPA fallback — serve index.html for all non-API routes
-    const indexPath = joinPath(options.staticDir!, "index.html");
-    if (existsSync(indexPath)) {
-      const indexHtml = await readFileFs(indexPath, "utf-8");
+    const studioIndexPath = joinPath(options.staticDir!, "index.html");
+    const cockpitIndexPath = joinPath(options.staticDir!, "cockpit", "index.html");
+    if (existsSync(cockpitIndexPath)) {
+      const cockpitIndexHtml = await readFileFs(cockpitIndexPath, "utf-8");
+      app.get("/cockpit", (c) => c.html(cockpitIndexHtml));
+      app.get("/cockpit/", (c) => c.html(cockpitIndexHtml));
+    }
+
+    // SPA fallback — serve the Studio root shell for all other non-API routes.
+    if (existsSync(studioIndexPath)) {
+      const studioIndexHtml = await readFileFs(studioIndexPath, "utf-8");
       app.get("*", (c) => {
-        if (c.req.path.startsWith("/api/")) return c.notFound();
-        return c.html(indexHtml);
+        if (c.req.path === "/api" || c.req.path.startsWith("/api/")) return c.notFound();
+        return c.html(studioIndexHtml);
       });
     }
   }

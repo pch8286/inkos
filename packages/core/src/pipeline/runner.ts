@@ -94,6 +94,11 @@ export interface ChapterPipelineResult {
 }
 
 // Atomic operation results
+export interface BookInitProposal {
+  readonly book: BookConfig;
+  readonly foundation: ArchitectOutput;
+}
+
 export interface DraftResult {
   readonly chapterNumber: number;
   readonly title: string;
@@ -117,6 +122,7 @@ export interface ComposeChapterResult extends PlanChapterResult {
   readonly ruleStackPath: string;
   readonly tracePath: string;
 }
+
 
 export interface ReviseResult {
   readonly chapterNumber: number;
@@ -460,13 +466,8 @@ export class PipelineRunner {
     return radar.scan(effectiveMode, effectiveContext);
   }
 
-  async initBook(book: BookConfig): Promise<void> {
+  async proposeBook(book: BookConfig): Promise<BookInitProposal> {
     const architect = new ArchitectAgent(this.agentCtxFor("architect", book.id));
-    const bookDir = this.state.bookDir(book.id);
-    const stagingBookDir = join(
-      this.state.booksDir,
-      `.tmp-book-create-${book.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    );
     const stageLanguage = await this.resolveBookLanguage(book);
 
     this.logStage(stageLanguage, { zh: "生成基础设定", en: "generating foundation" });
@@ -484,6 +485,24 @@ export class PipelineRunner {
       language: resolvedLanguage,
       stageLanguage,
     });
+
+    return {
+      book,
+      foundation,
+    };
+  }
+
+  async applyBookProposal(proposal: BookInitProposal): Promise<void> {
+    const { book, foundation } = proposal;
+    const architect = new ArchitectAgent(this.agentCtxFor("architect", book.id));
+    const bookDir = this.state.bookDir(book.id);
+    const stagingBookDir = join(
+      this.state.booksDir,
+      `.tmp-book-create-${book.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    );
+    const stageLanguage = await this.resolveBookLanguage(book);
+    const { profile: gp } = await this.loadGenreProfile(book.genre);
+
     try {
       this.logStage(stageLanguage, { zh: "保存书籍配置", en: "saving book config" });
       await this.state.saveBookConfigAt(stagingBookDir, book);
@@ -520,6 +539,11 @@ export class PipelineRunner {
       await rm(stagingBookDir, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
+  }
+
+  async initBook(book: BookConfig): Promise<void> {
+    const proposal = await this.proposeBook(book);
+    await this.applyBookProposal(proposal);
   }
 
   /** Import external source material and generate fanfic_canon.md */

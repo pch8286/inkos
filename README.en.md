@@ -22,6 +22,9 @@ Open-source CLI AI Agent that autonomously writes, audits, and revises novels �
 
 **InkOS Studio is here!** — run `inkos studio` to launch a local web workbench. Book management, chapter review & editing, real-time writing progress, market radar, analytics, AI detection, style analysis, genre management, daemon control, truth file editing — everything the CLI does, now visual.
 
+**InkOS Cockpit is now a first-class entrypoint.** Run `inkos cockpit [bookId]` to open the conversation-first cockpit directly.
+It now opens the dedicated `/cockpit/` shell, while the older `/?page=cockpit` Studio route remains available as a compatibility path during migration.
+
 **Korean is the default writing language now.** `ko` is the default when no `--lang` is specified, and `--lang en` and `--lang zh` are also supported. English and Chinese genre profiles remain available.
 Current supported writing languages: `ko`, `zh`, `en`.  
 Korean platform presets: `naver-series`, `kakao-page`, `munpia`, `novelpia`.
@@ -406,6 +409,7 @@ inkos agent "Create a progression fantasy about a mage who can only use one spel
 | `inkos import chapters [id] --from <path>` | Import existing chapters for continuation (`--split`, `--resume-from`) |
 | `inkos analytics [id]` / `inkos stats [id]` | Book analytics (audit pass rate, top issues, chapter ranking, token usage) |
 | `inkos studio` | Start web workbench (`-p` for port, default 4567) |
+| `inkos cockpit [bookId]` | Start Studio directly in the conversation cockpit (`-p` for port, optional book deep link) |
 | `inkos up / down` | Start/stop daemon (`-q` quiet mode, auto-writes `inkos.log`) |
 
 `[id]` is auto-detected when the project has only one book. All commands support `--json` for structured output. `draft` / `write next` / `plan chapter` / `compose chapter` accept `--context` for steering, and `--words` overrides the target chapter size. `book create` supports `--brief <file>` to pass a creative brief — the Architect builds from your ideas instead of generating from scratch. `plan chapter` / `compose chapter` do not require a live LLM, so you can inspect governed inputs before finishing API setup.

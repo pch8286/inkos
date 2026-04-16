@@ -1,0 +1,109 @@
+import { describe, expect, it } from "vitest";
+import { deriveCockpitRailVisibility, deriveSetupPrimaryAction } from "./cockpit-ui-state";
+
+function setupPrimaryActionInput(
+  overrides: Partial<Parameters<typeof deriveSetupPrimaryAction>[0]> = {},
+): Parameters<typeof deriveSetupPrimaryAction>[0] {
+  return {
+    discussionState: "discussing",
+    draftDirty: false,
+    canPrepare: false,
+    sessionStatus: null,
+    hasFoundationPreview: false,
+    ...overrides,
+  };
+}
+
+describe("deriveCockpitRailVisibility", () => {
+  it("shows only the truth list in binder mode outside new setup", () => {
+    expect(deriveCockpitRailVisibility({
+      mode: "binder",
+      showNewSetup: false,
+    })).toEqual({
+      showTruthList: true,
+      showChapterList: false,
+    });
+  });
+
+  it("shows only the chapter list in draft mode outside new setup", () => {
+    expect(deriveCockpitRailVisibility({
+      mode: "draft",
+      showNewSetup: false,
+    })).toEqual({
+      showTruthList: false,
+      showChapterList: true,
+    });
+  });
+
+  it("hides both left-rail lists while new setup is open", () => {
+    expect(deriveCockpitRailVisibility({
+      mode: "discuss",
+      showNewSetup: true,
+    })).toEqual({
+      showTruthList: false,
+      showChapterList: false,
+    });
+  });
+});
+
+describe("deriveSetupPrimaryAction", () => {
+  it("returns discuss while the setup is still being discussed and cannot advance", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput())).toBe("discuss");
+  });
+
+  it("returns mark-ready when discussion has enough setup information", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      canPrepare: true,
+    }))).toBe("mark-ready");
+  });
+
+  it("returns mark-ready when a ready draft became dirty again", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      draftDirty: true,
+      canPrepare: true,
+      sessionStatus: "approved",
+      hasFoundationPreview: true,
+    }))).toBe("mark-ready");
+  });
+
+  it("returns prepare-proposal when setup is ready and no session exists yet", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      canPrepare: true,
+    }))).toBe("prepare-proposal");
+  });
+
+  it("returns approve when a proposal session is waiting for approval", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      canPrepare: true,
+      sessionStatus: "proposed",
+    }))).toBe("approve");
+  });
+
+  it("returns preview-foundation when an approved session has no foundation preview yet", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      canPrepare: true,
+      sessionStatus: "approved",
+    }))).toBe("preview-foundation");
+  });
+
+  it("returns create when an approved session already has a foundation preview", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      canPrepare: true,
+      sessionStatus: "approved",
+      hasFoundationPreview: true,
+    }))).toBe("create");
+  });
+
+  it("returns create while the create job is already in progress", () => {
+    expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
+      discussionState: "ready",
+      canPrepare: true,
+      sessionStatus: "creating",
+    }))).toBe("create");
+  });
+});
