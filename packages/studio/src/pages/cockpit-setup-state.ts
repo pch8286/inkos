@@ -111,10 +111,14 @@ export function canPrepareSetupProposal(input: {
   readonly discussionState: SetupDiscussionState;
   readonly title: string;
   readonly genre: string;
+  readonly brief: string;
+  readonly hasDiscussion: boolean;
 }): boolean {
   return input.discussionState === "ready"
     && normalizeText(input.title).length > 0
-    && normalizeText(input.genre).length > 0;
+    && normalizeText(input.genre).length > 0
+    && normalizeText(input.brief).length > 0
+    && input.hasDiscussion;
 }
 
 export function extractSetupProposalSections(markdown: string): SetupProposalSections {

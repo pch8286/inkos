@@ -98,7 +98,7 @@ function deriveCockpitStage(input: CockpitStatusStripInput): CockpitStatusStage 
 
 function resolveTargetLabel(input: CockpitStatusStripInput): string {
   if (input.showNewSetup) {
-    return "new-setup";
+    return input.selectedBookLabel.trim() || "—";
   }
 
   if (input.mode === "binder") {
@@ -106,7 +106,7 @@ function resolveTargetLabel(input: CockpitStatusStripInput): string {
   }
 
   if (input.mode === "draft") {
-    return input.selectedChapterLabel.trim() || "—";
+    return input.selectedBookLabel.trim() || "—";
   }
 
   return input.selectedBookLabel.trim() || "—";

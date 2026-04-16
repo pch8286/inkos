@@ -53,17 +53,37 @@ describe("deriveSetupDiscussionState", () => {
 });
 
 describe("canPrepareSetupProposal", () => {
-  it("requires explicit readiness and core setup inputs", () => {
+  it("requires explicit readiness, core setup inputs, and actual brief/discussion context", () => {
     expect(canPrepareSetupProposal({
       discussionState: "discussing",
       title: "Demo",
       genre: "modern-fantasy",
+      brief: "Political inheritance drama.",
+      hasDiscussion: true,
     })).toBe(false);
 
     expect(canPrepareSetupProposal({
       discussionState: "ready",
       title: "Demo",
       genre: "modern-fantasy",
+      brief: "",
+      hasDiscussion: true,
+    })).toBe(false);
+
+    expect(canPrepareSetupProposal({
+      discussionState: "ready",
+      title: "Demo",
+      genre: "modern-fantasy",
+      brief: "Political inheritance drama.",
+      hasDiscussion: false,
+    })).toBe(false);
+
+    expect(canPrepareSetupProposal({
+      discussionState: "ready",
+      title: "Demo",
+      genre: "modern-fantasy",
+      brief: "Political inheritance drama.",
+      hasDiscussion: true,
     })).toBe(true);
   });
 });

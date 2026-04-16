@@ -96,7 +96,7 @@ describe("deriveCockpitStatusStrip", () => {
       model: "gpt-5.4",
       reasoningEffort: "xhigh",
       mode: "discuss",
-      selectedBookLabel: "Book",
+      selectedBookLabel: "New Setup",
       selectedTruthLabel: "book_rules.md",
       selectedChapterLabel: "Chapter 12",
       showNewSetup: true,
@@ -109,7 +109,7 @@ describe("deriveCockpitStatusStrip", () => {
       setupDiscussionState: "discussing",
       setupSessionStatus: null,
       activityEntries: [],
-    }).targetLabel).toBe("new-setup");
+    }).targetLabel).toBe("New Setup");
   });
 
   it("prefers the selected truth file as the binder target", () => {
@@ -132,6 +132,28 @@ describe("deriveCockpitStatusStrip", () => {
       setupSessionStatus: null,
       activityEntries: [],
     }).targetLabel).toBe("book_rules.md");
+  });
+
+  it("uses the selected book as the draft target because draft actions queue work at book scope", () => {
+    expect(deriveCockpitStatusStrip({
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      reasoningEffort: "xhigh",
+      mode: "draft",
+      selectedBookLabel: "Book",
+      selectedTruthLabel: "book_rules.md",
+      selectedChapterLabel: "Chapter 12",
+      showNewSetup: false,
+      busy: false,
+      preparingSetupProposal: false,
+      approvingSetup: false,
+      preparingFoundationPreview: false,
+      creatingBook: false,
+      createJobs: [],
+      setupDiscussionState: "discussing",
+      setupSessionStatus: null,
+      activityEntries: [],
+    }).targetLabel).toBe("Book");
   });
 
   it("summarizes the latest meaningful activity message", () => {
