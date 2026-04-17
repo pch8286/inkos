@@ -1,7 +1,81 @@
 import { describe, expect, it } from "vitest";
 import { deriveCockpitStatusStrip } from "./cockpit-status-strip";
 
+const baseInput = {
+  provider: "codex-cli",
+  model: "gpt-5.4",
+  reasoningEffort: "xhigh" as const,
+  mode: "discuss" as const,
+  selectedBookLabel: "Book",
+  selectedTruthLabel: "book_rules.md",
+  selectedChapterLabel: "Chapter 12",
+  showNewSetup: false,
+  busy: false,
+  preparingSetupProposal: false,
+  approvingSetup: false,
+  preparingFoundationPreview: false,
+  creatingBook: false,
+  createJobs: [],
+  setupDiscussionState: "discussing" as const,
+  setupSessionStatus: null,
+  activityEntries: [],
+};
+
 describe("deriveCockpitStatusStrip", () => {
+  it("marks structured setup work as live determinate progress", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      preparingFoundationPreview: true,
+    })).toMatchObject({
+      stage: "previewing-foundation",
+      isLive: true,
+      liveStage: "previewing-foundation",
+      progressMode: "determinate",
+      progressValue: 65,
+      latestEventIsError: false,
+    });
+  });
+
+  it("uses indeterminate progress for generic busy work", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+    })).toMatchObject({
+      stage: "working",
+      isLive: true,
+      liveStage: "working",
+      progressMode: "indeterminate",
+      progressValue: null,
+    });
+  });
+
+  it("uses queued jobs as compact live detail when no local work is active", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: "queued", message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "queued",
+      isLive: true,
+      progressMode: "indeterminate",
+      liveDetail: "queued",
+    });
+  });
+
+  it("flags error events so the renderer can suppress live styling", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      activityEntries: [
+        { event: "draft:error", data: { error: "agent crashed" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      latestEvent: "draft:error · agent crashed",
+      latestEventIsError: true,
+    });
+  });
+
   it("shows preparing-proposal when setup proposal work is active", () => {
     expect(deriveCockpitStatusStrip({
       provider: "codex-cli",

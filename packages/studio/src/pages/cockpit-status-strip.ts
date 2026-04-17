@@ -44,6 +44,8 @@ export interface CockpitStatusStripInput {
   readonly activityEntries: ReadonlyArray<CockpitStatusActivityEntry>;
 }
 
+export type CockpitStatusProgressMode = "determinate" | "indeterminate" | "none";
+
 export interface CockpitStatusStrip {
   readonly providerLabel: string;
   readonly modelLabel: string;
@@ -51,16 +53,39 @@ export interface CockpitStatusStrip {
   readonly stage: CockpitStatusStage;
   readonly targetLabel: string;
   readonly latestEvent: string | null;
+  readonly latestEventIsError: boolean;
+  readonly isLive: boolean;
+  readonly liveStage: CockpitStatusStage | null;
+  readonly liveDetail: string | null;
+  readonly progressMode: CockpitStatusProgressMode;
+  readonly progressValue: number | null;
 }
 
 export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): CockpitStatusStrip {
+  const stage = deriveCockpitStage(input);
+  const targetLabel = resolveTargetLabel(input);
+  const latestEvent = summarizeLatestEvent(input.activityEntries);
+  const { mode: progressMode, value: progressValue } = deriveProgressMode(stage);
+  const isLive = stage !== "idle" && stage !== "ready";
+
   return {
     providerLabel: shortLabelForProvider(input.provider.trim()),
     modelLabel: compactModelLabel(input.provider, input.model),
     reasoningLabel: normalizeReasoningLabel(input.reasoningEffort),
-    stage: deriveCockpitStage(input),
-    targetLabel: resolveTargetLabel(input),
-    latestEvent: summarizeLatestEvent(input.activityEntries),
+    stage,
+    targetLabel,
+    latestEvent,
+    latestEventIsError: latestEventIsError(input.activityEntries, latestEvent),
+    isLive,
+    liveStage: isLive ? stage : null,
+    liveDetail: deriveLiveDetail({
+      isLive,
+      createJobs: input.createJobs,
+      latestEvent,
+      targetLabel,
+    }),
+    progressMode,
+    progressValue,
   };
 }
 
@@ -136,6 +161,78 @@ function deriveEntrySummary(entry: CockpitStatusActivityEntry): string | null {
   }
 
   return `${entry.event} · ${message}`;
+}
+
+function deriveProgressMode(stage: CockpitStatusStage): {
+  readonly mode: CockpitStatusProgressMode;
+  readonly value: number | null;
+} {
+  switch (stage) {
+    case "preparing-proposal":
+      return { mode: "determinate", value: 20 };
+    case "approving-proposal":
+      return { mode: "determinate", value: 40 };
+    case "previewing-foundation":
+      return { mode: "determinate", value: 65 };
+    case "creating":
+      return { mode: "determinate", value: 85 };
+    case "working":
+    case "queued":
+      return { mode: "indeterminate", value: null };
+    default:
+      return { mode: "none", value: null };
+  }
+}
+
+function deriveLiveDetail(input: {
+  readonly isLive: boolean;
+  readonly createJobs: ReadonlyArray<CockpitCreateJob>;
+  readonly latestEvent: string | null;
+  readonly targetLabel: string;
+}): string | null {
+  if (!input.isLive) {
+    return null;
+  }
+
+  const activeCreateJob = input.createJobs.find((job) => job.status === "creating");
+  const createJobStage = activeCreateJob?.stage ? trimText(activeCreateJob.stage) : null;
+  if (createJobStage) {
+    return createJobStage;
+  }
+
+  const createJobMessage = activeCreateJob?.message ? trimText(activeCreateJob.message) : null;
+  if (createJobMessage) {
+    return createJobMessage;
+  }
+
+  if (input.latestEvent) {
+    return input.latestEvent;
+  }
+
+  return input.targetLabel;
+}
+
+function latestEventIsError(
+  entries: ReadonlyArray<CockpitStatusActivityEntry>,
+  latestEvent: string | null,
+): boolean {
+  if (!latestEvent) {
+    return false;
+  }
+
+  const sortedEntries = [...entries].sort((a, b) => b.timestamp - a.timestamp);
+  for (const entry of sortedEntries) {
+    const summary = deriveEntrySummary(entry);
+    if (!summary) {
+      continue;
+    }
+
+    if (summary === latestEvent) {
+      return /\berror\b/i.test(entry.event);
+    }
+  }
+
+  return false;
 }
 
 function normalizeReasoningLabel(value: string | null | undefined): string | null {
