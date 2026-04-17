@@ -16,6 +16,7 @@ export interface CockpitRailVisibilityInput {
 export type SetupPrimaryAction =
   | "discuss"
   | "mark-ready"
+  | "auto-create"
   | "prepare-proposal"
   | "approve"
   | "preview-foundation"
@@ -68,21 +69,17 @@ export function deriveSetupPrimaryAction(input: SetupPrimaryActionInput): SetupP
     return "mark-ready";
   }
 
-  if (input.discussionState === "discussing") {
+  if (input.discussionState === "discussing" && input.sessionStatus === null) {
     return "discuss";
   }
 
-  switch (input.sessionStatus) {
-    case null:
-      return input.canPrepare ? "prepare-proposal" : "discuss";
-    case "proposed":
-      return "approve";
-    case "approved":
-      return input.hasFoundationPreview ? "create" : "preview-foundation";
-    default: {
-      const exhaustiveStatus: never = input.sessionStatus;
-      void exhaustiveStatus;
-      return "create";
-    }
+  if (input.sessionStatus === "proposed" || input.sessionStatus === "approved") {
+    return "auto-create";
   }
+
+  if (input.sessionStatus === null) {
+    return input.canPrepare ? "auto-create" : "discuss";
+  }
+
+  return "create";
 }

@@ -67,36 +67,36 @@ describe("deriveSetupPrimaryAction", () => {
     }))).toBe("mark-ready");
   });
 
-  it("returns prepare-proposal when setup is ready and no session exists yet", () => {
+  it("returns auto-create when setup is ready and no session exists yet", () => {
     expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
       discussionState: "ready",
       canPrepare: true,
-    }))).toBe("prepare-proposal");
+    }))).toBe("auto-create");
   });
 
-  it("returns approve when a proposal session is waiting for approval", () => {
+  it("returns auto-create when a proposal session is waiting for approval", () => {
     expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
       discussionState: "ready",
       canPrepare: true,
       sessionStatus: "proposed",
-    }))).toBe("approve");
+    }))).toBe("auto-create");
   });
 
-  it("returns preview-foundation when an approved session has no foundation preview yet", () => {
+  it("returns auto-create when an approved session has no foundation preview yet", () => {
     expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
       discussionState: "ready",
       canPrepare: true,
       sessionStatus: "approved",
-    }))).toBe("preview-foundation");
+    }))).toBe("auto-create");
   });
 
-  it("returns create when an approved session already has a foundation preview", () => {
+  it("returns auto-create when an approved session already has a foundation preview", () => {
     expect(deriveSetupPrimaryAction(setupPrimaryActionInput({
       discussionState: "ready",
       canPrepare: true,
       sessionStatus: "approved",
       hasFoundationPreview: true,
-    }))).toBe("create");
+    }))).toBe("auto-create");
   });
 
   it("returns create while the create job is already in progress", () => {

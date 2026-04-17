@@ -39,6 +39,20 @@ describe("parseComposerCommand", () => {
     });
   });
 
+  it("parses /create without requiring extra text", () => {
+    expect(parseComposerCommand("/create")).toEqual({
+      action: "create",
+      text: "",
+    });
+  });
+
+  it("parses /create payloads when the user adds optional context", () => {
+    expect(parseComposerCommand("/create use the current setup")).toEqual({
+      action: "create",
+      text: "use the current setup",
+    });
+  });
+
   it("returns null for unknown commands", () => {
     expect(parseComposerCommand("/unknown hello")).toBeNull();
   });

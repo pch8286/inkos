@@ -2,7 +2,7 @@ import type { TFunction } from "../hooks/use-i18n";
 import { makeTruthPreview } from "../shared/truth-assistant";
 import type { CockpitMode } from "./cockpit-ui-state";
 
-export type ComposerAction = "discuss" | "ask" | "propose" | "draft" | "write-next";
+export type ComposerAction = "discuss" | "ask" | "propose" | "draft" | "write-next" | "create";
 
 export interface MessageForTranscript {
   readonly role: "user" | "assistant" | "system" | string;
@@ -36,6 +36,9 @@ export function parseComposerCommand(input: string): { action: ComposerAction; t
     case "/write":
     case "/write-next": {
       return { action: "write-next", text };
+    }
+    case "/create": {
+      return { action: "create", text };
     }
     case "/discuss": {
       return { action: "discuss", text };
