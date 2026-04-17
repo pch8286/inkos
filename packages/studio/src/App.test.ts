@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLegacyCockpitRedirectUrl,
   buildRouteSearch,
   clampAssistantPaneWidth,
   deriveActiveBookId,
@@ -25,6 +26,17 @@ describe("route search helpers", () => {
   it("serializes cockpit routes into query strings", () => {
     expect(buildRouteSearch({ page: "cockpit", bookId: "alpha" })).toBe("?page=cockpit&bookId=alpha");
     expect(buildRouteSearch({ page: "dashboard" })).toBe("");
+  });
+});
+
+describe("legacy cockpit redirect", () => {
+  it("builds a standalone cockpit redirect for the legacy cockpit route", () => {
+    expect(buildLegacyCockpitRedirectUrl("/", { page: "cockpit", bookId: "alpha" }))
+      .toBe("/cockpit/?bookId=alpha");
+  });
+
+  it("returns null for normal studio routes", () => {
+    expect(buildLegacyCockpitRedirectUrl("/tenant-a/", { page: "dashboard" })).toBeNull();
   });
 });
 

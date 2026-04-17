@@ -16,7 +16,6 @@ import { StyleManager } from "./pages/StyleManager";
 import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
-import { Cockpit } from "./pages/Cockpit";
 import { LanguageSelector } from "./pages/LanguageSelector";
 import { useSSE, type SSEMessage } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
@@ -28,6 +27,7 @@ import { buildActivityFeedEntries } from "./shared/activity-feed";
 import { compactModelLabel, defaultModelForProvider, labelForProvider, shortLabelForProvider } from "./shared/llm";
 import type { TruthAssistantContext } from "./shared/truth-assistant";
 import { getBrowserStorage, readBrowserJson, writeBrowserJson } from "./shared/browser-storage";
+import { buildStandaloneCockpitUrl } from "./shared/cockpit-entrypoint";
 
 export type Route =
   | { page: "dashboard" }
@@ -45,6 +45,9 @@ export type Route =
   | { page: "import" }
   | { page: "radar" }
   | { page: "doctor" };
+
+type LegacyCockpitRoute = Extract<Route, { page: "cockpit" }>;
+type StudioShellRoute = Exclude<Route, LegacyCockpitRoute>;
 
 function parsePositiveInteger(value: string | null): number | null {
   if (!value || !/^\d+$/.test(value)) return null;
@@ -164,6 +167,12 @@ export function buildRouteSearch(route: Route): string {
   return searchString ? `?${searchString}` : "";
 }
 
+export function buildLegacyCockpitRedirectUrl(pathname: string, route: Route): string | null {
+  return route.page === "cockpit"
+    ? buildStandaloneCockpitUrl(pathname, route.bookId ? { bookId: route.bookId } : undefined)
+    : null;
+}
+
 export function deriveActiveBookId(route: Route): string | undefined {
   return route.page === "book"
     || route.page === "chapter"
@@ -259,6 +268,40 @@ export function App() {
     }
     return parseRouteFromSearch(window.location.search) ?? { page: "dashboard" };
   });
+
+  if (route.page === "cockpit") {
+    return <LegacyCockpitRedirect route={route} />;
+  }
+
+  return <AppShell route={route} setRoute={setRoute} />;
+}
+
+function LegacyCockpitRedirect({ route }: { readonly route: LegacyCockpitRoute }) {
+  const redirectUrl = buildLegacyCockpitRedirectUrl(
+    typeof window === "undefined" ? "/" : window.location.pathname,
+    route,
+  ) ?? "/cockpit/";
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.location.replace(redirectUrl);
+    }
+  }, [redirectUrl]);
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-border/30 border-t-ring rounded-full animate-spin" />
+    </div>
+  );
+}
+
+function AppShell({
+  route,
+  setRoute,
+}: {
+  readonly route: StudioShellRoute;
+  readonly setRoute: (route: Route) => void;
+}) {
   const sse = useSSE();
   const { theme, setTheme } = useTheme();
   const { t, lang } = useI18n();
@@ -496,9 +539,14 @@ export function App() {
       setSidebarOpen(false);
     },
     toCockpit: (bookId?: string) => {
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          buildStandaloneCockpitUrl(window.location.pathname, bookId ? { bookId } : undefined),
+        );
+        return;
+      }
+
       setRoute(bookId ? { page: "cockpit", bookId } : { page: "cockpit" });
-      setChatOpen(false);
-      setSidebarOpen(false);
     },
     toChapter: (bookId: string, chapterNumber: number) => {
       setRoute({ page: "chapter", bookId, chapterNumber });
@@ -547,23 +595,16 @@ export function App() {
   };
 
   const activeBookId = deriveActiveBookId(route);
-  const activePage =
-    route.page === "cockpit"
-      ? "cockpit"
-      : activeBookId
-        ? `book:${activeBookId}`
-        : route.page;
+  const activePage = activeBookId ? `book:${activeBookId}` : route.page;
   const assistantPaneWidth = clampAssistantPaneWidth(assistantPaneWidths[assistantPaneMode], {
     truthMode: assistantPaneMode === "truth",
     viewportWidth: typeof window !== "undefined" ? window.innerWidth : 1440,
   });
-  const contentWidthClass = route.page === "cockpit"
-    ? "max-w-none"
-    : route.page === "config"
-      ? "max-w-6xl"
-      : route.page === "truth"
-        ? "max-w-7xl"
-        : "max-w-5xl";
+  const contentWidthClass = route.page === "config"
+    ? "max-w-6xl"
+    : route.page === "truth"
+      ? "max-w-7xl"
+      : "max-w-5xl";
   const activeLlm = deriveActiveLlm(bootstrap ?? undefined, project ?? undefined);
   const activeLlmAuthMissing = activeLlm
     ? activeLlm.provider === "gemini-cli"
@@ -763,22 +804,20 @@ export function App() {
             </div>
 
             {/* Chat Panel Toggle */}
-            {route.page !== "cockpit" && (
-              <button
-                onClick={() => setChatOpen((prev) => !prev)}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all studio-icon-btn ${
-                  chatOpen
-                    ? "active"
-                    : "hover:scale-[1.02]"
-                }`}
-                title="Toggle AI Assistant"
-                aria-label="Toggle AI Assistant"
-                aria-controls="inkos-assistant-panel"
-                aria-expanded={chatOpen}
-              >
-                <MessageSquare size={16} />
-              </button>
-            )}
+            <button
+              onClick={() => setChatOpen((prev) => !prev)}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all studio-icon-btn ${
+                chatOpen
+                  ? "active"
+                  : "hover:scale-[1.02]"
+              }`}
+              title="Toggle AI Assistant"
+              aria-label="Toggle AI Assistant"
+              aria-controls="inkos-assistant-panel"
+              aria-expanded={chatOpen}
+            >
+              <MessageSquare size={16} />
+            </button>
           </div>
         </header>
 
@@ -786,7 +825,6 @@ export function App() {
         <main className="flex-1 overflow-y-auto scroll-smooth">
           <div className={`${contentWidthClass} mx-auto px-4 py-8 sm:px-6 sm:py-10 md:px-12 lg:py-16 fade-in`}>
             {route.page === "dashboard" && <Dashboard nav={nav} sse={sse} theme={theme} t={t} />}
-            {route.page === "cockpit" && <Cockpit nav={nav} theme={theme} t={t} sse={sse} initialBookId={route.bookId} />}
             {route.page === "book" && <BookDetail bookId={route.bookId} nav={nav} theme={theme} t={t} sse={sse} />}
             {route.page === "book-create" && <BookCreate nav={nav} theme={theme} t={t} />}
             {route.page === "chapter" && <ChapterReader bookId={route.bookId} chapterNumber={route.chapterNumber} nav={nav} theme={theme} t={t} />}
@@ -813,21 +851,19 @@ export function App() {
       </div>
 
       {/* Right Chat Panel */}
-      {route.page !== "cockpit" && (
-        <ChatPanel
-          open={chatOpen}
-          onClose={() => setChatOpen(false)}
-          onOpenConfig={nav.toConfig}
-          t={t}
-          sse={sse}
-          activeBookId={activeBookId}
-          truthContext={route.page === "truth" ? truthAssistantContext : null}
-          width={assistantPaneWidth}
-          isResizing={assistantResizing}
-          onResizeStart={handleAssistantResizeStart}
-          onResizeNudge={handleAssistantResizeNudge}
-        />
-      )}
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onOpenConfig={nav.toConfig}
+        t={t}
+        sse={sse}
+        activeBookId={activeBookId}
+        truthContext={route.page === "truth" ? truthAssistantContext : null}
+        width={assistantPaneWidth}
+        isResizing={assistantResizing}
+        onResizeStart={handleAssistantResizeStart}
+        onResizeNudge={handleAssistantResizeNudge}
+      />
     </div>
   );
 }
