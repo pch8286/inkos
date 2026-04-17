@@ -73,6 +73,21 @@ interface UseCockpitSetupSessionInput {
   readonly setError: (error: string | null) => void;
 }
 
+export function buildHiddenSetupResetState(projectLanguage: "ko" | "zh" | "en") {
+  return {
+    setupTitle: "",
+    setupGenre: "",
+    setupPlatform: "",
+    setupWords: defaultChapterWordsForLanguage(projectLanguage),
+    setupTargetChapters: "200",
+    setupBrief: "",
+    selectedFoundationPreviewKey: "storyBible" as const,
+    autoCreatePhase: null as SetupAutoCreatePhase | null,
+    autoCreateFailedPhase: null as SetupAutoCreatePhase | null,
+    pendingSetupBookId: "",
+  };
+}
+
 export async function runSetupMutationWithBestEffortFollowUp<Result>(input: {
   readonly mutate: () => Promise<Result>;
   readonly apply: (result: Result) => void;
@@ -283,17 +298,25 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
 
   useEffect(() => {
     if (!input.showNewSetup) {
+      const resetState = buildHiddenSetupResetState(input.projectLanguage);
       setSetupSession(null);
-      setPendingSetupBookId("");
+      setSetupTitle(resetState.setupTitle);
+      setSetupGenre(resetState.setupGenre);
+      setSetupPlatform(resetState.setupPlatform);
+      setSetupWords(resetState.setupWords);
+      setSetupTargetChapters(resetState.setupTargetChapters);
+      setSetupBrief(resetState.setupBrief);
+      setPendingSetupBookId(resetState.pendingSetupBookId);
+      setSelectedFoundationPreviewKey(resetState.selectedFoundationPreviewKey);
       setReadySetupFingerprint(null);
       setCommittedSetupFingerprint(null);
-      setAutoCreatePhase(null);
-      setAutoCreateFailedPhase(null);
+      setAutoCreatePhase(resetState.autoCreatePhase);
+      setAutoCreateFailedPhase(resetState.autoCreateFailedPhase);
       if (setupRecoveryError) {
         setSetupRecoveryError(null);
       }
     }
-  }, [input.showNewSetup, setupRecoveryError]);
+  }, [input.projectLanguage, input.showNewSetup, setupRecoveryError]);
 
   useEffect(() => {
     if (!foundationPreviewTabs.length) {
