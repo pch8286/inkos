@@ -6,6 +6,7 @@ import { useSSE } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
+import { buildStudioEntrypointUrl } from "./shared/cockpit-entrypoint";
 import type { BootstrapSummary } from "./shared/contracts";
 
 interface Nav {
@@ -13,19 +14,6 @@ interface Nav {
   readonly toBook: (bookId: string) => void;
   readonly toTruth: (bookId: string) => void;
   readonly toBookCreate?: () => void;
-}
-
-export function buildCockpitEntrypointUrl(
-  pathname: string,
-  params?: Readonly<Record<string, string>>,
-): string {
-  const trimmedPath = pathname.replace(/\/+$/u, "") || "/";
-  const rootPath = trimmedPath.endsWith("/cockpit")
-    ? trimmedPath.slice(0, -"/cockpit".length)
-    : trimmedPath;
-  const normalizedPath = rootPath === "/" ? "/" : `${rootPath}/`;
-  const query = new URLSearchParams(params).toString();
-  return query ? `${normalizedPath}?${query}` : normalizedPath;
 }
 
 function resolveBookIdFromSearch(search: string): string | undefined {
@@ -44,7 +32,7 @@ function navigateToStudioPage(
   if (options?.bookId) {
     query.bookId = options.bookId;
   }
-  window.location.assign(buildCockpitEntrypointUrl(window.location.pathname, query));
+  window.location.assign(buildStudioEntrypointUrl(window.location.pathname, query));
 }
 
 export function CockpitStandaloneApp() {
