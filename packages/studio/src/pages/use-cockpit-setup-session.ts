@@ -73,6 +73,19 @@ interface UseCockpitSetupSessionInput {
   readonly setError: (error: string | null) => void;
 }
 
+export async function runSetupMutationWithBestEffortFollowUp<Result>(input: {
+  readonly mutate: () => Promise<Result>;
+  readonly apply: (result: Result) => void;
+  readonly followUp?: () => Promise<unknown>;
+}): Promise<Result> {
+  const result = await input.mutate();
+  input.apply(result);
+  if (input.followUp) {
+    void input.followUp().catch(() => undefined);
+  }
+  return result;
+}
+
 export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   const [setupSession, setSetupSession] = useState<BookSetupSessionPayload | null>(null);
   const [setupTitle, setSetupTitle] = useState("");
@@ -341,25 +354,28 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [input, setupLlmForm.model, setupLlmForm.reasoningEffort]);
 
   const requestSetupProposal = useCallback(async () => {
-    const result = await postApi<BookSetupSessionPayload>("/book-setup/propose", {
-      sessionId: setupSession?.id,
-      expectedRevision: setupSession?.revision,
-      title: setupTitle.trim(),
-      genre: setupGenre,
-      language: input.projectLanguage,
-      platform: setupPlatform,
-      chapterWordCount: parseInt(setupWords, 10),
-      targetChapters: parseInt(setupTargetChapters, 10),
-      brief: setupBrief,
-      conversation: input.setupConversation,
+    return runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => postApi<BookSetupSessionPayload>("/book-setup/propose", {
+        sessionId: setupSession?.id,
+        expectedRevision: setupSession?.revision,
+        title: setupTitle.trim(),
+        genre: setupGenre,
+        language: input.projectLanguage,
+        platform: setupPlatform,
+        chapterWordCount: parseInt(setupWords, 10),
+        targetChapters: parseInt(setupTargetChapters, 10),
+        brief: setupBrief,
+        conversation: input.setupConversation,
+      }),
+      apply: (result) => {
+        setSetupSession(result);
+        syncSetupDraftSnapshot(currentSetupDraftFingerprint);
+        setSelectedFoundationPreviewKey("storyBible");
+        setPendingSetupBookId("");
+        focusSetupInspector();
+      },
+      followUp: loadRecentSetupSessions,
     });
-    setSetupSession(result);
-    syncSetupDraftSnapshot(currentSetupDraftFingerprint);
-    setSelectedFoundationPreviewKey("storyBible");
-    setPendingSetupBookId("");
-    focusSetupInspector();
-    await loadRecentSetupSessions();
-    return result;
   }, [
     currentSetupDraftFingerprint,
     focusSetupInspector,
@@ -376,51 +392,72 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   ]);
 
   const requestSetupApproval = useCallback(async (session: BookSetupSessionPayload) => {
-    const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
-    const result = await postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/approve`, request);
-    setSetupSession(result);
-    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-    focusSetupInspector();
-    await loadRecentSetupSessions();
-    return result;
+    return runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => {
+        const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
+        return postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/approve`, request);
+      },
+      apply: (result) => {
+        setSetupSession(result);
+        setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+        focusSetupInspector();
+      },
+      followUp: loadRecentSetupSessions,
+    });
   }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
 
   const requestFoundationPreview = useCallback(async (session: BookSetupSessionPayload) => {
-    const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
-    const result = await postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/foundation-preview`, request);
-    setSetupSession(result);
-    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-    setSelectedFoundationPreviewKey("storyBible");
-    focusSetupInspector();
-    await loadRecentSetupSessions();
-    return result;
+    return runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => {
+        const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
+        return postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/foundation-preview`, request);
+      },
+      apply: (result) => {
+        setSetupSession(result);
+        setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+        setSelectedFoundationPreviewKey("storyBible");
+        focusSetupInspector();
+      },
+      followUp: loadRecentSetupSessions,
+    });
   }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
 
   const requestCreateSetup = useCallback(async (session: BookSetupSessionPayload) => {
-    const request: BookSetupCreateRequest = {
-      expectedRevision: session.revision,
-      expectedPreviewDigest: session.foundationPreview!.digest,
-    };
-    const fingerprint = buildSetupCreateRequestFingerprint({
-      sessionId: session.id,
-      expectedRevision: request.expectedRevision,
-      expectedPreviewDigest: request.expectedPreviewDigest,
-    });
-    const currentAttempt = setupCreateAttemptRef.current;
-    const idempotencyKey = currentAttempt?.fingerprint === fingerprint
-      ? currentAttempt.key
-      : createIdempotencyKey();
-    setupCreateAttemptRef.current = { fingerprint, key: idempotencyKey };
+    return runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => {
+        const request: BookSetupCreateRequest = {
+          expectedRevision: session.revision,
+          expectedPreviewDigest: session.foundationPreview!.digest,
+        };
+        const fingerprint = buildSetupCreateRequestFingerprint({
+          sessionId: session.id,
+          expectedRevision: request.expectedRevision,
+          expectedPreviewDigest: request.expectedPreviewDigest,
+        });
+        const currentAttempt = setupCreateAttemptRef.current;
+        const idempotencyKey = currentAttempt?.fingerprint === fingerprint
+          ? currentAttempt.key
+          : createIdempotencyKey();
+        setupCreateAttemptRef.current = { fingerprint, key: idempotencyKey };
 
-    const result = await postApi<{ bookId: string; session: BookSetupSessionPayload }>(`/book-setup/${session.id}/create`, request, {
-      headers: { "Idempotency-Key": idempotencyKey },
+        return postApi<{ bookId: string; session: BookSetupSessionPayload }>(`/book-setup/${session.id}/create`, request, {
+          headers: { "Idempotency-Key": idempotencyKey },
+        });
+      },
+      apply: (result) => {
+        setSetupSession(result.session);
+        setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+        setPendingSetupBookId(result.bookId);
+        focusSetupInspector();
+      },
+      followUp: async () => {
+        await Promise.allSettled([
+          Promise.resolve(input.refetchBooks()),
+          Promise.resolve(input.refetchCreateStatus()),
+          loadRecentSetupSessions(),
+        ]);
+      },
     });
-    setSetupSession(result.session);
-    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-    setPendingSetupBookId(result.bookId);
-    focusSetupInspector();
-    await Promise.all([input.refetchBooks(), input.refetchCreateStatus(), loadRecentSetupSessions()]);
-    return result;
   }, [currentSetupDraftFingerprint, focusSetupInspector, input, loadRecentSetupSessions]);
 
   const handlePrepareSetupProposal = useCallback(async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BookSetupSessionPayload } from "../shared/contracts";
 import { runSetupAutoCreate } from "./cockpit-setup-autocreate";
+import { runSetupMutationWithBestEffortFollowUp } from "./use-cockpit-setup-session";
 
 function makeSession(overrides: Partial<BookSetupSessionPayload>): BookSetupSessionPayload {
   return {
@@ -27,6 +28,24 @@ function makeSession(overrides: Partial<BookSetupSessionPayload>): BookSetupSess
 }
 
 describe("runSetupAutoCreate", () => {
+  it("returns the mutation result even if best-effort follow-up refresh fails", async () => {
+    const approved = makeSession({ status: "approved", revision: 2 });
+    const apply = vi.fn();
+    const followUp = vi.fn(async () => {
+      throw new Error("refresh failed");
+    });
+
+    await expect(runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => approved,
+      apply,
+      followUp,
+    })).resolves.toBe(approved);
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(approved);
+    expect(followUp).toHaveBeenCalledTimes(1);
+  });
+
   it("runs proposal, approval, preview, and create in order for a fresh setup", async () => {
     const calls: string[] = [];
     const proposed = makeSession({ status: "proposed", revision: 1 });
@@ -91,6 +110,9 @@ describe("runSetupAutoCreate", () => {
         pendingHooks: "# pending_hooks",
       },
     });
+    const prepareProposal = vi.fn(async () => previewed);
+    const approveProposal = vi.fn(async () => previewed);
+    const prepareFoundationPreview = vi.fn(async () => previewed);
     const createBook = vi.fn(async () => ({
       bookId: "demo-book",
       session: makeSession({
@@ -103,12 +125,15 @@ describe("runSetupAutoCreate", () => {
     const result = await runSetupAutoCreate({
       currentSession: previewed,
       needsFreshProposal: false,
-      prepareProposal: async () => previewed,
-      approveProposal: async () => previewed,
-      prepareFoundationPreview: async () => previewed,
+      prepareProposal,
+      approveProposal,
+      prepareFoundationPreview,
       createBook,
     });
 
+    expect(prepareProposal).not.toHaveBeenCalled();
+    expect(approveProposal).not.toHaveBeenCalled();
+    expect(prepareFoundationPreview).not.toHaveBeenCalled();
     expect(createBook).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: "success",
