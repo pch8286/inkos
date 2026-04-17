@@ -93,6 +93,20 @@ export interface SetupMutationRequestState {
   readonly visible: boolean;
 }
 
+export function advanceSetupMutationRequestState(
+  current: SetupMutationRequestState,
+  input: {
+    readonly visible: boolean;
+    readonly invalidate?: boolean;
+  },
+): SetupMutationRequestState {
+  const shouldInvalidate = Boolean(input.invalidate) || (current.visible && !input.visible);
+  return {
+    version: shouldInvalidate ? current.version + 1 : current.version,
+    visible: input.visible,
+  };
+}
+
 const staleSetupMutation = Symbol("stale-setup-mutation");
 
 export function isCurrentSetupMutationRequest(
@@ -166,13 +180,9 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   const previousShowNewSetupRef = useRef(input.showNewSetup);
 
   if (previousShowNewSetupRef.current !== input.showNewSetup) {
-    const version = previousShowNewSetupRef.current && !input.showNewSetup
-      ? setupMutationRequestRef.current.version + 1
-      : setupMutationRequestRef.current.version;
-    setupMutationRequestRef.current = {
-      version,
+    setupMutationRequestRef.current = advanceSetupMutationRequestState(setupMutationRequestRef.current, {
       visible: input.showNewSetup,
-    };
+    });
     previousShowNewSetupRef.current = input.showNewSetup;
   }
 
@@ -285,6 +295,10 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [input]);
 
   const recoverLatestSetupSession = useCallback(async (sessionId: string, message: string) => {
+    setupMutationRequestRef.current = advanceSetupMutationRequestState(setupMutationRequestRef.current, {
+      visible: input.showNewSetup,
+      invalidate: true,
+    });
     try {
       const latest = await fetchJson<BookSetupSessionPayload>(`/book-setup/${sessionId}`);
       hydrateSetupSessionState(latest);
@@ -753,6 +767,10 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setResumingSetupSessionId(summary.id);
+    setupMutationRequestRef.current = advanceSetupMutationRequestState(setupMutationRequestRef.current, {
+      visible: input.showNewSetup,
+      invalidate: true,
+    });
     setAutoCreatePhase(null);
     setAutoCreateFailedPhase(null);
     input.setError(null);

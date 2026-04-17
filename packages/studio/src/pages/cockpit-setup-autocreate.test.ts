@@ -142,6 +142,68 @@ describe("runSetupAutoCreate", () => {
     });
   });
 
+  it("restarts from proposal when a fresh proposal is required even if the old session is already creating", async () => {
+    const calls: string[] = [];
+    const creating = makeSession({
+      status: "creating",
+      revision: 4,
+      foundationPreview: {
+        createdAt: "2026-04-17T00:00:01.000Z",
+        revision: 4,
+        digest: "sha256:queued",
+        storyBible: "# story_bible",
+        volumeOutline: "# volume_outline",
+        bookRules: "# book_rules",
+        currentState: "# current_state",
+        pendingHooks: "# pending_hooks",
+      },
+    });
+    const proposed = makeSession({ status: "proposed", revision: 5 });
+    const approved = makeSession({ status: "approved", revision: 6 });
+    const previewed = makeSession({
+      status: "approved",
+      revision: 7,
+      foundationPreview: {
+        createdAt: "2026-04-17T00:00:02.000Z",
+        revision: 7,
+        digest: "sha256:fresh",
+        storyBible: "# new_story_bible",
+        volumeOutline: "# new_volume_outline",
+        bookRules: "# new_book_rules",
+        currentState: "# new_current_state",
+        pendingHooks: "# new_pending_hooks",
+      },
+    });
+
+    const result = await runSetupAutoCreate({
+      currentSession: creating,
+      needsFreshProposal: true,
+      prepareProposal: async () => {
+        calls.push("proposal");
+        return proposed;
+      },
+      approveProposal: async () => {
+        calls.push("approval");
+        return approved;
+      },
+      prepareFoundationPreview: async () => {
+        calls.push("preview");
+        return previewed;
+      },
+      createBook: async () => {
+        calls.push("create");
+        return { bookId: "fresh-book", session: makeSession({ status: "creating", revision: 8, foundationPreview: previewed.foundationPreview }) };
+      },
+    });
+
+    expect(calls).toEqual(["proposal", "approval", "preview", "create"]);
+    expect(result).toMatchObject({
+      status: "success",
+      bookId: "fresh-book",
+      session: { status: "creating", revision: 8 },
+    });
+  });
+
   it("returns the failing phase and last successful session when a step throws", async () => {
     const proposed = makeSession({ status: "proposed", revision: 1 });
 
@@ -160,6 +222,40 @@ describe("runSetupAutoCreate", () => {
       status: "failure",
       phase: "approving-proposal",
       session: { revision: 1, status: "proposed" },
+    });
+  });
+
+  it("does not preserve a stale previous session when a fresh proposal attempt fails immediately", async () => {
+    const previous = makeSession({
+      status: "approved",
+      revision: 3,
+      foundationPreview: {
+        createdAt: "2026-04-17T00:00:01.000Z",
+        revision: 3,
+        digest: "sha256:previous",
+        storyBible: "# story_bible",
+        volumeOutline: "# volume_outline",
+        bookRules: "# book_rules",
+        currentState: "# current_state",
+        pendingHooks: "# pending_hooks",
+      },
+    });
+
+    const result = await runSetupAutoCreate({
+      currentSession: previous,
+      needsFreshProposal: true,
+      prepareProposal: async () => {
+        throw new Error("proposal failed");
+      },
+      approveProposal: async () => previous,
+      prepareFoundationPreview: async () => previous,
+      createBook: async () => ({ bookId: "demo-book", session: previous }),
+    });
+
+    expect(result).toMatchObject({
+      status: "failure",
+      phase: "preparing-proposal",
+      session: null,
     });
   });
 });

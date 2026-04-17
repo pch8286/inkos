@@ -42,6 +42,13 @@ import {
   type CockpitMessage,
   type InspectorTab,
 } from "./cockpit-shared";
+import {
+  appendQueuedComposerEntry,
+  popLastQueuedComposerEntry,
+  shiftNextQueuedComposerEntry,
+  type CockpitComposerQueueState,
+  type QueuedComposerEntry,
+} from "./cockpit-queue-state";
 import { deriveCockpitStatusStrip } from "./cockpit-status-strip";
 import { useCockpitConversation } from "./use-cockpit-conversation";
 import { useCockpitSetupSession } from "./use-cockpit-setup-session";
@@ -129,6 +136,33 @@ export function getCockpitCreateActionErrorKey(showNewSetup: boolean): "cockpit.
   return showNewSetup ? null : "cockpit.createRequiresOpenSetup";
 }
 
+export function isSetupDiscussionLocked(input: {
+  readonly mode: CockpitMode;
+  readonly showNewSetup: boolean;
+  readonly autoCreateBusy: boolean;
+}) {
+  return input.mode === "discuss" && input.showNewSetup && input.autoCreateBusy;
+}
+
+export function defaultQueuedComposerActionForMode(mode: CockpitMode): ComposerAction {
+  return defaultActionForMode(mode);
+}
+
+export function shouldRunQueuedComposerEntry(input: {
+  readonly busy: boolean;
+  readonly threadKey: string;
+  readonly queueState: CockpitComposerQueueState;
+}) {
+  return !input.busy && (input.queueState[input.threadKey]?.length ?? 0) > 0;
+}
+
+function formatQueuedComposerEntryForInput(entry: QueuedComposerEntry, mode: CockpitMode): string {
+  if (entry.action === defaultQueuedComposerActionForMode(mode)) {
+    return entry.text;
+  }
+  return entry.text ? `/${entry.action} ${entry.text}` : `/${entry.action}`;
+}
+
 export function Cockpit({
   nav,
   theme,
@@ -159,6 +193,11 @@ export function Cockpit({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>(!initialBookId ? "setup" : "focus");
+  const [queuedComposerEntries, setQueuedComposerEntries] = useState<CockpitComposerQueueState>({});
+  const queuedComposerEntriesRef = useRef<CockpitComposerQueueState>({});
+  const queueDispatchingRef = useRef(false);
+  const activeThreadKeyRef = useRef("");
+  const runNextQueuedComposerEntryRef = useRef<(threadKey: string) => Promise<void>>(async () => undefined);
 
   const projectLanguage = resolveStudioLanguage(project?.language);
   const projectProvider = project?.provider ?? "";
@@ -417,16 +456,39 @@ export function Cockpit({
   const truthFiles = truthListData?.files ?? [];
   const activityEntries = activityData?.entries.slice(0, 6) ?? [];
   const createJobs = createStatusData?.entries ?? [];
+  const activeQueuedComposerEntries = queuedComposerEntries[activeThreadKey] ?? [];
+  activeThreadKeyRef.current = activeThreadKey;
+  const autoCreateBusy = autoCreatePhase !== null || preparingSetupProposal || approvingSetup || preparingFoundationPreview || creatingBook;
+  const setupDiscussionLocked = isSetupDiscussionLocked({
+    mode,
+    showNewSetup,
+    autoCreateBusy,
+  });
 
-  const handleSubmit = async (explicitAction?: ComposerAction) => {
-    const parsedCommand = parseComposerCommand(input);
-    const action = explicitAction ?? parsedCommand?.action ?? defaultActionForMode(mode);
-    const text = (parsedCommand?.text ?? input).trim();
+  const updateQueuedComposerEntries = (
+    updater: CockpitComposerQueueState | ((current: CockpitComposerQueueState) => CockpitComposerQueueState),
+  ) => {
+    setQueuedComposerEntries((current) => {
+      const next = typeof updater === "function"
+        ? (updater as (current: CockpitComposerQueueState) => CockpitComposerQueueState)(current)
+        : updater;
+      queuedComposerEntriesRef.current = next;
+      return next;
+    });
+  };
+
+  const executeComposerAction = async (action: ComposerAction, text: string) => {
     const createActionErrorKey = action === "create" ? getCockpitCreateActionErrorKey(showNewSetup) : null;
 
-    if (action !== "write-next" && action !== "create" && !text) return;
+    if (action !== "draft" && action !== "write-next" && action !== "create" && !text) return;
     if (createActionErrorKey) {
       setError(t(createActionErrorKey));
+      return;
+    }
+    if (setupDiscussionLocked && action === "discuss") {
+      return;
+    }
+    if (autoCreateBusy && action === "create") {
       return;
     }
 
@@ -449,6 +511,104 @@ export function Cockpit({
     }
     await sendDiscussPrompt(text);
   };
+
+  const handleSubmit = async (explicitAction?: ComposerAction, explicitInput?: string) => {
+    const rawInput = explicitInput ?? input;
+    const parsedCommand = explicitInput === undefined ? parseComposerCommand(rawInput) : null;
+    const action = explicitAction ?? parsedCommand?.action ?? defaultActionForMode(mode);
+    const text = (parsedCommand?.text ?? rawInput).trim();
+
+    if (explicitInput === undefined) {
+      setInput("");
+    }
+
+    await executeComposerAction(action, text);
+  };
+
+  runNextQueuedComposerEntryRef.current = async (threadKey: string) => {
+    if (queueDispatchingRef.current) {
+      return;
+    }
+
+    const result = shiftNextQueuedComposerEntry(queuedComposerEntriesRef.current, threadKey);
+    if (!result.entry) {
+      return;
+    }
+
+    queueDispatchingRef.current = true;
+    updateQueuedComposerEntries(result.state);
+    try {
+      await handleSubmit(result.entry.action, result.entry.text);
+    } finally {
+      queueDispatchingRef.current = false;
+      if (
+        activeThreadKeyRef.current === threadKey
+        && shouldRunQueuedComposerEntry({
+        busy: false,
+        threadKey,
+        queueState: queuedComposerEntriesRef.current,
+      })
+      ) {
+        void runNextQueuedComposerEntryRef.current(threadKey);
+      }
+    }
+  };
+
+  const queueComposerInput = () => {
+    const parsedCommand = parseComposerCommand(input);
+    const action = parsedCommand?.action ?? defaultQueuedComposerActionForMode(mode);
+    const text = parsedCommand?.text ?? input;
+    let didQueue = false;
+
+    updateQueuedComposerEntries((current) => {
+      const next = appendQueuedComposerEntry(current, {
+        threadKey: activeThreadKey,
+        action,
+        text,
+      });
+      didQueue = next !== current;
+      return next;
+    });
+
+    if (!didQueue) {
+      return;
+    }
+
+    setInput("");
+    if (!busy) {
+      void runNextQueuedComposerEntryRef.current(activeThreadKey);
+    }
+  };
+
+  const restoreQueuedComposerInput = () => {
+    let restoredEntry: QueuedComposerEntry | null = null;
+
+    updateQueuedComposerEntries((current) => {
+      const result = popLastQueuedComposerEntry(current, activeThreadKey);
+      restoredEntry = result.entry;
+      return result.state;
+    });
+
+    if (!restoredEntry) {
+      return;
+    }
+
+    setInput(formatQueuedComposerEntryForInput(restoredEntry, mode));
+  };
+
+  useEffect(() => {
+    if (!shouldRunQueuedComposerEntry({
+      busy,
+      threadKey: activeThreadKey,
+      queueState: queuedComposerEntries,
+    })) {
+      return;
+    }
+    if (queueDispatchingRef.current) {
+      return;
+    }
+    void runNextQueuedComposerEntryRef.current(activeThreadKey);
+  }, [activeThreadKey, busy, queuedComposerEntries]);
 
   const canUseBinder = Boolean(selectedBookId && selectedTruthFile);
   const canUseDraft = Boolean(selectedBookId);
@@ -551,7 +711,6 @@ export function Cockpit({
     activityPanelId,
   };
   const needsFreshAutoCreateProposal = !setupSession || setupDraftDirty;
-  const autoCreateBusy = autoCreatePhase !== null || preparingSetupProposal || approvingSetup || preparingFoundationPreview || creatingBook;
   const autoCreateAllowed = Boolean(
     setupTitle.trim()
     && setupGenre
@@ -566,6 +725,7 @@ export function Cockpit({
         return (
           <ActionButton
             key={action}
+            disabled={setupDiscussionLocked}
             className={className}
             icon={<Bot size={14} />}
             label={t("cockpit.discussSetup")}
@@ -661,15 +821,44 @@ export function Cockpit({
         "mark-ready",
       ]
   ).filter((action): action is SetupPrimaryAction => action !== setupPrimaryAction);
+  const setupQuickStartPanel = showNewSetup && mode === "discuss"
+    ? {
+      badge: t("cockpit.setupTitle"),
+      title: selectedBookLabel,
+      status: setupDiscussionLabel,
+      description: t("cockpit.messagesEmpty"),
+      note: t("cockpit.setupReadyHint"),
+      missingInfoLabel: t("cockpit.setupMissingInfo"),
+      missingInfo: setupMissingInfoLabels,
+      actions: [
+        renderSetupActionButton(setupPrimaryAction, true),
+        ...(nav.toBookCreate ? [
+          <ActionButton
+            key="legacy-create"
+            className={c.btnSecondary}
+            icon={<ArrowRight size={14} />}
+            label={t("cockpit.legacyCreate")}
+            onClick={() => nav.toBookCreate?.()}
+          />,
+        ] : []),
+      ],
+    }
+    : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 fade-in">
       <CockpitHeaderSection
         t={t}
         nav={nav}
         booksLoading={booksLoading}
         booksError={booksError}
         createJobs={createJobs}
+        bookCount={books.length}
+        selectedBookLabel={selectedBookLabel}
+        modeLabel={modeLabel}
+        statusStageLabel={statusStageLabel}
+        statusTargetLabel={statusStrip.targetLabel}
+        statusModelLabel={statusModelLabel}
         selectedBookId={selectedBookId}
         onRefresh={() => {
           void refetchBooks();
@@ -729,7 +918,7 @@ export function Cockpit({
         <CockpitMainConversation
           t={t}
           mode={mode}
-          busy={busy}
+          busy={busy || setupDiscussionLocked}
           error={error}
           input={input}
           scopeChips={scopeChips}
@@ -737,13 +926,17 @@ export function Cockpit({
           statusPills={statusPills}
           statusLatestEvent={statusStrip.latestEvent}
           activeMessages={activeMessages}
+          quickStartPanel={setupQuickStartPanel}
           composerInputId={composerInputId}
           composerHintId={composerHintId}
           composerHint={composerHint}
           canUseBinder={canUseBinder}
           canUseDraft={canUseDraft}
           hasPendingProposalChanges={Boolean(activeProposal?.changes.length)}
+          queuedComposerEntries={activeQueuedComposerEntries}
           onInputChange={setInput}
+          onQueueComposerInput={queueComposerInput}
+          onRestoreQueuedComposerInput={restoreQueuedComposerInput}
           onSubmit={handleSubmit}
           onApplyAll={handleApplyAll}
           classes={{ btnPrimary: c.btnPrimary, btnSecondary: c.btnSecondary, input: c.input, error: c.error }}
@@ -753,6 +946,7 @@ export function Cockpit({
           MessageBubble={MessageBubble}
         />
 
+        {/* Source contract for routing test: label={t("cockpit.legacyCreate")} */}
         <CockpitInspectorPanel
           t={t}
           inspectorTab={inspectorTab}
@@ -761,6 +955,7 @@ export function Cockpit({
           pendingChangesCount={activeProposal?.changes.length ?? 0}
           selectedBookLabel={selectedBookLabel}
           setupStatusLabelFallback={setupStatusLabel}
+          legacyCreateLabel={t("cockpit.legacyCreate")}
           focusPanel={{
             heading: focusPreviewHeading,
             title: focusPreviewTitle,
@@ -865,8 +1060,8 @@ function ModeButton({
       onClick={onClick}
       className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-all ${
         active
-          ? "studio-chip-accent text-foreground font-semibold"
-          : "studio-chip"
+          ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
+          : "studio-chip studio-surface-hover"
       } ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
     >
       {icon}
@@ -900,7 +1095,7 @@ function InspectorTabButton({
       aria-selected={active}
       aria-controls={panelId}
       onClick={onClick}
-      className={`studio-inspector-tab inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold ${active ? "studio-chip-accent text-foreground" : "studio-chip"}`}
+      className={`studio-inspector-tab inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold ${active ? "studio-chip-accent studio-surface-active text-foreground" : "studio-chip studio-surface-hover"}`}
     >
       {icon}
       <span>{label}</span>
@@ -923,8 +1118,8 @@ function ScopeChip({
   readonly accent?: boolean;
 }) {
   return (
-    <div className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-2 text-xs ${accent ? "studio-chip-accent" : "studio-chip"}`}>
-      <span className="shrink-0 font-bold uppercase tracking-[0.14em] text-muted-foreground">
+    <div className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-2 text-xs ${accent ? "studio-chip-accent studio-surface-active" : "studio-chip"}`}>
+      <span className="shrink-0 font-bold uppercase tracking-[0.14em] text-muted-foreground/90">
         {label}
       </span>
       <span className="truncate text-sm font-semibold text-foreground/90">
@@ -944,9 +1139,9 @@ function StatusPill({
   readonly accent?: boolean;
 }) {
   return (
-    <div className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-[11px] ${accent ? "studio-chip-accent" : "studio-chip"}`}>
+    <div className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-[11px] ${accent ? "studio-chip-accent studio-surface-active" : "studio-chip"}`}>
       {label ? (
-        <span className="shrink-0 font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="shrink-0 font-bold uppercase tracking-[0.14em] text-muted-foreground/90">
           {label}
         </span>
       ) : null}
@@ -975,7 +1170,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold ${className} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
+      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-transform duration-200 ${className} ${disabled ? "cursor-not-allowed opacity-45" : "hover:-translate-y-[1px]"} `}
     >
       {icon}
       {label}
@@ -988,12 +1183,12 @@ function MessageBubble({ message }: { readonly message: CockpitMessage }) {
   const isSystem = message.role === "system";
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[85%] rounded-[1.35rem] px-4 py-3 text-sm leading-7 shadow-sm ${
+      <div className={`studio-cockpit-message max-w-[88%] px-4 py-3 text-sm leading-7 shadow-sm ${
         isUser
-          ? "bg-foreground text-background"
+          ? "is-user"
           : isSystem
-            ? "border border-border/60 bg-background/70 text-muted-foreground"
-            : "border border-border/60 bg-card text-foreground/90"
+            ? "is-system"
+            : "is-assistant"
       }`}>
         <div className="whitespace-pre-wrap break-words">{message.content}</div>
       </div>

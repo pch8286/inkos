@@ -133,6 +133,7 @@ interface CockpitInspectorPanelProps {
   readonly pendingChangesCount: number;
   readonly selectedBookLabel: string;
   readonly setupStatusLabelFallback: string;
+  readonly legacyCreateLabel: string;
   readonly focusPanel: FocusPanelData;
   readonly focusPanelEmptyLabel: string;
   readonly setupTabEmptyLabel: string;
@@ -163,6 +164,7 @@ export function CockpitInspectorPanel({
   pendingChangesCount,
   selectedBookLabel,
   setupStatusLabelFallback,
+  legacyCreateLabel,
   focusPanel,
   focusPanelEmptyLabel,
   changesPanel,
@@ -180,7 +182,7 @@ export function CockpitInspectorPanel({
 
   return (
     <aside className="studio-cockpit-right studio-cockpit-rail xl:pr-1">
-      <div className="rounded-[1.6rem] border border-border/50 bg-card/70 p-4">
+      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
@@ -193,6 +195,18 @@ export function CockpitInspectorPanel({
               {pendingChangesCount}
             </span>
           ) : null}
+        </div>
+
+        <div className="mb-4 rounded-[1.25rem] border border-border/50 bg-background/70 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            {t("cockpit.setupTitle")}
+          </div>
+          <div className="mt-2 text-sm font-semibold text-foreground">{setupStatusLabelFallback}</div>
+          <div className="mt-1 text-xs leading-6 text-muted-foreground">
+            {hasPendingChanges
+              ? t("cockpit.pendingChanges")
+              : t("cockpit.currentContext")}
+          </div>
         </div>
 
         <div className="studio-inspector-tabbar" role="tablist" aria-label={t("cockpit.currentContext")}>
@@ -312,140 +326,144 @@ export function CockpitInspectorPanel({
 
           {inspectorTab === "setup" && (
             <div className="space-y-4" role="tabpanel" id={ids.setupPanelId} aria-labelledby={ids.setupTabId}>
-              <div className="rounded-2xl border border-border/50 bg-background/60 p-3">
-                <div className="mb-3 flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+              <details className="rounded-2xl border border-border/50 bg-background/60 p-3" open={Boolean(setupPanel.setupRecoveryError)}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   <span>{t("cockpit.setupRecoveryTitle")}</span>
                   {setupPanel.loadingRecentSetupSessions ? <RefreshCcw size={12} className="animate-spin" /> : null}
-                </div>
-                <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupRecoveryHint")}</div>
+                </summary>
+                <div className="mt-3">
+                  <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupRecoveryHint")}</div>
 
-                {setupPanel.setupRecoveryError ? (
-                  <div className={`rounded-xl border px-3 py-2 text-xs ${classNames.error}`}>
-                    {setupPanel.setupRecoveryError}
-                  </div>
-                ) : null}
+                  {setupPanel.setupRecoveryError ? (
+                    <div className={`rounded-xl border px-3 py-2 text-xs ${classNames.error}`}>
+                      {setupPanel.setupRecoveryError}
+                    </div>
+                  ) : null}
 
-                {setupPanel.recentSetupSessions.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-center text-xs text-muted-foreground">
-                    {t("cockpit.setupRecoveryEmpty")}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {setupPanel.recentSetupSessions.map((session) => {
-                      const sessionLabel = session.updatedAt || session.createdAt;
-                      return (
-                        <div key={session.id} className="rounded-2xl border border-border/50 bg-background/70 px-3 py-3">
-                          <div className="mb-2 flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium text-foreground">{session.title}</div>
-                              <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                                <span className="rounded-full studio-badge-soft px-2 py-1 uppercase tracking-[0.12em]">{session.status}</span>
-                                <span>{session.genre}</span>
-                                <span>·</span>
-                                <span>{session.platform}</span>
-                                <span>·</span>
-                                <span>{`${session.chapterWordCount}/${session.targetChapters} ch`}</span>
+                  {setupPanel.recentSetupSessions.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-center text-xs text-muted-foreground">
+                      {t("cockpit.setupRecoveryEmpty")}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {setupPanel.recentSetupSessions.map((session) => {
+                        const sessionLabel = session.updatedAt || session.createdAt;
+                        return (
+                          <div key={session.id} className="rounded-2xl border border-border/50 bg-background/70 px-3 py-3">
+                            <div className="mb-2 flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium text-foreground">{session.title}</div>
+                                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                                  <span className="rounded-full studio-badge-soft px-2 py-1 uppercase tracking-[0.12em]">{session.status}</span>
+                                  <span>{session.genre}</span>
+                                  <span>·</span>
+                                  <span>{session.platform}</span>
+                                  <span>·</span>
+                                  <span>{`${session.chapterWordCount}/${session.targetChapters} ch`}</span>
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">{sessionLabel}</div>
+                                {session.brief ? (
+                                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{makeTruthPreview(session.brief, 78)}</div>
+                                ) : null}
                               </div>
-                              <div className="mt-1 text-xs text-muted-foreground">{sessionLabel}</div>
-                              {session.brief ? (
-                                <div className="mt-2 text-xs leading-5 text-muted-foreground">{makeTruthPreview(session.brief, 78)}</div>
-                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setupPanel.onResumeSetupSession(session)}
+                                disabled={setupPanel.resumingSetupSessionId === session.id}
+                                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+                                  setupPanel.resumingSetupSessionId === session.id
+                                    ? "cursor-not-allowed opacity-45"
+                                    : classNames.btnSecondary
+                                }`}
+                              >
+                                {setupPanel.resumingSetupSessionId === session.id ? <RefreshCcw size={13} className="animate-spin" /> : <RefreshCcw size={13} />}
+                                {t("cockpit.resumeSetup")}
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setupPanel.onResumeSetupSession(session)}
-                              disabled={setupPanel.resumingSetupSessionId === session.id}
-                              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
-                                setupPanel.resumingSetupSessionId === session.id
-                                  ? "cursor-not-allowed opacity-45"
-                                  : classNames.btnSecondary
-                              }`}
-                            >
-                              {setupPanel.resumingSetupSessionId === session.id ? <RefreshCcw size={13} className="animate-spin" /> : <RefreshCcw size={13} />}
-                              {t("cockpit.resumeSetup")}
-                            </button>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-border/50 bg-background/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("app.llmSettings")}</div>
-                  <div className="text-xs font-medium text-muted-foreground">{setupPanel.projectProviderLabel}</div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupLlmHint")}</div>
+              </details>
 
-                {setupPanel.setupLlmError ? (
-                  <div className={`mb-3 rounded-xl border px-3 py-2 text-xs ${classNames.error}`}>
-                    {setupPanel.setupLlmError}
-                  </div>
-                ) : null}
+              <details className="rounded-2xl border border-border/50 bg-background/60 p-3" open={Boolean(setupPanel.setupLlmError)}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span>{t("app.llmSettings")}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{setupPanel.projectProviderLabel}</span>
+                </summary>
+                <div className="mt-3">
+                  <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupLlmHint")}</div>
 
-                <div className="space-y-3">
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-medium text-muted-foreground">{t("config.model")}</span>
-                    <input
-                      list={setupPanel.setupModelListId}
-                      value={setupPanel.setupLlmFormModel}
-                      onChange={(event) => setupPanel.onSetSetupLlmFormModel(event.target.value)}
-                      placeholder={setupPanel.projectModelPlaceholder}
-                      disabled={!setupPanel.projectProviderLabel || setupPanel.setupLlmSaving}
-                      className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
-                    />
-                    <datalist id={setupPanel.setupModelListId}>
-                      {setupPanel.setupModelSuggestions.map((model) => (
-                        <option key={model} value={model} />
-                      ))}
-                    </datalist>
-                  </label>
+                  {setupPanel.setupLlmError ? (
+                    <div className={`mb-3 rounded-xl border px-3 py-2 text-xs ${classNames.error}`}>
+                      {setupPanel.setupLlmError}
+                    </div>
+                  ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="space-y-3">
                     <label className="block space-y-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">{t("config.reasoningLevel")}</span>
-                      <select
-                        value={setupPanel.setupSupportsReasoning ? setupPanel.setupLlmFormReasoningEffort : ""}
-                        onChange={(event) => setupPanel.onSetSetupLlmFormReasoningEffort(event.target.value as ReasoningEffort)}
-                        disabled={!setupPanel.setupSupportsReasoning || setupPanel.setupLlmSaving}
-                        className={`rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input} disabled:opacity-60`}
-                      >
-                        <option value="">{setupPanel.setupSupportsReasoning ? t("config.default") : t("config.reasoningUnsupported")}</option>
-                        {setupPanel.setupReasons.map((reasoning) => (
-                          <option key={reasoning} value={reasoning}>
-                            {reasoning === "none"
-                              ? t("config.reasoningNone")
-                              : reasoning === "minimal"
-                                ? t("config.reasoningMinimal")
-                                : reasoning === "low"
-                                  ? t("config.reasoningLow")
-                                  : reasoning === "medium"
-                                    ? t("config.reasoningMedium")
-                                    : reasoning === "high"
-                                      ? t("config.reasoningHigh")
-                                      : t("config.reasoningXHigh")}
-                          </option>
+                      <span className="text-[11px] font-medium text-muted-foreground">{t("config.model")}</span>
+                      <input
+                        list={setupPanel.setupModelListId}
+                        value={setupPanel.setupLlmFormModel}
+                        onChange={(event) => setupPanel.onSetSetupLlmFormModel(event.target.value)}
+                        placeholder={setupPanel.projectModelPlaceholder}
+                        disabled={!setupPanel.projectProviderLabel || setupPanel.setupLlmSaving}
+                        className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                      />
+                      <datalist id={setupPanel.setupModelListId}>
+                        {setupPanel.setupModelSuggestions.map((model) => (
+                          <option key={model} value={model} />
                         ))}
-                      </select>
+                      </datalist>
                     </label>
 
-                    <button
-                      type="button"
-                      onClick={() => setupPanel.onSaveSetupLlm()}
-                      disabled={setupPanel.setupLlmSaving || !setupPanel.setupLlmFormModel || !setupPanel.projectProviderLabel}
-                      className={`self-end rounded-xl px-3 py-2 text-sm font-semibold ${
-                        setupPanel.setupLlmSaving || !setupPanel.setupLlmFormModel || !setupPanel.projectProviderLabel
-                          ? "cursor-not-allowed opacity-45"
-                          : classNames.btnPrimary
-                      }`}
-                    >
-                      {setupPanel.setupLlmSaving ? t("config.saving") : t("config.save")}
-                    </button>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-medium text-muted-foreground">{t("config.reasoningLevel")}</span>
+                        <select
+                          value={setupPanel.setupSupportsReasoning ? setupPanel.setupLlmFormReasoningEffort : ""}
+                          onChange={(event) => setupPanel.onSetSetupLlmFormReasoningEffort(event.target.value as ReasoningEffort)}
+                          disabled={!setupPanel.setupSupportsReasoning || setupPanel.setupLlmSaving}
+                          className={`rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input} disabled:opacity-60`}
+                        >
+                          <option value="">{setupPanel.setupSupportsReasoning ? t("config.default") : t("config.reasoningUnsupported")}</option>
+                          {setupPanel.setupReasons.map((reasoning) => (
+                            <option key={reasoning} value={reasoning}>
+                              {reasoning === "none"
+                                ? t("config.reasoningNone")
+                                : reasoning === "minimal"
+                                  ? t("config.reasoningMinimal")
+                                  : reasoning === "low"
+                                    ? t("config.reasoningLow")
+                                    : reasoning === "medium"
+                                      ? t("config.reasoningMedium")
+                                      : reasoning === "high"
+                                        ? t("config.reasoningHigh")
+                                        : t("config.reasoningXHigh")}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setupPanel.onSaveSetupLlm()}
+                        disabled={setupPanel.setupLlmSaving || !setupPanel.setupLlmFormModel || !setupPanel.projectProviderLabel}
+                        className={`self-end rounded-xl px-3 py-2 text-sm font-semibold ${
+                          setupPanel.setupLlmSaving || !setupPanel.setupLlmFormModel || !setupPanel.projectProviderLabel
+                            ? "cursor-not-allowed opacity-45"
+                            : classNames.btnPrimary
+                        }`}
+                      >
+                        {setupPanel.setupLlmSaving ? t("config.saving") : t("config.save")}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
 
               <div className="rounded-2xl border border-border/50 bg-background/60 p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -521,7 +539,7 @@ export function CockpitInspectorPanel({
                       <ActionButton
                         className={classNames.btnSecondary}
                         icon={<ArrowRight size={14} />}
-                        label={t("cockpit.legacyCreate")}
+                        label={legacyCreateLabel}
                         onClick={() => setupPanel.onLegacyCreate?.()}
                       />
                     ) : null}

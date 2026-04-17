@@ -515,6 +515,99 @@ h3 { font-size: 1.25rem; }
   grid-template-columns: minmax(0, 1fr);
 }
 
+.studio-cockpit-panel {
+  border: 1px solid color-mix(in oklch, var(--border) 56%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--card) 88%, transparent), color-mix(in oklch, var(--card) 72%, transparent)),
+    radial-gradient(circle at top, color-mix(in oklch, var(--studio-chip-accent) 18%, transparent), transparent 58%);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 22px 60px -34px color-mix(in oklch, var(--foreground) 20%, transparent);
+}
+
+.studio-cockpit-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border) 54%, transparent);
+  border-radius: 1.8rem;
+  padding: 1.1rem;
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  box-shadow: 0 24px 60px -34px color-mix(in oklch, var(--foreground) 22%, transparent);
+}
+
+.studio-cockpit-hero-media,
+.studio-cockpit-hero-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.studio-cockpit-hero-media {
+  opacity: 0.28;
+}
+
+.studio-cockpit-hero-media img {
+  transform: scale(1.04);
+  filter: saturate(0.88) contrast(0.96);
+}
+
+.studio-cockpit-hero-scrim {
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--background) 14%, transparent), color-mix(in oklch, var(--card) 82%, transparent) 48%, color-mix(in oklch, var(--card) 96%, transparent)),
+    radial-gradient(circle at top center, color-mix(in oklch, var(--studio-cta-end) 22%, transparent), transparent 56%),
+    linear-gradient(120deg, color-mix(in oklch, var(--primary) 16%, transparent), transparent 45%);
+}
+
+.studio-cockpit-hero-grid {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  align-items: end;
+}
+
+.studio-cockpit-hero-card {
+  padding: 1rem 1.05rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 1.35rem;
+  background: color-mix(in oklch, var(--background) 76%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 28px -24px color-mix(in oklch, var(--foreground) 26%, transparent);
+}
+
+.studio-cockpit-hero-kpis {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.studio-cockpit-kpi {
+  min-width: 0;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 1.15rem;
+  background: color-mix(in oklch, var(--background) 74%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.studio-cockpit-kpi span {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.studio-cockpit-kpi strong {
+  display: block;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
 .studio-cockpit-rail {
   position: static;
   top: auto;
@@ -529,13 +622,118 @@ h3 { font-size: 1.25rem; }
   min-width: 0;
 }
 
+.studio-cockpit-left {
+  order: 2;
+}
+
 .studio-cockpit-right {
   min-width: 0;
+  order: 3;
 }
 
 .studio-cockpit-main {
   display: flex;
   flex-direction: column;
+  order: 1;
+}
+
+.studio-cockpit-briefing {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(140deg, color-mix(in oklch, var(--background) 78%, transparent), color-mix(in oklch, var(--accent) 26%, transparent)),
+    radial-gradient(circle at top right, color-mix(in oklch, var(--studio-chip-accent) 16%, transparent), transparent 54%);
+}
+
+.studio-cockpit-briefing-note {
+  padding: 0.95rem 1rem;
+  border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  border-radius: 1.2rem;
+  background: color-mix(in oklch, var(--card) 76%, transparent);
+}
+
+.studio-cockpit-log {
+  padding: 0.5rem 0.35rem 0.35rem;
+}
+
+.studio-cockpit-empty-state {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--background) 86%, transparent), color-mix(in oklch, var(--background) 78%, transparent)),
+    radial-gradient(circle at top right, color-mix(in oklch, var(--studio-chip-accent) 18%, transparent), transparent 54%);
+}
+
+.studio-cockpit-empty-state-note {
+  padding: 0.95rem 1rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 1.15rem;
+  background: color-mix(in oklch, var(--card) 74%, transparent);
+}
+
+.studio-cockpit-composer {
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--background) 86%, transparent), color-mix(in oklch, var(--background) 74%, transparent)),
+    radial-gradient(circle at top left, color-mix(in oklch, var(--studio-chip-accent) 14%, transparent), transparent 58%);
+  backdrop-filter: blur(12px);
+}
+
+.studio-cockpit-queue-meta {
+  color: color-mix(in oklch, var(--foreground) 62%, var(--muted-foreground));
+}
+
+.studio-cockpit-queue {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in oklch, var(--border) 56%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in oklch, var(--card) 74%, transparent);
+}
+
+.studio-cockpit-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.studio-cockpit-queue-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.studio-cockpit-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.9rem;
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+}
+
+.studio-cockpit-queue-item-action {
+  flex-shrink: 0;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--studio-chip-accent) 18%, transparent);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--foreground) 78%, var(--muted-foreground));
 }
 
 .studio-cockpit-status-strip {
@@ -606,7 +804,43 @@ h3 { font-size: 1.25rem; }
   border-color: color-mix(in oklch, var(--studio-chip-accent) 52%, transparent);
 }
 
+.studio-cockpit-message {
+  border-radius: 1.35rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.studio-cockpit-message.is-user {
+  background: linear-gradient(135deg, color-mix(in oklch, var(--studio-cta-start) 66%, transparent), color-mix(in oklch, var(--studio-cta-end) 86%, transparent));
+  color: var(--studio-cta-text);
+  border-color: color-mix(in oklch, var(--studio-cta-end) 42%, transparent);
+  box-shadow: 0 12px 28px -22px color-mix(in oklch, var(--studio-cta-text) 45%, transparent);
+  animation: msgSlideRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.studio-cockpit-message.is-assistant {
+  background: color-mix(in oklch, var(--card) 86%, transparent);
+  color: color-mix(in oklch, var(--foreground) 88%, transparent);
+  animation: msgSlideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.studio-cockpit-message.is-system {
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  color: var(--muted-foreground);
+}
+
 @media (min-width: 1024px) {
+  .studio-cockpit-hero-grid,
+  .studio-cockpit-briefing {
+    grid-template-columns: minmax(0, 1.45fr) minmax(18rem, 0.8fr);
+  }
+
+  .studio-cockpit-left,
+  .studio-cockpit-main,
+  .studio-cockpit-right {
+    order: initial;
+  }
+
   .studio-cockpit-status-strip {
     grid-template-columns: minmax(0, 1fr);
   }
