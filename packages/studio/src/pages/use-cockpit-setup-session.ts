@@ -5,6 +5,8 @@ import { defaultChapterWordsForLanguage, pickValidValue } from "../shared/book-c
 import type {
   BookSetupConversationEntry,
   BookSetupCreateRequest,
+  BookSetupReviewThreadPayload,
+  BookSetupReviewThreadsRequest,
   BookSetupRevisionRequest,
   BookSetupSessionPayload,
 } from "../shared/contracts";
@@ -170,6 +172,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   const [approvingSetup, setApprovingSetup] = useState(false);
   const [preparingFoundationPreview, setPreparingFoundationPreview] = useState(false);
   const [creatingBook, setCreatingBook] = useState(false);
+  const [savingSetupReviewThreads, setSavingSetupReviewThreads] = useState(false);
   const [autoCreatePhase, setAutoCreatePhase] = useState<SetupAutoCreatePhase | null>(null);
   const [autoCreateFailedPhase, setAutoCreateFailedPhase] = useState<SetupAutoCreatePhase | null>(null);
   const setupCreateAttemptRef = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null);
@@ -523,6 +526,30 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     });
   }, [captureSetupMutationRequest, currentSetupDraftFingerprint, focusSetupInspector, isActiveSetupMutationRequest, loadRecentSetupSessions]);
 
+  const requestSetupReviewThreads = useCallback(async (
+    session: BookSetupSessionPayload,
+    reviewThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+    options?: Readonly<{ refreshPreviewOnResolve?: boolean }>,
+  ) => {
+    const request = captureSetupMutationRequest();
+    return runSetupMutationWithBestEffortFollowUp({
+      mutate: async () => {
+        const body: BookSetupReviewThreadsRequest = {
+          expectedRevision: session.revision,
+          reviewThreads,
+          refreshPreviewOnResolve: options?.refreshPreviewOnResolve === true,
+        };
+        return putApi<BookSetupSessionPayload>(`/book-setup/${session.id}/reviews`, body);
+      },
+      apply: (result) => {
+        setSetupSession(result);
+        focusSetupInspector();
+      },
+      followUp: loadRecentSetupSessions,
+      isCurrent: () => isActiveSetupMutationRequest(request),
+    });
+  }, [captureSetupMutationRequest, focusSetupInspector, isActiveSetupMutationRequest, loadRecentSetupSessions]);
+
   const requestCreateSetup = useCallback(async (session: BookSetupSessionPayload) => {
     const request = captureSetupMutationRequest();
     return runSetupMutationWithBestEffortFollowUp({
@@ -670,6 +697,26 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       setCreatingBook(false);
     }
   }, [handleSetupRequestFailure, input, requestCreateSetup, setupDraftDirty, setupSession]);
+
+  const handleSaveSetupReviewThreads = useCallback(async (
+    nextReviewThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+    options?: Readonly<{ refreshPreviewOnResolve?: boolean }>,
+  ) => {
+    if (!setupSession) {
+      input.setError(input.t("cockpit.setupProposalEmpty"));
+      return;
+    }
+
+    setSavingSetupReviewThreads(true);
+    input.setError(null);
+    try {
+      await requestSetupReviewThreads(setupSession, nextReviewThreads, options);
+    } catch (cause) {
+      await handleSetupRequestFailure(cause, setupSession.id);
+    } finally {
+      setSavingSetupReviewThreads(false);
+    }
+  }, [handleSetupRequestFailure, input, requestSetupReviewThreads, setupSession]);
 
   const handleAutoCreateSetup = useCallback(async () => {
     if (!input.showNewSetup) {
@@ -849,12 +896,14 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     approvingSetup,
     preparingFoundationPreview,
     creatingBook,
+    savingSetupReviewThreads,
     markSetupReady,
     saveSetupLlm,
     handlePrepareSetupProposal,
     handleApproveSetup,
     handlePrepareFoundationPreview,
     handleCreateSetup,
+    handleSaveSetupReviewThreads,
     handleAutoCreateSetup,
     handleResumeSetupSession,
     handleDiscussSetup,

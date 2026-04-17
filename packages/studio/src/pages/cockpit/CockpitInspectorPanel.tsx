@@ -1,14 +1,24 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { TFunction } from "../../hooks/use-i18n";
 import type { ReasoningEffort } from "../../shared/llm";
 import { makeTruthPreview, buildTruthLineDiff, summarizeTruthDiff } from "../../shared/truth-assistant";
 import type { BookSetupSessionPayload } from "../../shared/contracts";
+import type { BookSetupReviewThreadPayload } from "../../shared/contracts";
 import type { BookSetupSessionSummary } from "../cockpit-shared";
 import type { InspectorTab } from "../cockpit-shared";
 import type { SetupPrimaryAction } from "../cockpit-ui-state";
 import type { SetupAutoCreatePhase } from "../cockpit-setup-autocreate";
 import type { ReactElement } from "react";
-import { ArrowRight, BookOpen, Check, RefreshCcw, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, Check, RefreshCcw, Sparkles, X } from "lucide-react";
+import {
+  buildInlineReviewQuote,
+  formatInlineReviewRange,
+  normalizeInlineReviewRange,
+  splitInlineReviewLines,
+  summarizeInlineReviewThreads,
+  type InlineReviewDecision,
+  type InlineReviewSummary,
+} from "./cockpit-inline-review";
 
 interface CockpitStatusActivity {
   readonly event: string;
@@ -87,6 +97,11 @@ interface SetupPanelData {
   readonly foundationPreviewTabs: ReadonlyArray<{ key: string; label: string; content: string }>;
   readonly selectedFoundationPreviewKey: string;
   readonly onSetSelectedFoundationPreviewKey: (key: string) => void;
+  readonly savingSetupReviewThreads: boolean;
+  readonly onSaveSetupReviewThreads: (
+    threads: ReadonlyArray<BookSetupReviewThreadPayload>,
+    options?: Readonly<{ refreshPreviewOnResolve?: boolean }>,
+  ) => void;
   readonly renderSetupActionButton: (action: SetupPrimaryAction, primary?: boolean) => ReactNode;
   readonly resumingSetupSessionId: string;
   readonly autoCreatePhase: SetupAutoCreatePhase | null;
@@ -154,6 +169,289 @@ function makeActivityDataPreview(data: unknown): string {
   return makeTruthPreview(JSON.stringify(data ?? {}, null, 2), 140);
 }
 
+function inlineReviewDecisionLabel(decision: InlineReviewDecision, t: TFunction): string {
+  if (decision === "approve") return t("cockpit.inlineReviewApprove");
+  if (decision === "request-change") return t("cockpit.inlineReviewRequestChanges");
+  return t("cockpit.inlineReviewComment");
+}
+
+function inlineReviewSummaryLabel(summary: InlineReviewSummary, t: TFunction): string {
+  if (summary.status === "approved") return t("cockpit.inlineReviewSummaryApproved");
+  if (summary.status === "changes-requested") return t("cockpit.inlineReviewSummaryChangesRequested");
+  if (summary.status === "mixed") return t("cockpit.inlineReviewSummaryMixed");
+  if (summary.status === "commented") return t("cockpit.inlineReviewSummaryCommented");
+  return t("cockpit.inlineReviewSummaryIdle");
+}
+
+interface InlineReviewDocumentProps {
+  readonly t: TFunction;
+  readonly classNames: ClassNames;
+  readonly title: string;
+  readonly targetId: string;
+  readonly targetLabel: string;
+  readonly content: string;
+  readonly emptyLabel: string;
+  readonly threads: ReadonlyArray<BookSetupReviewThreadPayload>;
+  readonly onAddThread: (
+    targetId: string,
+    targetLabel: string,
+    startLine: number,
+    endLine: number,
+    decision: InlineReviewDecision,
+    note: string,
+    quote: string,
+  ) => void;
+  readonly onRemoveThread: (threadId: string) => void;
+  readonly onResolveThread: (threadId: string, refreshPreviewOnResolve?: boolean) => void;
+  readonly saving: boolean;
+}
+
+function InlineReviewDocument({
+  t,
+  classNames,
+  title,
+  targetId,
+  targetLabel,
+  content,
+  emptyLabel,
+  threads,
+  onAddThread,
+  onRemoveThread,
+  onResolveThread,
+  saving,
+}: InlineReviewDocumentProps) {
+  const lines = useMemo(() => splitInlineReviewLines(content), [content]);
+  const summary = useMemo(() => summarizeInlineReviewThreads(threads, targetId), [targetId, threads]);
+  const [anchorLine, setAnchorLine] = useState<number | null>(null);
+  const [hoverLine, setHoverLine] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [decision, setDecision] = useState<InlineReviewDecision>("comment");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const handleMouseUp = () => setDragging(false);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [dragging]);
+
+  useEffect(() => {
+    setAnchorLine(null);
+    setHoverLine(null);
+    setDragging(false);
+    setDecision("comment");
+    setNote("");
+  }, [targetId, content]);
+
+  const selectedRange = anchorLine === null || hoverLine === null
+    ? null
+    : normalizeInlineReviewRange(anchorLine, hoverLine, lines.length);
+
+  const handleSubmit = () => {
+    if (!selectedRange) {
+      return;
+    }
+    const trimmedNote = note.trim();
+    const quote = buildInlineReviewQuote(lines, selectedRange.startLine, selectedRange.endLine);
+    onAddThread(
+      targetId,
+      targetLabel,
+      selectedRange.startLine,
+      selectedRange.endLine,
+      decision,
+      trimmedNote,
+      quote,
+    );
+    setAnchorLine(null);
+    setHoverLine(null);
+    setDragging(false);
+    setDecision("comment");
+    setNote("");
+  };
+
+  const selectedLines = selectedRange
+    ? lines.slice(selectedRange.startLine - 1, selectedRange.endLine)
+    : [];
+
+  if (!content) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{title}</div>
+        <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {inlineReviewSummaryLabel(summary, t)}
+        </span>
+        <span className="rounded-full border border-border/50 bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
+          {`${t("cockpit.inlineReviewCount")}: ${summary.approvalCount}/${summary.requestChangeCount}/${summary.commentCount}`}
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-border/50 bg-background/70">
+        <div className="border-b border-border/40 px-3 py-2 text-xs leading-6 text-muted-foreground">
+          {t("cockpit.inlineReviewHint")}
+        </div>
+        <div className="max-h-[24rem] overflow-y-auto px-2 py-2 font-mono text-xs leading-6">
+          {lines.map((line, index) => {
+            const lineNumber = index + 1;
+            const inSelection = selectedRange
+              ? lineNumber >= selectedRange.startLine && lineNumber <= selectedRange.endLine
+              : false;
+
+            return (
+              <button
+                key={`${targetId}-${lineNumber}`}
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  setAnchorLine(lineNumber);
+                  setHoverLine(lineNumber);
+                  setDragging(true);
+                }}
+                onMouseEnter={() => {
+                  if (dragging) {
+                    setHoverLine(lineNumber);
+                  }
+                }}
+                className={`flex w-full items-start gap-3 rounded-lg px-2 py-0.5 text-left ${
+                  inSelection ? "bg-primary/12 text-foreground" : "text-foreground/82 hover:bg-background/70"
+                }`}
+                disabled={saving}
+              >
+                <span className="w-9 shrink-0 select-none text-right text-[10px] text-muted-foreground/80">
+                  {lineNumber}
+                </span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                  {line || " "}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedRange ? (
+        <div className="rounded-xl border border-border/50 bg-background/70 px-3 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-foreground">
+              {t("cockpit.inlineReviewSelection")} {formatInlineReviewRange(selectedRange.startLine, selectedRange.endLine)}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAnchorLine(null);
+                setHoverLine(null);
+                setDragging(false);
+              }}
+              className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${classNames.btnSecondary}`}
+            >
+              <X size={12} />
+              {t("cockpit.inlineReviewClear")}
+            </button>
+          </div>
+          <div className="mt-2 rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-xs leading-6 text-muted-foreground">
+            {selectedLines.join("\n") || " "}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(["approve", "request-change", "comment"] as const).map((entry) => (
+              <button
+                key={`${targetId}-${entry}`}
+                type="button"
+                onClick={() => setDecision(entry)}
+                disabled={saving}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  decision === entry ? classNames.btnPrimary : classNames.btnSecondary
+                }`}
+              >
+                {inlineReviewDecisionLabel(entry, t)}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder={t("cockpit.inlineReviewPlaceholder")}
+            rows={3}
+            disabled={saving}
+            className={`mt-3 w-full rounded-xl px-3 py-2 text-sm outline-none ${classNames.input}`}
+          />
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className={`rounded-xl px-3 py-2 text-xs font-semibold ${classNames.btnPrimary}`}
+            >
+              {saving ? t("cockpit.inlineReviewSaving") : t("cockpit.inlineReviewAdd")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        {threads.filter((thread) => thread.targetId === targetId).length > 0 ? (
+          threads
+            .filter((thread) => thread.targetId === targetId)
+            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+            .map((thread) => (
+              <div key={thread.id} className="rounded-xl border border-border/50 bg-background/70 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                          {inlineReviewDecisionLabel(thread.decision, t)}
+                        </span>
+                        <span className="rounded-full border border-border/50 bg-background/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                          {thread.status === "resolved" ? t("cockpit.inlineReviewResolved") : t("cockpit.inlineReviewOpen")}
+                        </span>
+                        <span className="text-xs font-semibold text-foreground">
+                          {formatInlineReviewRange(thread.startLine, thread.endLine)}
+                        </span>
+                      </div>
+                    <div className="mt-2 whitespace-pre-wrap rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-xs leading-6 text-muted-foreground">
+                      {thread.quote || " "}
+                    </div>
+                    {thread.note ? (
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/85">{thread.note}</div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onResolveThread(thread.id, thread.targetId.startsWith("foundation:") && thread.decision === "request-change")}
+                    disabled={saving || thread.status === "resolved"}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${classNames.btnSecondary}`}
+                  >
+                    <Check size={12} />
+                    {thread.status === "resolved" ? t("cockpit.inlineReviewResolved") : t("cockpit.inlineReviewResolve")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveThread(thread.id)}
+                    disabled={saving}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${classNames.btnSecondary}`}
+                  >
+                    <X size={12} />
+                    {t("cockpit.inlineReviewRemove")}
+                  </button>
+                </div>
+              </div>
+            ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-center text-sm text-muted-foreground">
+            {t("cockpit.inlineReviewEmpty")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CockpitInspectorPanel({
   t,
   inspectorTab,
@@ -177,6 +475,57 @@ export function CockpitInspectorPanel({
   const activeFoundationPreview = setupPanel.foundationPreviewTabs.find((entry) => entry.key === setupPanel.selectedFoundationPreviewKey)
     ?? setupPanel.foundationPreviewTabs[0]
     ?? null;
+  const reviewThreads = setupPanel.setupSession?.reviewThreads ?? [];
+
+  const proposalReviewSummary = useMemo(
+    () => summarizeInlineReviewThreads(reviewThreads, "proposal"),
+    [reviewThreads],
+  );
+  const activeFoundationTargetId = activeFoundationPreview ? `foundation:${activeFoundationPreview.key}` : "";
+  const activeFoundationReviewSummary = useMemo(
+    () => activeFoundationTargetId ? summarizeInlineReviewThreads(reviewThreads, activeFoundationTargetId) : summarizeInlineReviewThreads([]),
+    [activeFoundationTargetId, reviewThreads],
+  );
+
+  const handleAddReviewThread = (
+    targetId: string,
+    targetLabel: string,
+    startLine: number,
+    endLine: number,
+    decision: InlineReviewDecision,
+    note: string,
+    quote: string,
+  ) => {
+    const nextThreads: ReadonlyArray<BookSetupReviewThreadPayload> = [
+      {
+        id: `${targetId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        targetId,
+        targetLabel,
+        startLine,
+        endLine,
+        decision,
+        status: "open",
+        note,
+        quote,
+        createdAt: new Date().toISOString(),
+        resolvedAt: null,
+      },
+      ...reviewThreads,
+    ];
+    setupPanel.onSaveSetupReviewThreads(nextThreads);
+  };
+
+  const handleRemoveReviewThread = (threadId: string) => {
+    setupPanel.onSaveSetupReviewThreads(reviewThreads.filter((thread) => thread.id !== threadId));
+  };
+
+  const handleResolveReviewThread = (threadId: string, refreshPreviewOnResolve = false) => {
+    const resolvedAt = new Date().toISOString();
+    const nextThreads = reviewThreads.map((thread) => thread.id === threadId
+      ? { ...thread, status: "resolved" as const, resolvedAt }
+      : thread);
+    setupPanel.onSaveSetupReviewThreads(nextThreads, { refreshPreviewOnResolve });
+  };
 
   return (
     <aside className="studio-cockpit-right studio-cockpit-rail xl:pr-1">
@@ -609,17 +958,27 @@ export function CockpitInspectorPanel({
                   {t("cockpit.setupProposalDetails")}
                 </summary>
                 <div className="mt-3">
-                  <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.setupProposalTitle")}</div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.setupProposalTitle")}</div>
+                    <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                      {inlineReviewSummaryLabel(proposalReviewSummary, t)}
+                    </span>
+                  </div>
                   <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.approvalGate")}</div>
-                  {setupPanel.setupSession ? (
-                    <div className="max-h-[19rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
-                      {setupPanel.setupSession.proposal.content}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
-                      {t("cockpit.setupProposalEmpty")}
-                    </div>
-                  )}
+                  <InlineReviewDocument
+                    t={t}
+                    classNames={classNames}
+                    title={t("cockpit.setupProposalTitle")}
+                    targetId="proposal"
+                    targetLabel={t("cockpit.setupProposalTitle")}
+                    content={setupPanel.setupSession?.proposal.content ?? ""}
+                    emptyLabel={t("cockpit.setupProposalEmpty")}
+                    threads={reviewThreads}
+                    onAddThread={handleAddReviewThread}
+                    onRemoveThread={handleRemoveReviewThread}
+                    onResolveThread={handleResolveReviewThread}
+                    saving={setupPanel.savingSetupReviewThreads}
+                  />
                 </div>
               </details>
 
@@ -630,18 +989,27 @@ export function CockpitInspectorPanel({
                 <div className="mt-3">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.foundationPreviewTitle")}</div>
-                    {setupPanel.setupSession?.foundationPreview ? (
-                      <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                        {t("cockpit.exactPreviewBadge")}
-                      </span>
-                    ) : null}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {setupPanel.setupSession?.foundationPreview ? (
+                        <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                          {t("cockpit.exactPreviewBadge")}
+                        </span>
+                      ) : null}
+                      {setupPanel.setupSession?.foundationPreview ? (
+                        <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                          {inlineReviewSummaryLabel(activeFoundationReviewSummary, t)}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.foundationGate")}</div>
 
                   {setupPanel.setupSession?.foundationPreview && activeFoundationPreview ? (
                     <>
                       <div className="mb-3 flex flex-wrap gap-2">
-                        {setupPanel.foundationPreviewTabs.map((entry) => (
+                        {setupPanel.foundationPreviewTabs.map((entry) => {
+                          const tabSummary = summarizeInlineReviewThreads(reviewThreads, `foundation:${entry.key}`);
+                          return (
                           <button
                             key={entry.key}
                             type="button"
@@ -649,12 +1017,25 @@ export function CockpitInspectorPanel({
                             className={`rounded-full px-3 py-1.5 text-xs font-semibold ${setupPanel.selectedFoundationPreviewKey === entry.key ? classNames.btnPrimary : classNames.btnSecondary}`}
                           >
                             {entry.label}
+                            {tabSummary.totalCount > 0 ? ` · ${tabSummary.approvalCount}/${tabSummary.requestChangeCount}/${tabSummary.commentCount}` : ""}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
-                      <div className="max-h-[22rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
-                        {activeFoundationPreview.content}
-                      </div>
+                      <InlineReviewDocument
+                        t={t}
+                        classNames={classNames}
+                        title={activeFoundationPreview.label}
+                        targetId={`foundation:${activeFoundationPreview.key}`}
+                        targetLabel={activeFoundationPreview.label}
+                        content={activeFoundationPreview.content}
+                        emptyLabel={t("cockpit.foundationPreviewEmpty")}
+                        threads={reviewThreads}
+                        onAddThread={handleAddReviewThread}
+                        onRemoveThread={handleRemoveReviewThread}
+                        onResolveThread={handleResolveReviewThread}
+                        saving={setupPanel.savingSetupReviewThreads}
+                      />
                     </>
                   ) : (
                     <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">

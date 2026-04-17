@@ -94,12 +94,34 @@ export interface BookSetupFoundationPreviewPayload {
   readonly pendingHooks: string;
 }
 
+export type BookSetupReviewDecision = "approve" | "request-change" | "comment";
+export type BookSetupReviewThreadStatus = "open" | "resolved";
+
+export interface BookSetupReviewThreadPayload {
+  readonly id: string;
+  readonly targetId: string;
+  readonly targetLabel: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly decision: BookSetupReviewDecision;
+  readonly status: BookSetupReviewThreadStatus;
+  readonly note: string;
+  readonly quote: string;
+  readonly createdAt: string;
+  readonly resolvedAt?: string | null;
+}
+
 export interface BookSetupRevisionRequest {
   readonly expectedRevision: number;
 }
 
 export interface BookSetupCreateRequest extends BookSetupRevisionRequest {
   readonly expectedPreviewDigest: string;
+}
+
+export interface BookSetupReviewThreadsRequest extends BookSetupRevisionRequest {
+  readonly reviewThreads: ReadonlyArray<BookSetupReviewThreadPayload>;
+  readonly refreshPreviewOnResolve?: boolean;
 }
 
 export type BookSetupSessionStatus = "proposed" | "approved" | "creating";
@@ -119,6 +141,7 @@ export interface BookSetupSessionPayload {
   readonly proposal: BookSetupProposalPayload;
   readonly previousProposal?: BookSetupProposalPayload;
   readonly foundationPreview?: BookSetupFoundationPreviewPayload;
+  readonly reviewThreads: ReadonlyArray<BookSetupReviewThreadPayload>;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

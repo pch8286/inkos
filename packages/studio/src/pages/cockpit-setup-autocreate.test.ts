@@ -21,6 +21,7 @@ function makeSession(overrides: Partial<BookSetupSessionPayload>): BookSetupSess
       createdAt: "2026-04-17T00:00:00.000Z",
       revision: 1,
     },
+    reviewThreads: [],
     createdAt: "2026-04-17T00:00:00.000Z",
     updatedAt: "2026-04-17T00:00:00.000Z",
     ...overrides,

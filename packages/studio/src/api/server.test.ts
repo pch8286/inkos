@@ -281,6 +281,22 @@ async function previewSetupSession(app: StudioAppLike, sessionId: string, expect
   }));
 }
 
+async function saveSetupReviewThreads(
+  app: StudioAppLike,
+  sessionId: string,
+  expectedRevision: number,
+  reviewThreads: ReadonlyArray<Record<string, unknown>>,
+): Promise<Response> {
+  return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/reviews", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      expectedRevision,
+      reviewThreads,
+    }),
+  }));
+}
+
 async function createSetupSession(app: StudioAppLike, sessionId: string, expectedRevision: number, expectedPreviewDigest?: string, idempotencyKey?: string): Promise<Response> {
   return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/create", {
     method: "POST",
@@ -2910,6 +2926,74 @@ describe("createStudioServer daemon lifecycle", () => {
     });
   });
 
+  it("blocks approval while proposal review threads still request changes", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Review Gate Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the setup tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Review Gate Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const saveReviews = await saveSetupReviewThreads(app, session.id, session.revision, [{
+      id: "proposal-thread-1",
+      targetId: "proposal",
+      targetLabel: "Setup Proposal",
+      startLine: 2,
+      endLine: 4,
+      decision: "request-change",
+      status: "open",
+      note: "Tighten the inheritance conflict.",
+      quote: "Focused family succession fantasy.",
+      createdAt: "2026-04-17T00:00:05.000Z",
+      resolvedAt: null,
+    }]);
+    expect(saveReviews.status).toBe(200);
+    const reviewed = await saveReviews.json() as { revision: number; status: string; reviewThreads: unknown[]; foundationPreview?: unknown };
+    expect(reviewed.status).toBe("proposed");
+    expect(reviewed.reviewThreads).toHaveLength(1);
+    expect(reviewed.foundationPreview).toBeUndefined();
+
+    const approve = await approveSetupSession(app, session.id, reviewed.revision);
+    expect(approve.status).toBe(409);
+    await expect(approve.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_REVIEW_CHANGES_PENDING",
+        message: expect.stringContaining("requested changes"),
+      },
+    });
+  });
+
   it("rejects stale setup approval revisions", async () => {
     chatCompletionMock.mockResolvedValueOnce({
       content: [
@@ -3019,6 +3103,210 @@ describe("createStudioServer daemon lifecycle", () => {
         code: "BOOK_SETUP_REVISION_MISMATCH",
         message: expect.stringContaining("changed while you were reviewing it"),
       },
+    });
+  });
+
+  it("blocks create while foundation review threads still request changes", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Foundation Review Gate Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "foundation-review-gate-book",
+      title: "Foundation Review Gate Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+      targetChapters: 200,
+      chapterWordCount: 3000,
+    }));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Foundation Review Gate Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    const approve = await approveSetupSession(app, session.id, session.revision);
+    expect(approve.status).toBe(200);
+
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewed = await preview.json() as { revision: number; foundationPreview: { digest: string } };
+
+    const saveReviews = await saveSetupReviewThreads(app, session.id, previewed.revision, [{
+      id: "foundation-thread-1",
+      targetId: "foundation:storyBible",
+      targetLabel: "Story Bible",
+      startLine: 1,
+      endLine: 2,
+      decision: "request-change",
+      status: "open",
+      note: "Clarify the succession law.",
+      quote: "# story_bible",
+      createdAt: "2026-04-17T00:00:08.000Z",
+      resolvedAt: null,
+    }]);
+    expect(saveReviews.status).toBe(200);
+    const reviewed = await saveReviews.json() as { revision: number; reviewThreads: unknown[]; foundationPreview: { digest: string } };
+    expect(reviewed.reviewThreads).toHaveLength(1);
+    expect(reviewed.foundationPreview.digest).toBe(previewed.foundationPreview.digest);
+
+    const create = await createSetupSession(app, session.id, reviewed.revision, previewed.foundationPreview.digest);
+    expect(create.status).toBe(409);
+    await expect(create.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_SETUP_REVIEW_CHANGES_PENDING",
+        message: expect.stringContaining("requested changes"),
+      },
+    });
+  });
+
+  it("refreshes the foundation preview when a foundation review request is resolved", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Focused family succession fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Refresh Preview Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- None for the MVP proposal.",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It stays reviewable before any write.",
+      ].join("\n"),
+      usage: { promptTokens: 11, completionTokens: 21, totalTokens: 32 },
+    });
+    proposeBookMock.mockResolvedValueOnce(makeBookInitProposal({
+      id: "refresh-preview-book",
+      title: "Refresh Preview Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+    }));
+    proposeBookMock.mockResolvedValueOnce({
+      ...makeBookInitProposal({
+        id: "refresh-preview-book",
+        title: "Refresh Preview Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+      foundation: {
+        storyBible: "# refreshed_story_bible",
+        volumeOutline: "# refreshed_volume_outline",
+        bookRules: "# refreshed_book_rules",
+        currentState: "# refreshed_current_state",
+        pendingHooks: "# refreshed_pending_hooks",
+      },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const propose = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Refresh Preview Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+      }),
+    });
+    expect(propose.status).toBe(200);
+    const session = await propose.json() as { id: string; revision: number };
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(app, session.id, 2);
+    expect(preview.status).toBe(200);
+    const previewed = await preview.json() as { revision: number; foundationPreview: { storyBible: string } };
+    expect(previewed.foundationPreview.storyBible).toBe("# story_bible");
+
+    const openReview = await saveSetupReviewThreads(app, session.id, previewed.revision, [{
+      id: "foundation-thread-refresh",
+      targetId: "foundation:storyBible",
+      targetLabel: "Story Bible",
+      startLine: 1,
+      endLine: 2,
+      decision: "request-change",
+      status: "open",
+      note: "Clarify the succession law.",
+      quote: "# story_bible",
+      createdAt: "2026-04-17T00:00:09.000Z",
+      resolvedAt: null,
+    }]);
+    expect(openReview.status).toBe(200);
+    const opened = await openReview.json() as { revision: number; foundationPreview: { storyBible: string } };
+    expect(opened.foundationPreview.storyBible).toBe("# story_bible");
+
+    const resolvedReview = await app.request(`http://localhost/api/book-setup/${session.id}/reviews`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        expectedRevision: opened.revision,
+        refreshPreviewOnResolve: true,
+        reviewThreads: [{
+          id: "foundation-thread-refresh",
+          targetId: "foundation:storyBible",
+          targetLabel: "Story Bible",
+          startLine: 1,
+          endLine: 2,
+          decision: "request-change",
+          status: "resolved",
+          note: "Clarify the succession law.",
+          quote: "# story_bible",
+          createdAt: "2026-04-17T00:00:09.000Z",
+          resolvedAt: "2026-04-17T00:00:10.000Z",
+        }],
+      }),
+    });
+    expect(resolvedReview.status).toBe(200);
+    const resolved = await resolvedReview.json() as {
+      revision: number;
+      foundationPreview: { storyBible: string; volumeOutline: string };
+      reviewThreads: Array<{ status: string; resolvedAt?: string | null }>;
+    };
+    expect(resolved.revision).toBe(opened.revision + 1);
+    expect(resolved.foundationPreview.storyBible).toBe("# refreshed_story_bible");
+    expect(resolved.foundationPreview.volumeOutline).toBe("# refreshed_volume_outline");
+    expect(resolved.reviewThreads[0]).toMatchObject({
+      status: "resolved",
+      resolvedAt: "2026-04-17T00:00:10.000Z",
     });
   });
 

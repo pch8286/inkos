@@ -43,6 +43,8 @@ import type {
   BookSetupFoundationPreviewPayload,
   BookSetupRevisionRequest,
   BookSetupCreateRequest,
+  BookSetupReviewThreadPayload,
+  BookSetupReviewThreadsRequest,
   BookSetupSessionListPayload,
   ReaderSettings,
   TruthSaveRequest,
@@ -137,6 +139,7 @@ interface BookSetupSessionRecord extends BookSetupSessionPayload {
   readonly previousProposal?: BookSetupProposalPayload;
   readonly externalContext: string;
   readonly foundationPreview?: BookSetupFoundationPreviewPayload;
+  readonly reviewThreads: ReadonlyArray<BookSetupReviewThreadPayload>;
   readonly exactProposal?: ExactBookProposal;
 }
 const bookSetupSessions = new Map<string, BookSetupSessionRecord>();
@@ -168,6 +171,36 @@ function isBookSetupProposalPayloadValue(value: unknown): value is BookSetupProp
     && typeof value.revision === "number"
     && Number.isInteger(value.revision)
     && value.revision > 0;
+}
+
+function isBookSetupReviewDecision(value: unknown): value is BookSetupReviewThreadPayload["decision"] {
+  return value === "approve" || value === "request-change" || value === "comment";
+}
+
+function isBookSetupReviewThreadStatus(value: unknown): value is BookSetupReviewThreadPayload["status"] {
+  return value === "open" || value === "resolved";
+}
+
+function isBookSetupReviewThreadPayloadValue(value: unknown): value is BookSetupReviewThreadPayload {
+  return isObjectRecord(value)
+    && typeof value.id === "string"
+    && value.id.trim().length > 0
+    && typeof value.targetId === "string"
+    && value.targetId.trim().length > 0
+    && typeof value.targetLabel === "string"
+    && typeof value.startLine === "number"
+    && Number.isInteger(value.startLine)
+    && value.startLine > 0
+    && typeof value.endLine === "number"
+    && Number.isInteger(value.endLine)
+    && value.endLine > 0
+    && value.startLine <= value.endLine
+    && isBookSetupReviewDecision(value.decision)
+    && isBookSetupReviewThreadStatus(value.status)
+    && typeof value.note === "string"
+    && typeof value.quote === "string"
+    && typeof value.createdAt === "string"
+    && (value.resolvedAt === undefined || value.resolvedAt === null || typeof value.resolvedAt === "string");
 }
 
 function isBookSetupFoundationPreviewPayloadValue(value: unknown): value is BookSetupFoundationPreviewPayload {
@@ -273,11 +306,54 @@ function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessio
     && typeof value.brief === "string"
     && isBookSetupProposalPayloadValue(value.proposal)
     && (value.previousProposal === undefined || isBookSetupProposalPayloadValue(value.previousProposal))
+    && Array.isArray(value.reviewThreads)
+    && value.reviewThreads.every((thread) => isBookSetupReviewThreadPayloadValue(thread))
     && typeof value.externalContext === "string"
     && typeof value.createdAt === "string"
     && typeof value.updatedAt === "string"
     && (value.foundationPreview === undefined || isBookSetupFoundationPreviewPayloadValue(value.foundationPreview))
     && (value.exactProposal === undefined || isExactBookProposal(value.exactProposal));
+}
+
+function normalizeBookSetupReviewThreads(value: unknown): ReadonlyArray<BookSetupReviewThreadPayload> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((thread): thread is BookSetupReviewThreadPayload => isBookSetupReviewThreadPayloadValue(thread))
+    .map((thread) => ({
+      ...thread,
+      id: thread.id.trim(),
+      targetId: thread.targetId.trim(),
+      targetLabel: thread.targetLabel.trim(),
+      note: thread.note.trim(),
+      quote: thread.quote.trim(),
+      resolvedAt: thread.status === "resolved"
+        ? (typeof thread.resolvedAt === "string" && thread.resolvedAt.trim().length > 0 ? thread.resolvedAt : thread.createdAt)
+        : null,
+    }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+function hasRequestChangesInReviewThreads(
+  threads: ReadonlyArray<BookSetupReviewThreadPayload>,
+  scope: "proposal" | "foundation",
+): boolean {
+  return threads.some((thread) => thread.status === "open"
+    && thread.decision === "request-change"
+    && (scope === "proposal" ? thread.targetId === "proposal" : thread.targetId.startsWith("foundation:")));
+}
+
+function didResolveFoundationReviewRequestChange(
+  previousThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+  nextThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+): boolean {
+  const previousOpenRequestIds = new Set(
+    previousThreads
+      .filter((thread) => thread.status === "open" && thread.decision === "request-change" && thread.targetId.startsWith("foundation:"))
+      .map((thread) => thread.id),
+  );
+  return nextThreads.some((thread) => previousOpenRequestIds.has(thread.id) && thread.status === "resolved");
 }
 
 function isStoredBookSetupSession(value: unknown): value is StoredBookSetupSession {
@@ -342,10 +418,12 @@ function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord
           : inferLegacyBookSetupFoundationPreviewDigest(legacySession.foundationPreview, legacySession.exactProposal),
       }
     : legacySession.foundationPreview;
+  const reviewThreads = normalizeBookSetupReviewThreads(legacySession.reviewThreads);
   const upgraded = {
     ...legacySession,
     revision,
     proposal,
+    reviewThreads,
     ...(previousProposal ? { previousProposal } : {}),
     ...(foundationPreview ? { foundationPreview } : {}),
   };
@@ -579,6 +657,24 @@ function readBookSetupExpectedPreviewDigest(body: Partial<BookSetupCreateRequest
   throw new ApiError(428, "BOOK_SETUP_PRECONDITION_REQUIRED", `Book setup session "${sessionId}" requires an expected preview digest.`);
 }
 
+function readBookSetupReviewThreads(
+  body: Partial<BookSetupReviewThreadsRequest> | null | undefined,
+  sessionId: string,
+): ReadonlyArray<BookSetupReviewThreadPayload> {
+  if (!Array.isArray(body?.reviewThreads)) {
+    throw new ApiError(428, "BOOK_SETUP_PRECONDITION_REQUIRED", `Book setup session "${sessionId}" requires review threads.`);
+  }
+  const reviewThreads = normalizeBookSetupReviewThreads(body.reviewThreads);
+  if (reviewThreads.length !== body.reviewThreads.length) {
+    throw new ApiError(400, "BOOK_SETUP_INVALID_REVIEW_THREADS", `Book setup session "${sessionId}" includes invalid review threads.`);
+  }
+  return reviewThreads;
+}
+
+function shouldRefreshPreviewOnResolve(body: Partial<BookSetupReviewThreadsRequest> | null | undefined): boolean {
+  return body?.refreshPreviewOnResolve === true;
+}
+
 function assertBookSetupExpectedPreviewDigest(
   session: BookSetupSessionRecord,
   expectedPreviewDigest: string,
@@ -592,6 +688,21 @@ function assertBookSetupExpectedPreviewDigest(
     412,
     "BOOK_SETUP_PREVIEW_DIGEST_MISMATCH",
     `Book setup session "${session.id}" changed while you were reviewing it. Refresh the latest setup before you ${nextAction}.`,
+  );
+}
+
+function assertNoBookSetupReviewRequests(
+  session: BookSetupSessionRecord,
+  scope: "proposal" | "foundation",
+  nextAction: string,
+): void {
+  if (!hasRequestChangesInReviewThreads(session.reviewThreads, scope)) {
+    return;
+  }
+  throw new ApiError(
+    409,
+    "BOOK_SETUP_REVIEW_CHANGES_PENDING",
+    `Book setup session "${session.id}" still has requested changes. Resolve or remove those review notes before you ${nextAction}.`,
   );
 }
 
@@ -1459,6 +1570,7 @@ function summarizeBookSetupSession(session: BookSetupSessionRecord): BookSetupSe
     proposal: session.proposal,
     previousProposal: session.previousProposal,
     foundationPreview: session.foundationPreview,
+    reviewThreads: session.reviewThreads,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
   };
@@ -2870,6 +2982,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           brief,
           proposal: nextProposal,
           previousProposal: revisingSession.proposal,
+          reviewThreads: [],
           foundationPreview: undefined,
           exactProposal: undefined,
           externalContext: extractApprovedCreativeBrief(proposalContent),
@@ -2888,6 +3001,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           targetChapters: draft.targetChapters,
           brief,
           proposal: nextProposal,
+          reviewThreads: [],
           externalContext: extractApprovedCreativeBrief(proposalContent),
           createdAt: now,
           updatedAt: proposalCreatedAt,
@@ -2914,6 +3028,72 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     return c.json(summarizeBookSetupSession(session));
   });
 
+  app.put("/api/book-setup/:sessionId/reviews", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = await findBookSetupSession(root, sessionId);
+    if (!session) {
+      throw new ApiError(404, "BOOK_SETUP_SESSION_NOT_FOUND", `Book setup session "${sessionId}" not found.`);
+    }
+    const body = await c.req.json<Partial<BookSetupReviewThreadsRequest>>().catch(() => null);
+    const expectedRevision = readBookSetupExpectedRevision(body, sessionId);
+    assertBookSetupExpectedRevision(session, expectedRevision, "update review notes");
+    if (session.status === "creating") {
+      throw new ApiError(409, "BOOK_SETUP_ALREADY_CREATING", `Book setup session "${sessionId}" is already creating a book.`);
+    }
+
+    const reviewThreads = readBookSetupReviewThreads(body, sessionId);
+    const hasProposalRequestChanges = hasRequestChangesInReviewThreads(reviewThreads, "proposal");
+    const refreshPreviewOnResolve = shouldRefreshPreviewOnResolve(body);
+    const resolvedFoundationRequestChange = didResolveFoundationReviewRequestChange(session.reviewThreads, reviewThreads);
+    let foundationPreview = hasProposalRequestChanges ? undefined : session.foundationPreview;
+    let exactProposal = hasProposalRequestChanges ? undefined : session.exactProposal;
+    let updatedAt = new Date().toISOString();
+
+    if (
+      refreshPreviewOnResolve
+      && !hasProposalRequestChanges
+      && session.status === "approved"
+      && session.foundationPreview
+      && session.exactProposal
+      && resolvedFoundationRequestChange
+    ) {
+      const bookConfig = buildStudioBookConfig({
+        title: session.title,
+        genre: session.genre,
+        language: session.language,
+        platform: session.platform,
+        chapterWordCount: session.chapterWordCount,
+        targetChapters: session.targetChapters,
+      }, updatedAt);
+      const pipeline = withExactBookProposalSupport(new PipelineRunner(await buildPipelineConfig(undefined, {
+        externalContext: session.externalContext,
+      })));
+      const refreshedProposal = await pipeline.proposeBook(bookConfig);
+      exactProposal = refreshedProposal;
+      foundationPreview = summarizeBookSetupFoundationPreview(refreshedProposal, updatedAt, session.revision + 1);
+    }
+
+    const updated: BookSetupSessionRecord = {
+      ...session,
+      revision: session.revision + 1,
+      status: hasProposalRequestChanges ? "proposed" : session.status,
+      reviewThreads,
+      foundationPreview,
+      exactProposal,
+      updatedAt,
+    };
+    await upsertBookSetupSession(root, updated);
+    broadcast("book:setup:reviews-updated", {
+      sessionId: updated.id,
+      bookId: updated.bookId,
+      title: updated.title,
+      reviewThreads: updated.reviewThreads.length,
+      hasProposalRequestChanges,
+      refreshedPreview: refreshPreviewOnResolve && resolvedFoundationRequestChange,
+    });
+    return c.json(summarizeBookSetupSession(updated));
+  });
+
   app.post("/api/book-setup/:sessionId/approve", async (c) => {
     const sessionId = c.req.param("sessionId");
     const session = await findBookSetupSession(root, sessionId);
@@ -2929,6 +3109,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     if (session.status === "approved") {
       return c.json(summarizeBookSetupSession(session));
     }
+    assertNoBookSetupReviewRequests(session, "proposal", "approve it");
 
     const updated: BookSetupSessionRecord = {
       ...session,
@@ -2956,6 +3137,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     if (session.status !== "approved") {
       throw new ApiError(409, "BOOK_SETUP_NOT_APPROVED", `Book setup session "${sessionId}" must be approved before preparing an exact foundation preview.`);
     }
+    assertNoBookSetupReviewRequests(session, "proposal", "prepare the exact foundation preview");
     if (session.exactProposal && session.foundationPreview) {
       return c.json(summarizeBookSetupSession(session));
     }
@@ -3012,10 +3194,12 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       if (session.status !== "approved") {
         throw new ApiError(409, "BOOK_SETUP_NOT_APPROVED", `Book setup session "${sessionId}" must be approved before creation.`);
       }
+      assertNoBookSetupReviewRequests(session, "proposal", "create the book");
 
       if (!session.foundationPreview || !session.exactProposal) {
         throw new ApiError(409, "BOOK_SETUP_FOUNDATION_PREVIEW_REQUIRED", `Book setup session "${sessionId}" must prepare an exact foundation preview before creation.`);
       }
+      assertNoBookSetupReviewRequests(session, "foundation", "create the book");
 
       const expectedPreviewDigest = readBookSetupExpectedPreviewDigest(body, sessionId);
       assertBookSetupExpectedPreviewDigest(session, expectedPreviewDigest, "create the book");
@@ -3187,6 +3371,9 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
     if (requestedTargets.length === 0 || requestedFiles.length === 0) {
       return c.json({ error: "Invalid truth file" }, 400);
+    }
+    if (requestedTargets.length !== requestedFiles.length && requestedTargets.length > 1) {
+      return c.json({ error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" }, 400);
     }
 
     await ensureStudioControlDocuments(state, id).catch(() => undefined);
