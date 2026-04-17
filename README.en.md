@@ -23,7 +23,7 @@ Open-source CLI AI Agent that autonomously writes, audits, and revises novels �
 **InkOS Studio is here!** — run `inkos studio` to launch a local web workbench. Book management, chapter review & editing, real-time writing progress, market radar, analytics, AI detection, style analysis, genre management, daemon control, truth file editing — everything the CLI does, now visual.
 
 **InkOS Cockpit is now a first-class entrypoint.** Run `inkos cockpit [bookId]` to open the conversation-first cockpit directly.
-It now opens the dedicated `/cockpit/` shell, while the older `/?page=cockpit` Studio route remains available as a compatibility path during migration.
+It now opens the dedicated `/cockpit/` shell, and the older `/?page=cockpit` Studio route automatically forwards there as the migration-compatible legacy entry.
 
 **Korean is the default writing language now.** `ko` is the default when no `--lang` is specified, and `--lang en` and `--lang zh` are also supported. English and Chinese genre profiles remain available.
 Current supported writing languages: `ko`, `zh`, `en`.  

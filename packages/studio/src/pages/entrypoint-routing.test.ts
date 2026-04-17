@@ -8,6 +8,7 @@ function loadSource(relativePath: string): string {
 const dashboardSource = loadSource("./Dashboard.tsx");
 const sidebarSource = loadSource("../components/Sidebar.tsx");
 const cockpitSource = loadSource("./Cockpit.tsx");
+const appSource = loadSource("../App.tsx");
 const bookCreateSource = loadSource("./BookCreate.tsx");
 const cockpitMainSource = loadSource("../cockpit-main.tsx");
 const cockpitStandaloneSource = loadSource("../CockpitStandaloneApp.tsx");
@@ -75,5 +76,14 @@ describe("entrypoint wiring in source", () => {
     expect(cockpitStandaloneSource).toContain("initialBookId={initialBookId}");
     expect(cockpitStandaloneSource).toContain("window.location.search");
     expect(cockpitStandaloneSource).toContain("<Cockpit");
+  });
+
+  it("keeps the legacy cockpit route as a redirect instead of rendering embedded cockpit UI", () => {
+    expect(appSource).not.toContain('from "./pages/Cockpit"');
+    expect(appSource).toContain("function LegacyCockpitRedirect");
+    expect(appSource).toContain("window.location.replace(");
+    expect(appSource).toContain("window.location.assign(");
+    expect(appSource).toContain("buildStandaloneCockpitUrl(");
+    expect(appSource).not.toContain('{route.page === "cockpit" && <Cockpit');
   });
 });
