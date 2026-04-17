@@ -6,6 +6,7 @@ import type { BookSetupSessionPayload } from "../../shared/contracts";
 import type { BookSetupSessionSummary } from "../cockpit-shared";
 import type { InspectorTab } from "../cockpit-shared";
 import type { SetupPrimaryAction } from "../cockpit-ui-state";
+import type { SetupAutoCreatePhase } from "../cockpit-setup-autocreate";
 import type { ReactElement } from "react";
 import { ArrowRight, BookOpen, Check, RefreshCcw, Sparkles } from "lucide-react";
 
@@ -88,6 +89,9 @@ interface SetupPanelData {
   readonly onSetSelectedFoundationPreviewKey: (key: string) => void;
   readonly renderSetupActionButton: (action: SetupPrimaryAction, primary?: boolean) => ReactNode;
   readonly resumingSetupSessionId: string;
+  readonly autoCreatePhase: SetupAutoCreatePhase | null;
+  readonly autoCreateFailedPhase: SetupAutoCreatePhase | null;
+  readonly onRetryAutoCreate: () => void;
 }
 
 interface FocusPanelData {
@@ -462,6 +466,28 @@ export function CockpitInspectorPanel({
                     {t("cockpit.setupDraftChanged")}
                   </div>
                 ) : null}
+                {setupPanel.autoCreatePhase ? (
+                  <div className="mb-3 rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-xs leading-6 text-muted-foreground">
+                    {t(`cockpit.autoCreatePhase.${setupPanel.autoCreatePhase}`)}
+                  </div>
+                ) : null}
+                {setupPanel.autoCreateFailedPhase ? (
+                  <div className={`mb-3 rounded-xl border px-3 py-3 text-xs ${classNames.error}`}>
+                    <div className="font-semibold text-foreground">{t("cockpit.autoCreateFailed")}</div>
+                    <div className="mt-1 leading-6 text-foreground/80">
+                      {t(`cockpit.autoCreatePhase.${setupPanel.autoCreateFailedPhase}`)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <ActionButton
+                        className={classNames.btnPrimary}
+                        icon={<Sparkles size={14} />}
+                        label={t("cockpit.autoCreateRetry")}
+                        onClick={() => setupPanel.onRetryAutoCreate()}
+                      />
+                      {setupPanel.renderSetupActionButton("discuss")}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -563,55 +589,65 @@ export function CockpitInspectorPanel({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-border/50 bg-background/60 p-3">
-                <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.setupProposalTitle")}</div>
-                <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.approvalGate")}</div>
-                {setupPanel.setupSession ? (
-                  <div className="max-h-[19rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
-                    {setupPanel.setupSession.proposal.content}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
-                    {t("cockpit.setupProposalEmpty")}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-border/50 bg-background/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.foundationPreviewTitle")}</div>
-                  {setupPanel.setupSession?.foundationPreview ? (
-                    <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                      exact preview
-                    </span>
-                  ) : null}
+              <details className="rounded-2xl border border-border/50 bg-background/60 p-3">
+                <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  {t("cockpit.setupProposalDetails")}
+                </summary>
+                <div className="mt-3">
+                  <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.setupProposalTitle")}</div>
+                  <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.approvalGate")}</div>
+                  {setupPanel.setupSession ? (
+                    <div className="max-h-[19rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
+                      {setupPanel.setupSession.proposal.content}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
+                      {t("cockpit.setupProposalEmpty")}
+                    </div>
+                  )}
                 </div>
-                <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.foundationGate")}</div>
+              </details>
 
-                {setupPanel.setupSession?.foundationPreview && activeFoundationPreview ? (
-                  <>
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {setupPanel.foundationPreviewTabs.map((entry) => (
-                        <button
-                          key={entry.key}
-                          type="button"
-                          onClick={() => setupPanel.onSetSelectedFoundationPreviewKey(entry.key)}
-                          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${setupPanel.selectedFoundationPreviewKey === entry.key ? classNames.btnPrimary : classNames.btnSecondary}`}
-                        >
-                          {entry.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="max-h-[22rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
-                      {activeFoundationPreview.content}
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
-                    {t("cockpit.foundationPreviewEmpty")}
+              <details className="rounded-2xl border border-border/50 bg-background/60 p-3">
+                <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  {t("cockpit.foundationPreviewDetails")}
+                </summary>
+                <div className="mt-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.foundationPreviewTitle")}</div>
+                    {setupPanel.setupSession?.foundationPreview ? (
+                      <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                        exact preview
+                      </span>
+                    ) : null}
                   </div>
-                )}
-              </div>
+                  <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.foundationGate")}</div>
+
+                  {setupPanel.setupSession?.foundationPreview && activeFoundationPreview ? (
+                    <>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {setupPanel.foundationPreviewTabs.map((entry) => (
+                          <button
+                            key={entry.key}
+                            type="button"
+                            onClick={() => setupPanel.onSetSelectedFoundationPreviewKey(entry.key)}
+                            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${setupPanel.selectedFoundationPreviewKey === entry.key ? classNames.btnPrimary : classNames.btnSecondary}`}
+                          >
+                            {entry.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="max-h-[22rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-background/70 px-3 py-3 text-sm leading-7 text-foreground/88">
+                        {activeFoundationPreview.content}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/50 px-3 py-6 text-sm leading-7 text-muted-foreground">
+                      {t("cockpit.foundationPreviewEmpty")}
+                    </div>
+                  )}
+                </div>
+              </details>
             </div>
           )}
 

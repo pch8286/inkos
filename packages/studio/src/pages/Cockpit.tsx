@@ -251,6 +251,8 @@ export function Cockpit({
     setSetupWords,
     setSetupTargetChapters,
     setSetupBrief,
+    autoCreatePhase,
+    autoCreateFailedPhase,
     setupLlmForm,
     setSetupLlmForm,
     setupLlmSaving,
@@ -284,6 +286,7 @@ export function Cockpit({
     handleApproveSetup,
     handlePrepareFoundationPreview,
     handleCreateSetup,
+    handleAutoCreateSetup,
     handleResumeSetupSession,
     handleDiscussSetup,
   } = useCockpitSetupSession({
@@ -416,7 +419,7 @@ export function Cockpit({
     const action = explicitAction ?? parsedCommand?.action ?? defaultActionForMode(mode);
     const text = (parsedCommand?.text ?? input).trim();
 
-    if (action !== "write-next" && !text) return;
+    if (action !== "write-next" && action !== "create" && !text) return;
 
     setInput("");
     if (action === "ask") {
@@ -429,6 +432,10 @@ export function Cockpit({
     }
     if (action === "draft" || action === "write-next") {
       await triggerDraftAction(text, action);
+      return;
+    }
+    if (action === "create") {
+      await handleAutoCreateSetup();
       return;
     }
     await sendDiscussPrompt(text);
@@ -533,6 +540,13 @@ export function Cockpit({
     setupPanelId,
     activityPanelId,
   };
+  const needsFreshAutoCreateProposal = !setupSession || setupDraftDirty;
+  const autoCreateBusy = autoCreatePhase !== null || preparingSetupProposal || approvingSetup || preparingFoundationPreview || creatingBook;
+  const autoCreateAllowed = Boolean(
+    setupTitle.trim()
+    && setupGenre
+    && (!needsFreshAutoCreateProposal || setupCanPrepareProposal),
+  );
 
   const renderSetupActionButton = (action: SetupPrimaryAction, primary = false) => {
     const className = primary ? c.btnPrimary : c.btnSecondary;
@@ -557,6 +571,17 @@ export function Cockpit({
             icon={<Check size={14} />}
             label={t("cockpit.setupMarkReady")}
             onClick={() => markSetupReady()}
+          />
+        );
+      case "auto-create":
+        return (
+          <ActionButton
+            key={action}
+            disabled={!autoCreateAllowed || autoCreateBusy}
+            className={className}
+            icon={autoCreateBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            label={t("cockpit.createNow")}
+            onClick={() => void handleAutoCreateSetup()}
           />
         );
       case "prepare-proposal":
@@ -613,6 +638,7 @@ export function Cockpit({
   const secondarySetupActions: ReadonlyArray<SetupPrimaryAction> = ([
     "discuss",
     "mark-ready",
+    "auto-create",
     "prepare-proposal",
     "approve",
     "preview-foundation",
@@ -780,6 +806,9 @@ export function Cockpit({
             onSetSelectedFoundationPreviewKey: (key) => setSelectedFoundationPreviewKey(key as typeof selectedFoundationPreviewKey),
             renderSetupActionButton,
             resumingSetupSessionId,
+            autoCreatePhase,
+            autoCreateFailedPhase,
+            onRetryAutoCreate: () => void handleAutoCreateSetup(),
           }}
           activityEntries={activityEntries}
           activityEmptyLabel={t("app.alertsEmpty")}

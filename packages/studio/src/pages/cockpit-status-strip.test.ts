@@ -2,6 +2,28 @@ import { describe, expect, it } from "vitest";
 import { deriveCockpitStatusStrip } from "./cockpit-status-strip";
 
 describe("deriveCockpitStatusStrip", () => {
+  it("shows preparing-proposal when setup proposal work is active", () => {
+    expect(deriveCockpitStatusStrip({
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      reasoningEffort: "xhigh",
+      mode: "discuss",
+      selectedBookLabel: "New Setup",
+      selectedTruthLabel: "—",
+      selectedChapterLabel: "—",
+      showNewSetup: true,
+      busy: false,
+      preparingSetupProposal: true,
+      approvingSetup: false,
+      preparingFoundationPreview: false,
+      creatingBook: false,
+      createJobs: [],
+      setupDiscussionState: "ready",
+      setupSessionStatus: null,
+      activityEntries: [],
+    }).stage).toBe("preparing-proposal");
+  });
+
   it("prefers creating over other states", () => {
     expect(deriveCockpitStatusStrip({
       provider: "codex-cli",

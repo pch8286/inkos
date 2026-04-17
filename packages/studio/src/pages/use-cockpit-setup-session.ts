@@ -36,6 +36,7 @@ import {
   type FoundationPreviewKey,
   type InspectorTab,
 } from "./cockpit-shared";
+import { runSetupAutoCreate, type SetupAutoCreatePhase } from "./cockpit-setup-autocreate";
 
 interface SetupLlmForm {
   readonly model: string;
@@ -94,6 +95,12 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   const [loadingRecentSetupSessions, setLoadingRecentSetupSessions] = useState(false);
   const [resumingSetupSessionId, setResumingSetupSessionId] = useState("");
   const [setupRecoveryError, setSetupRecoveryError] = useState<string | null>(null);
+  const [preparingSetupProposal, setPreparingSetupProposal] = useState(false);
+  const [approvingSetup, setApprovingSetup] = useState(false);
+  const [preparingFoundationPreview, setPreparingFoundationPreview] = useState(false);
+  const [creatingBook, setCreatingBook] = useState(false);
+  const [autoCreatePhase, setAutoCreatePhase] = useState<SetupAutoCreatePhase | null>(null);
+  const [autoCreateFailedPhase, setAutoCreateFailedPhase] = useState<SetupAutoCreatePhase | null>(null);
   const setupCreateAttemptRef = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null);
 
   const setupModelSuggestions = useMemo(
@@ -219,6 +226,21 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
   }, [buildSetupFingerprintFromSession, hydrateSetupSessionState, input, loadRecentSetupSessions, syncSetupDraftSnapshot]);
 
+  const focusSetupInspector = useCallback(() => {
+    input.setShowNewSetup(true);
+    input.setMode("discuss");
+    input.setInspectorTab("setup");
+  }, [input]);
+
+  const handleSetupRequestFailure = useCallback(async (cause: unknown, sessionId?: string | null) => {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (sessionId && isBookSetupRevisionMismatchMessage(message)) {
+      await recoverLatestSetupSession(sessionId, input.t("cockpit.setupRevisionChanged"));
+      return;
+    }
+    input.setError(message);
+  }, [input, recoverLatestSetupSession]);
+
   useEffect(() => {
     void loadRecentSetupSessions();
   }, [loadRecentSetupSessions]);
@@ -252,6 +274,8 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       setPendingSetupBookId("");
       setReadySetupFingerprint(null);
       setCommittedSetupFingerprint(null);
+      setAutoCreatePhase(null);
+      setAutoCreateFailedPhase(null);
       if (setupRecoveryError) {
         setSetupRecoveryError(null);
       }
@@ -282,6 +306,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
 
   const markSetupReady = useCallback(() => {
     setReadySetupFingerprint(currentSetupDraftFingerprint);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
   }, [currentSetupDraftFingerprint, input]);
 
@@ -315,6 +340,89 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
   }, [input, setupLlmForm.model, setupLlmForm.reasoningEffort]);
 
+  const requestSetupProposal = useCallback(async () => {
+    const result = await postApi<BookSetupSessionPayload>("/book-setup/propose", {
+      sessionId: setupSession?.id,
+      expectedRevision: setupSession?.revision,
+      title: setupTitle.trim(),
+      genre: setupGenre,
+      language: input.projectLanguage,
+      platform: setupPlatform,
+      chapterWordCount: parseInt(setupWords, 10),
+      targetChapters: parseInt(setupTargetChapters, 10),
+      brief: setupBrief,
+      conversation: input.setupConversation,
+    });
+    setSetupSession(result);
+    syncSetupDraftSnapshot(currentSetupDraftFingerprint);
+    setSelectedFoundationPreviewKey("storyBible");
+    setPendingSetupBookId("");
+    focusSetupInspector();
+    await loadRecentSetupSessions();
+    return result;
+  }, [
+    currentSetupDraftFingerprint,
+    focusSetupInspector,
+    input,
+    loadRecentSetupSessions,
+    setupBrief,
+    setupGenre,
+    setupPlatform,
+    setupSession,
+    setupTargetChapters,
+    setupTitle,
+    setupWords,
+    syncSetupDraftSnapshot,
+  ]);
+
+  const requestSetupApproval = useCallback(async (session: BookSetupSessionPayload) => {
+    const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
+    const result = await postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/approve`, request);
+    setSetupSession(result);
+    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+    focusSetupInspector();
+    await loadRecentSetupSessions();
+    return result;
+  }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
+
+  const requestFoundationPreview = useCallback(async (session: BookSetupSessionPayload) => {
+    const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
+    const result = await postApi<BookSetupSessionPayload>(`/book-setup/${session.id}/foundation-preview`, request);
+    setSetupSession(result);
+    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+    setSelectedFoundationPreviewKey("storyBible");
+    focusSetupInspector();
+    await loadRecentSetupSessions();
+    return result;
+  }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
+
+  const requestCreateSetup = useCallback(async (session: BookSetupSessionPayload) => {
+    const request: BookSetupCreateRequest = {
+      expectedRevision: session.revision,
+      expectedPreviewDigest: session.foundationPreview!.digest,
+    };
+    const fingerprint = buildSetupCreateRequestFingerprint({
+      sessionId: session.id,
+      expectedRevision: request.expectedRevision,
+      expectedPreviewDigest: request.expectedPreviewDigest,
+    });
+    const currentAttempt = setupCreateAttemptRef.current;
+    const idempotencyKey = currentAttempt?.fingerprint === fingerprint
+      ? currentAttempt.key
+      : createIdempotencyKey();
+    setupCreateAttemptRef.current = { fingerprint, key: idempotencyKey };
+
+    const result = await postApi<{ bookId: string; session: BookSetupSessionPayload }>(`/book-setup/${session.id}/create`, request, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+    setSetupSession(result.session);
+    setCommittedSetupFingerprint(currentSetupDraftFingerprint);
+    setPendingSetupBookId(result.bookId);
+    focusSetupInspector();
+    await Promise.all([input.refetchBooks(), input.refetchCreateStatus(), loadRecentSetupSessions()]);
+    return result;
+  }, [currentSetupDraftFingerprint, focusSetupInspector, input, loadRecentSetupSessions]);
+
   const handlePrepareSetupProposal = useCallback(async () => {
     if (!setupTitle.trim()) {
       input.setError(input.t("create.titleRequired"));
@@ -329,57 +437,18 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       return;
     }
 
-    input.setShowNewSetup(true);
-    input.setMode("discuss");
-    setPendingSetupBookId("");
+    setPreparingSetupProposal(true);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
     try {
-      const result = await postApi<BookSetupSessionPayload>("/book-setup/propose", {
-        sessionId: setupSession?.id,
-        expectedRevision: setupSession?.revision,
-        title: setupTitle.trim(),
-        genre: setupGenre,
-        language: input.projectLanguage,
-        platform: setupPlatform,
-        chapterWordCount: parseInt(setupWords, 10),
-        targetChapters: parseInt(setupTargetChapters, 10),
-        brief: setupBrief,
-        conversation: input.setupConversation,
-      });
-      setSetupSession(result);
-      syncSetupDraftSnapshot(currentSetupDraftFingerprint);
-      setSelectedFoundationPreviewKey("storyBible");
-      input.setInspectorTab("setup");
+      await requestSetupProposal();
       input.appendMessage(input.setupThreadKey, createMessage("system", input.t("cockpit.setupProposalReady")));
-      await loadRecentSetupSessions();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if (setupSession && isBookSetupRevisionMismatchMessage(message)) {
-        await recoverLatestSetupSession(setupSession.id, input.t("cockpit.setupRevisionChanged"));
-        return;
-      }
-      input.setError(message);
+      await handleSetupRequestFailure(cause, setupSession?.id);
+    } finally {
+      setPreparingSetupProposal(false);
     }
-  }, [
-    currentSetupDraftFingerprint,
-    input,
-    loadRecentSetupSessions,
-    recoverLatestSetupSession,
-    setupBrief,
-    setupCanPrepareProposal,
-    setupGenre,
-    setupPlatform,
-    setupSession,
-    setupTargetChapters,
-    setupTitle,
-    setupWords,
-    syncSetupDraftSnapshot,
-  ]);
-
-  const [approvingSetup, setApprovingSetup] = useState(false);
-  const [preparingFoundationPreview, setPreparingFoundationPreview] = useState(false);
-  const [creatingBook, setCreatingBook] = useState(false);
-  const [preparingSetupProposal, setPreparingSetupProposal] = useState(false);
+  }, [handleSetupRequestFailure, input, requestSetupProposal, setupCanPrepareProposal, setupGenre, setupSession?.id, setupTitle]);
 
   const handleApproveSetup = useCallback(async () => {
     if (!setupSession) {
@@ -392,28 +461,17 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setApprovingSetup(true);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
     try {
-      const request: BookSetupRevisionRequest = { expectedRevision: setupSession.revision };
-      const result = await postApi<BookSetupSessionPayload>(`/book-setup/${setupSession.id}/approve`, request);
-      setSetupSession(result);
-      setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-      input.setShowNewSetup(true);
-      input.setMode("discuss");
-      input.setInspectorTab("setup");
+      await requestSetupApproval(setupSession);
       input.appendMessage(input.setupThreadKey, createMessage("system", input.t("cockpit.setupApproved")));
-      await loadRecentSetupSessions();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if (isBookSetupRevisionMismatchMessage(message)) {
-        await recoverLatestSetupSession(setupSession.id, input.t("cockpit.setupRevisionChanged"));
-        return;
-      }
-      input.setError(message);
+      await handleSetupRequestFailure(cause, setupSession.id);
     } finally {
       setApprovingSetup(false);
     }
-  }, [currentSetupDraftFingerprint, input, loadRecentSetupSessions, recoverLatestSetupSession, setupDraftDirty, setupSession]);
+  }, [handleSetupRequestFailure, input, requestSetupApproval, setupDraftDirty, setupSession]);
 
   const handlePrepareFoundationPreview = useCallback(async () => {
     if (!setupSession) {
@@ -430,29 +488,17 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setPreparingFoundationPreview(true);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
     try {
-      const request: BookSetupRevisionRequest = { expectedRevision: setupSession.revision };
-      const result = await postApi<BookSetupSessionPayload>(`/book-setup/${setupSession.id}/foundation-preview`, request);
-      setSetupSession(result);
-      setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-      setSelectedFoundationPreviewKey("storyBible");
-      input.setShowNewSetup(true);
-      input.setMode("discuss");
-      input.setInspectorTab("setup");
+      await requestFoundationPreview(setupSession);
       input.appendMessage(input.setupThreadKey, createMessage("system", input.t("cockpit.foundationPreviewReady")));
-      await loadRecentSetupSessions();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if (isBookSetupRevisionMismatchMessage(message)) {
-        await recoverLatestSetupSession(setupSession.id, input.t("cockpit.setupRevisionChanged"));
-        return;
-      }
-      input.setError(message);
+      await handleSetupRequestFailure(cause, setupSession.id);
     } finally {
       setPreparingFoundationPreview(false);
     }
-  }, [currentSetupDraftFingerprint, input, loadRecentSetupSessions, recoverLatestSetupSession, setupDraftDirty, setupSession]);
+  }, [handleSetupRequestFailure, input, requestFoundationPreview, setupDraftDirty, setupSession]);
 
   const handleCreateSetup = useCallback(async () => {
     if (!setupSession) {
@@ -473,44 +519,99 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setCreatingBook(true);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
     try {
-      const request: BookSetupCreateRequest = {
-        expectedRevision: setupSession.revision,
-        expectedPreviewDigest: setupSession.foundationPreview.digest,
-      };
-      const fingerprint = buildSetupCreateRequestFingerprint({
-        sessionId: setupSession.id,
-        expectedRevision: request.expectedRevision,
-        expectedPreviewDigest: request.expectedPreviewDigest,
-      });
-      const currentAttempt = setupCreateAttemptRef.current;
-      const idempotencyKey = currentAttempt?.fingerprint === fingerprint
-        ? currentAttempt.key
-        : createIdempotencyKey();
-      setupCreateAttemptRef.current = { fingerprint, key: idempotencyKey };
-
-      const result = await postApi<{ bookId: string; session: BookSetupSessionPayload }>(`/book-setup/${setupSession.id}/create`, request, {
-        headers: { "Idempotency-Key": idempotencyKey },
-      });
-      setSetupSession(result.session);
-      setCommittedSetupFingerprint(currentSetupDraftFingerprint);
-      setPendingSetupBookId(result.bookId);
-      input.setMode("discuss");
-      input.setInspectorTab("setup");
+      await requestCreateSetup(setupSession);
       input.appendMessage(input.setupThreadKey, createMessage("system", input.t("cockpit.setupApprovedQueued")));
-      await Promise.all([input.refetchBooks(), input.refetchCreateStatus(), loadRecentSetupSessions()]);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if (isBookSetupRevisionMismatchMessage(message)) {
-        await recoverLatestSetupSession(setupSession.id, input.t("cockpit.setupRevisionChanged"));
-        return;
-      }
-      input.setError(message);
+      await handleSetupRequestFailure(cause, setupSession.id);
     } finally {
       setCreatingBook(false);
     }
-  }, [currentSetupDraftFingerprint, input, loadRecentSetupSessions, recoverLatestSetupSession, setupDraftDirty, setupSession]);
+  }, [handleSetupRequestFailure, input, requestCreateSetup, setupDraftDirty, setupSession]);
+
+  const handleAutoCreateSetup = useCallback(async () => {
+    const needsFreshProposal = !setupSession || setupDraftDirty;
+
+    if (!setupTitle.trim()) {
+      input.setError(input.t("create.titleRequired"));
+      return;
+    }
+    if (!setupGenre) {
+      input.setError(input.t("create.genreRequired"));
+      return;
+    }
+    if (needsFreshProposal && !setupCanPrepareProposal) {
+      input.setError(input.t("cockpit.setupReadyHint"));
+      return;
+    }
+
+    setAutoCreateFailedPhase(null);
+    setPendingSetupBookId("");
+    input.setError(null);
+
+    const outcome = await runSetupAutoCreate({
+      currentSession: setupSession,
+      needsFreshProposal,
+      onPhase: setAutoCreatePhase,
+      prepareProposal: async () => {
+        setPreparingSetupProposal(true);
+        try {
+          return await requestSetupProposal();
+        } finally {
+          setPreparingSetupProposal(false);
+        }
+      },
+      approveProposal: async (session) => {
+        setApprovingSetup(true);
+        try {
+          return await requestSetupApproval(session);
+        } finally {
+          setApprovingSetup(false);
+        }
+      },
+      prepareFoundationPreview: async (session) => {
+        setPreparingFoundationPreview(true);
+        try {
+          return await requestFoundationPreview(session);
+        } finally {
+          setPreparingFoundationPreview(false);
+        }
+      },
+      createBook: async (session) => {
+        setCreatingBook(true);
+        try {
+          return await requestCreateSetup(session);
+        } finally {
+          setCreatingBook(false);
+        }
+      },
+    });
+
+    if (outcome.status === "failure") {
+      setAutoCreateFailedPhase(outcome.phase);
+      if (outcome.session) {
+        setSetupSession(outcome.session);
+      }
+      await handleSetupRequestFailure(outcome.cause, outcome.session?.id ?? setupSession?.id);
+      return;
+    }
+
+    input.appendMessage(input.setupThreadKey, createMessage("system", input.t("cockpit.setupApprovedQueued")));
+  }, [
+    handleSetupRequestFailure,
+    input,
+    requestCreateSetup,
+    requestFoundationPreview,
+    requestSetupApproval,
+    requestSetupProposal,
+    setupCanPrepareProposal,
+    setupDraftDirty,
+    setupGenre,
+    setupSession,
+    setupTitle,
+  ]);
 
   const handleResumeSetupSession = useCallback(async (summary: BookSetupSessionSummary) => {
     if (resumingSetupSessionId) {
@@ -518,6 +619,8 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setResumingSetupSessionId(summary.id);
+    setAutoCreatePhase(null);
+    setAutoCreateFailedPhase(null);
     input.setError(null);
     setSetupRecoveryError(null);
     try {
@@ -536,9 +639,8 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [buildSetupFingerprintFromSession, hydrateSetupSessionState, input, loadRecentSetupSessions, recoverLatestSetupSession, resumingSetupSessionId, syncSetupDraftSnapshot]);
 
   const handleDiscussSetup = useCallback(async () => {
-    input.setShowNewSetup(true);
-    input.setMode("discuss");
-    input.setInspectorTab("setup");
+    setAutoCreateFailedPhase(null);
+    focusSetupInspector();
     const prompt = [
       setupTitle ? `Title idea: ${setupTitle}` : "",
       setupGenre ? `Genre: ${setupGenre}` : "",
@@ -546,7 +648,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       setupBrief ? `Brief:\n${setupBrief}` : "Brainstorm a new story setup with me before writing binder files.",
     ].filter(Boolean).join("\n\n");
     await input.sendDiscussPrompt(prompt, { threadKey: input.setupThreadKey, forceSetup: true });
-  }, [input, setupBrief, setupGenre, setupPlatform, setupTitle]);
+  }, [focusSetupInspector, input, setupBrief, setupGenre, setupPlatform, setupTitle]);
 
   return {
     setupSession,
@@ -589,6 +691,8 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     setupProposalDelta,
     setupDraftDirty,
     setupCanPrepareProposal,
+    autoCreatePhase,
+    autoCreateFailedPhase,
     preparingSetupProposal,
     approvingSetup,
     preparingFoundationPreview,
@@ -599,6 +703,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     handleApproveSetup,
     handlePrepareFoundationPreview,
     handleCreateSetup,
+    handleAutoCreateSetup,
     handleResumeSetupSession,
     handleDiscussSetup,
   };
