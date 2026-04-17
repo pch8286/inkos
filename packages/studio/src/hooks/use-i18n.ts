@@ -144,6 +144,8 @@ const strings = {
   "cockpit.openBook": { zh: "打开书籍", en: "Open Book", ko: "책 열기" },
   "cockpit.openBinder": { zh: "打开设定集", en: "Open Binder", ko: "설정집 열기" },
   "cockpit.queueTitle": { zh: "后台任务", en: "Background Queue", ko: "백그라운드 큐" },
+  "cockpit.queueNextTurns": { zh: "下一轮队列", en: "Queued Next Turns", ko: "다음 턴 큐" },
+  "cockpit.queueShortcutHint": { zh: "Enter / Tab 加入下一轮；Shift+← 或 Alt+← 取回最近一条继续修改。", en: "Enter / Tab queues the next turn. Shift+Left or Alt+Left restores the latest queued item for editing.", ko: "Enter / Tab으로 다음 턴을 큐에 넣고, Shift+왼쪽 또는 Alt+왼쪽으로 가장 최근 항목을 다시 꺼내 수정합니다." },
   "cockpit.activity": { zh: "最近活动", en: "Recent Activity", ko: "최근 활동" },
   "cockpit.messagesEmpty": { zh: "从一句问题开始，先把方向对齐。需要写入时再切到提案和应用。", en: "Start with one question and align the direction first. Switch into proposals and apply only when you are ready to write.", ko: "질문 한 줄에서 시작해 방향부터 맞추세요. 실제 반영이 필요할 때만 제안과 적용으로 넘어갑니다." },
   "cockpit.statusStage": { zh: "阶段", en: "Stage", ko: "단계" },

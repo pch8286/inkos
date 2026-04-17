@@ -33,7 +33,7 @@ export async function runSetupAutoCreate(input: {
   readonly createBook: (session: BookSetupSessionPayload) => Promise<SetupAutoCreateCreateResult>;
   readonly onPhase?: (phase: SetupAutoCreatePhase | null) => void;
 }): Promise<SetupAutoCreateSuccess | SetupAutoCreateFailure> {
-  let session = input.currentSession;
+  let session = input.needsFreshProposal ? null : input.currentSession;
   let phase: SetupAutoCreatePhase = "creating";
 
   if (session?.status === "creating") {

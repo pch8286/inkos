@@ -1,7 +1,188 @@
 import { describe, expect, it } from "vitest";
 import { deriveCockpitStatusStrip } from "./cockpit-status-strip";
 
+const baseInput = {
+  provider: "codex-cli",
+  model: "gpt-5.4",
+  reasoningEffort: "xhigh" as const,
+  mode: "discuss" as const,
+  selectedBookLabel: "Book",
+  selectedTruthLabel: "book_rules.md",
+  selectedChapterLabel: "Chapter 12",
+  showNewSetup: false,
+  busy: false,
+  preparingSetupProposal: false,
+  approvingSetup: false,
+  preparingFoundationPreview: false,
+  creatingBook: false,
+  createJobs: [],
+  setupDiscussionState: "discussing" as const,
+  setupSessionStatus: null,
+  activityEntries: [],
+};
+
 describe("deriveCockpitStatusStrip", () => {
+  it("marks structured setup work as live determinate progress", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      preparingFoundationPreview: true,
+    })).toMatchObject({
+      stage: "previewing-foundation",
+      isLive: true,
+      liveStage: "previewing-foundation",
+      progressMode: "determinate",
+      progressValue: 65,
+      latestEventIsError: false,
+    });
+  });
+
+  it("uses indeterminate progress for generic busy work", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+    })).toMatchObject({
+      stage: "working",
+      isLive: true,
+      liveStage: "working",
+      progressMode: "indeterminate",
+      progressValue: null,
+    });
+  });
+
+  it("uses queued jobs as compact live detail when no local work is active", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: "queued", message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "queued",
+      isLive: true,
+      progressMode: "indeterminate",
+      liveDetail: "queued",
+    });
+  });
+
+  it("flags error events so the renderer can suppress live styling", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      activityEntries: [
+        { event: "draft:error", data: { error: "agent crashed" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      latestEvent: "draft:error · agent crashed",
+      latestEventIsError: true,
+    });
+  });
+
+  it("uses explicit non-live values for idle", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+    })).toMatchObject({
+      stage: "idle",
+      isLive: false,
+      liveStage: null,
+      liveDetail: null,
+      progressMode: "none",
+      progressValue: null,
+    });
+  });
+
+  it("uses explicit non-live values for ready", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      setupDiscussionState: "ready",
+    })).toMatchObject({
+      stage: "ready",
+      isLive: false,
+      liveStage: null,
+      liveDetail: null,
+      progressMode: "none",
+      progressValue: null,
+    });
+  });
+
+  it("uses create-job message for live detail when stage is unavailable", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      isLive: true,
+      liveDetail: "waiting for worker",
+    });
+  });
+
+  it("falls back to latest event for live detail when there is no active create-job detail", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "draft:log · writing chapter 12",
+    });
+  });
+
+  it("falls back to latest event for live detail when only queued jobs have no details", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "draft:log · writing chapter 12",
+    });
+  });
+
+  it("falls back to target label when a creating job has no detail and no event is available", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "Book",
+    });
+  });
+
+  it("prefers an older creating job's stage when the newest creating job has no details", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+        { bookId: "b2", title: "Book", status: "creating", stage: "queued", message: null },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "queued",
+    });
+  });
+
+  it("falls back to target label for live detail when no create job or event is present", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "Book",
+    });
+  });
+
   it("shows preparing-proposal when setup proposal work is active", () => {
     expect(deriveCockpitStatusStrip({
       provider: "codex-cli",

@@ -77,9 +77,15 @@ export function CockpitLeftRail({
 }: CockpitLeftRailProps) {
   return (
     <aside className="studio-cockpit-left studio-cockpit-rail space-y-4 xl:pr-1">
-      <div className="rounded-[1.6rem] border border-border/50 bg-card/70 p-4">
-        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          {t("cockpit.selectBook")}
+      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            <BookOpen size={14} />
+            {t("cockpit.selectBook")}
+          </div>
+          <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+            {books.length}
+          </span>
         </div>
         <div className="space-y-2">
           <button
@@ -87,8 +93,8 @@ export function CockpitLeftRail({
             onClick={onNewSetup}
             className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
               showNewSetup
-                ? "studio-chip-accent text-foreground font-semibold"
-                : "studio-chip"
+                ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
+                : "studio-chip studio-surface-hover"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -100,12 +106,12 @@ export function CockpitLeftRail({
           {books.map((book) => (
             <button
               key={book.id}
-              type="button"
-              onClick={() => onSelectBook(book.id)}
-              className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
-                !showNewSetup && selectedBookId === book.id
-                  ? "studio-chip-accent text-foreground font-semibold"
-                  : "studio-chip"
+            type="button"
+            onClick={() => onSelectBook(book.id)}
+            className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
+              !showNewSetup && selectedBookId === book.id
+                  ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
+                  : "studio-chip studio-surface-hover"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -115,19 +121,27 @@ export function CockpitLeftRail({
                     {book.genre} · {book.platform}
                   </div>
                 </div>
-                {book.chaptersWritten > 0 ? (
-                  <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
-                    {book.chaptersWritten}
+                <div className="flex flex-col items-end gap-1">
+                  {book.chaptersWritten > 0 ? (
+                    <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+                      {book.chaptersWritten}
+                    </span>
+                  ) : null}
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {book.status}
                   </span>
-                ) : null}
+                </div>
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="rounded-[1.6rem] border border-border/50 bg-card/70 p-4">
-        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.scope")}</div>
+      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+        <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          <MessageSquareText size={14} />
+          {t("cockpit.scope")}
+        </div>
         <div className="grid gap-2">
           <ModeButton
             active={mode === "discuss"}
@@ -150,16 +164,21 @@ export function CockpitLeftRail({
             onClick={() => onModeChange("draft")}
           />
         </div>
-        <div className="mt-3 rounded-xl border border-border/50 bg-background/60 px-3 py-3 text-xs leading-6 text-muted-foreground">
+        <div className="mt-3 rounded-xl border border-border/50 bg-background/72 px-3 py-3 text-xs leading-6 text-muted-foreground">
           {t("cockpit.commandHint")}
         </div>
       </div>
 
       {railVisibility.showTruthList && selectedBookId && truthFiles.length > 0 ? (
-        <div className="rounded-[1.6rem] border border-border/50 bg-card/70 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            <FileText size={14} />
-            {t("cockpit.selectedTruth")}
+        <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+              <FileText size={14} />
+              {t("cockpit.selectedTruth")}
+            </div>
+            <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+              {truthFiles.length}
+            </span>
           </div>
           <div className="max-h-[18rem] space-y-2 overflow-y-auto pr-1">
             {truthFiles.map((file) => (
@@ -169,8 +188,8 @@ export function CockpitLeftRail({
                 onClick={() => onSelectTruthFile(file.name)}
                 className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
                   selectedTruthFile === file.name
-                    ? "studio-chip-accent text-foreground font-semibold"
-                    : "studio-chip"
+                    ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
+                    : "studio-chip studio-surface-hover"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -187,10 +206,15 @@ export function CockpitLeftRail({
       ) : null}
 
       {railVisibility.showChapterList && selectedBookId && chapterItems.length > 0 ? (
-        <div className="rounded-[1.6rem] border border-border/50 bg-card/70 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            <BookOpen size={14} />
-            {referenceChapterLabel}
+        <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <BookOpen size={14} />
+              {referenceChapterLabel}
+            </div>
+            <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+              {chapterItems.length}
+            </span>
           </div>
           <div className="max-h-[16rem] space-y-2 overflow-y-auto pr-1">
             {[...chapterItems].reverse().slice(0, 8).map((chapter) => (
@@ -200,8 +224,8 @@ export function CockpitLeftRail({
                 onClick={() => onSelectChapter(chapter.number)}
                 className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
                   selectedChapterNumber === chapter.number
-                    ? "studio-chip-accent text-foreground font-semibold"
-                    : "studio-chip"
+                    ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
+                    : "studio-chip studio-surface-hover"
                 }`}
               >
                 <div className="truncate font-medium">
