@@ -130,6 +130,49 @@ describe("deriveCockpitStatusStrip", () => {
     });
   });
 
+  it("falls back to latest event for live detail when only queued jobs have no details", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "draft:log · writing chapter 12",
+    });
+  });
+
+  it("falls back to target label when a creating job has no detail and no event is available", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "Book",
+    });
+  });
+
+  it("prefers an older creating job's stage when the newest creating job has no details", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+        { bookId: "b2", title: "Book", status: "creating", stage: "queued", message: null },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "queued",
+    });
+  });
+
   it("falls back to target label for live detail when no create job or event is present", () => {
     expect(deriveCockpitStatusStrip({
       ...baseInput,
