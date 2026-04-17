@@ -125,6 +125,10 @@ interface ProjectSummary {
   readonly reasoningEffort?: string;
 }
 
+export function getCockpitCreateActionErrorKey(showNewSetup: boolean): "cockpit.createRequiresOpenSetup" | null {
+  return showNewSetup ? null : "cockpit.createRequiresOpenSetup";
+}
+
 export function Cockpit({
   nav,
   theme,
@@ -418,8 +422,13 @@ export function Cockpit({
     const parsedCommand = parseComposerCommand(input);
     const action = explicitAction ?? parsedCommand?.action ?? defaultActionForMode(mode);
     const text = (parsedCommand?.text ?? input).trim();
+    const createActionErrorKey = action === "create" ? getCockpitCreateActionErrorKey(showNewSetup) : null;
 
     if (action !== "write-next" && action !== "create" && !text) return;
+    if (createActionErrorKey) {
+      setError(t(createActionErrorKey));
+      return;
+    }
 
     setInput("");
     if (action === "ask") {

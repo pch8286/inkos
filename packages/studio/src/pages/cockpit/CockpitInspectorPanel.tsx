@@ -617,7 +617,7 @@ export function CockpitInspectorPanel({
                     <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{t("cockpit.foundationPreviewTitle")}</div>
                     {setupPanel.setupSession?.foundationPreview ? (
                       <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                        exact preview
+                        {t("cockpit.exactPreviewBadge")}
                       </span>
                     ) : null}
                   </div>
