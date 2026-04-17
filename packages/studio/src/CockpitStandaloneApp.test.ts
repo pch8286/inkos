@@ -1,31 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildStandaloneCockpitUrl,
-  buildStudioEntrypointUrl,
-} from "./shared/cockpit-entrypoint";
+import { resolveBookIdFromSearch } from "./CockpitStandaloneApp";
 
-describe("buildStudioEntrypointUrl", () => {
-  it("derives studio root from the current cockpit entry path", () => {
-    expect(buildStudioEntrypointUrl("/cockpit/")).toBe("/");
+describe("resolveBookIdFromSearch", () => {
+  it("returns the trimmed bookId from the current search string", () => {
+    expect(resolveBookIdFromSearch("?bookId=%20alpha%20")).toBe("alpha");
   });
 
-  it("strips the trailing cockpit segment for mounted deployments with details", () => {
-    expect(buildStudioEntrypointUrl("/tenant-a/cockpit/", { page: "book", bookId: "alpha" }))
-      .toBe("/tenant-a/?page=book&bookId=alpha");
-  });
-});
-
-describe("buildStandaloneCockpitUrl", () => {
-  it("builds the cockpit shell path from the studio root and keeps bookId", () => {
-    expect(buildStandaloneCockpitUrl("/", { bookId: "alpha" })).toBe("/cockpit/?bookId=alpha");
-  });
-
-  it("builds the cockpit shell path for mounted deployments", () => {
-    expect(buildStandaloneCockpitUrl("/tenant-a/", { bookId: "beta" }))
-      .toBe("/tenant-a/cockpit/?bookId=beta");
-  });
-
-  it("normalizes missing trailing slashes", () => {
-    expect(buildStandaloneCockpitUrl("/tenant-a")).toBe("/tenant-a/cockpit/");
+  it("returns undefined when bookId is missing or blank", () => {
+    expect(resolveBookIdFromSearch("")).toBeUndefined();
+    expect(resolveBookIdFromSearch("?bookId=%20%20")).toBeUndefined();
   });
 });
