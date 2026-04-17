@@ -73,11 +73,11 @@ export function buildTruthAssistRequest(input: {
     }
   }
 
-  if (input.mode === "proposal" && scope.kind === "read-only") {
-    throw new Error("Truth proposal requests require explicit file scope.");
-  }
-
   if (input.mode === "proposal") {
+    if (scope.kind === "read-only") {
+      throw new Error("Truth proposal requests require explicit file scope.");
+    }
+
     if (scope.kind === "file") {
       return {
         instruction: input.instruction,

@@ -1,7 +1,12 @@
 import { readFile, access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ProjectConfigSchema, sanitizeModelOverrides, type ProjectConfig } from "../models/project.js";
+import {
+  DEFAULT_GEMINI_CLI_MODEL,
+  ProjectConfigSchema,
+  sanitizeModelOverrides,
+  type ProjectConfig,
+} from "../models/project.js";
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".inkos");
 export const GLOBAL_ENV_PATH = join(GLOBAL_CONFIG_DIR, ".env");
@@ -143,7 +148,7 @@ export async function loadProjectConfig(
       ? env.INKOS_LLM_MODEL
       : !providerChangedByEnv && typeof llm.model === "string" && llm.model.length > 0
         ? llm.model
-        : "auto-gemini-3";
+        : DEFAULT_GEMINI_CLI_MODEL;
   } else if (provider === "codex-cli") {
     llm.baseUrl = typeof env.INKOS_LLM_BASE_URL === "string" && env.INKOS_LLM_BASE_URL.length > 0
       ? env.INKOS_LLM_BASE_URL

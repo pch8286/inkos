@@ -8,6 +8,8 @@ import {
   inspectNodeRuntimePinFiles,
 } from "../runtime-requirements.js";
 
+const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+
 export const doctorCommand = new Command("doctor")
   .description("Check environment and project health")
   .option("--repair-node-runtime", "Write .nvmrc and .node-version pinned to Node 22 for this project")
@@ -181,7 +183,7 @@ export const doctorCommand = new Command("doctor")
               : undefined);
         const resolvedModel = env.INKOS_LLM_MODEL
           ?? (provider === "gemini-cli"
-            ? "auto-gemini-3"
+            ? DEFAULT_GEMINI_CLI_MODEL
             : provider === "codex-cli"
               ? "gpt-5.4"
               : undefined);

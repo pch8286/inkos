@@ -68,7 +68,7 @@ export const FALLBACK_MODEL_SUGGESTIONS: Record<Exclude<LlmProvider, "">, Readon
   "openai": ["gpt-5.4", "gpt-5.4-mini", "gpt-4.1"],
   "anthropic": ["claude-sonnet-4-0", "claude-3-7-sonnet-latest"],
   "custom": ["gpt-5.4", "gpt-5.4-mini", "gemini-2.5-pro"],
-  "gemini-cli": ["auto-gemini-3"],
+  "gemini-cli": ["gemini-3.1-pro-preview"],
   "codex-cli": ["gpt-5.4"],
 };
 

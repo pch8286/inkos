@@ -3,6 +3,8 @@ import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import { log, logError, GLOBAL_ENV_PATH } from "../utils.js";
 
+const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+
 async function hasGlobalConfig(): Promise<boolean> {
   try {
     const content = await readFile(GLOBAL_ENV_PATH, "utf-8");
@@ -117,7 +119,7 @@ export const initCommand = new Command("init")
             "",
             "# Gemini CLI OAuth example:",
             "# INKOS_LLM_PROVIDER=gemini-cli",
-            "# INKOS_LLM_MODEL=auto-gemini-3",
+            `# INKOS_LLM_MODEL=${DEFAULT_GEMINI_CLI_MODEL}`,
             "",
             "# Codex CLI OAuth example:",
             "# INKOS_LLM_PROVIDER=codex-cli",
@@ -153,7 +155,7 @@ export const initCommand = new Command("init")
         log("  # Option 1: Set global config (recommended, one-time):");
         log("  inkos config set-global --provider openai --base-url <your-api-url> --api-key <your-key> --model <your-model>");
         log("  #           or Gemini CLI OAuth:");
-        log("  inkos config set-global --provider gemini-cli --model auto-gemini-3");
+        log(`  inkos config set-global --provider gemini-cli --model ${DEFAULT_GEMINI_CLI_MODEL}`);
         log("  #           or Codex CLI OAuth:");
         log("  inkos config set-global --provider codex-cli --model gpt-5.4");
         log("  # Option 2: Edit .env for this project only");

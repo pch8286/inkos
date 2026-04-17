@@ -3,6 +3,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findProjectRoot, log, logError, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH } from "../utils.js";
 
+const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+
 export const configCommand = new Command("config")
   .description("Manage project configuration");
 
@@ -121,19 +123,21 @@ configCommand
         }
       }
 
+      const model = provider === "gemini-cli"
+        ? (opts.model ?? DEFAULT_GEMINI_CLI_MODEL)
+        : opts.model ?? (
+          provider === "codex-cli"
+            ? "gpt-5.4"
+            : ""
+        );
+
       const lines = [
         "# InkOS Global LLM Configuration",
         `INKOS_LLM_PROVIDER=${provider}`,
       ];
       if (opts.baseUrl) lines.push(`INKOS_LLM_BASE_URL=${opts.baseUrl}`);
       if (opts.apiKey) lines.push(`INKOS_LLM_API_KEY=${opts.apiKey}`);
-      lines.push(`INKOS_LLM_MODEL=${opts.model ?? (
-        provider === "gemini-cli"
-          ? "auto-gemini-3"
-          : provider === "codex-cli"
-            ? "gpt-5.4"
-            : ""
-      )}`);
+      lines.push(`INKOS_LLM_MODEL=${model}`);
       if (opts.temperature) lines.push(`INKOS_LLM_TEMPERATURE=${opts.temperature}`);
       if (opts.maxTokens) lines.push(`INKOS_LLM_MAX_TOKENS=${opts.maxTokens}`);
       if (opts.thinkingBudget) lines.push(`INKOS_LLM_THINKING_BUDGET=${opts.thinkingBudget}`);

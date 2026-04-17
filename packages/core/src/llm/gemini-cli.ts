@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { LLMConfig } from "../models/project.js";
+import { DEFAULT_GEMINI_CLI_MODEL, type LLMConfig } from "../models/project.js";
 import type {
   AgentMessage,
   ChatWithToolsResult,
@@ -16,7 +16,7 @@ import type {
   ToolDefinition,
 } from "./provider.js";
 
-const GEMINI_CLI_DEFAULT_MODEL = "auto-gemini-3";
+const GEMINI_CLI_DEFAULT_MODEL = DEFAULT_GEMINI_CLI_MODEL;
 const GEMINI_CLI_DEFAULT_COMMAND = "gemini";
 
 interface GeminiCliRuntimeOptions {
