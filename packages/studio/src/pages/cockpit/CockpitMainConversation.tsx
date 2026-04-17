@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import type { CockpitMode } from "../cockpit-ui-state";
 import type { ComposerAction, } from "../cockpit-parsing";
 import type { QueuedComposerEntry } from "../cockpit-queue-state";
+import type { CockpitStatusStrip } from "../cockpit-status-strip";
 import type { CockpitMessage } from "../cockpit-shared";
 import {
-  ArrowRight,
   Bot,
   Check,
   Lightbulb,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
+import { CockpitLiveStatusStrip } from "./CockpitLiveStatusStrip";
 
 interface ChipItem {
   readonly label: string;
@@ -72,7 +73,7 @@ interface CockpitMainConversationProps {
   readonly scopeChips: ReadonlyArray<ChipItem>;
   readonly hasPendingChanges: boolean;
   readonly statusPills: ReadonlyArray<ChipItem>;
-  readonly statusLatestEvent: string | null;
+  readonly status: CockpitStatusStrip;
   readonly activeMessages: ReadonlyArray<CockpitMessage>;
   readonly quickStartPanel: QuickStartPanel | null;
   readonly composerInputId: string;
@@ -103,7 +104,7 @@ export function CockpitMainConversation({
   scopeChips,
   hasPendingChanges,
   statusPills,
-  statusLatestEvent,
+  status,
   activeMessages,
   quickStartPanel,
   composerInputId,
@@ -124,7 +125,7 @@ export function CockpitMainConversation({
   StatusPill,
   MessageBubble,
 }: CockpitMainConversationProps) {
-  const latestEventLooksLikeError = Boolean(statusLatestEvent && /\berror\b/i.test(statusLatestEvent));
+  const statusIsErrorFirst = status.latestEventIsError;
   const queuePreviewEntries = summarizeQueuedComposerEntries(queuedComposerEntries);
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -174,10 +175,10 @@ export function CockpitMainConversation({
 
           <div className="studio-cockpit-briefing-note">
             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-              {statusLatestEvent ? t("cockpit.statusLatestEvent") : t("cockpit.pendingChanges")}
+              {status.latestEvent ? t("cockpit.statusLatestEvent") : t("cockpit.pendingChanges")}
             </div>
             <div className="mt-2 text-sm leading-6 text-foreground/84">
-              {statusLatestEvent || (hasPendingChanges ? t("cockpit.applyAll") : composerHint)}
+              {status.latestEvent || (hasPendingChanges ? t("cockpit.applyAll") : composerHint)}
             </div>
           </div>
         </div>
@@ -255,25 +256,18 @@ export function CockpitMainConversation({
               {error}
             </div>
           ) : null}
-          {!error && latestEventLooksLikeError ? (
+          {!error && statusIsErrorFirst ? (
             <div className={`mb-3 rounded-xl border px-4 py-3 text-sm ${classes.error}`}>
-              {statusLatestEvent}
+              {status.latestEvent}
             </div>
           ) : null}
 
-          <div className="studio-cockpit-status-strip mb-3" role="status" aria-live="polite">
-            <div className="studio-cockpit-status-pills">
-              {statusPills.map((pill) => (
-                <StatusPill key={`${pill.label}-${pill.value}`} label={pill.label} value={pill.value} accent={pill.accent} />
-              ))}
-            </div>
-            {statusLatestEvent ? (
-              <div className="studio-cockpit-status-event">
-                <span className="studio-cockpit-status-event-label">{t("cockpit.statusLatestEvent")}</span>
-                <span className="truncate">{statusLatestEvent}</span>
-              </div>
-            ) : null}
-          </div>
+          <CockpitLiveStatusStrip
+            t={t}
+            status={status}
+            statusPills={statusPills}
+            StatusPill={StatusPill}
+          />
 
           <div className="studio-cockpit-composer rounded-[1.35rem] border border-border/50 bg-background/55 p-3">
             <label

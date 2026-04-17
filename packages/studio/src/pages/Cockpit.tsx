@@ -926,7 +926,7 @@ export function Cockpit({
           scopeChips={scopeChips}
           hasPendingChanges={hasPendingChanges}
           statusPills={statusPills}
-          statusLatestEvent={statusStrip.latestEvent}
+          status={statusStrip}
           activeMessages={activeMessages}
           quickStartPanel={setupQuickStartPanel}
           composerInputId={composerInputId}

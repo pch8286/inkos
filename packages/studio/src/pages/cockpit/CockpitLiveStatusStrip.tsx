@@ -30,6 +30,21 @@ export function CockpitLiveStatusStrip({
   const progressStyle = status.progressMode === "determinate" && status.progressValue !== null
     ? ({ "--cockpit-live-progress": `${status.progressValue}%` } as React.CSSProperties)
     : undefined;
+  const progressBarLabel = liveStageLabel
+    ? (status.liveDetail ? `${liveStageLabel}: ${status.liveDetail}` : liveStageLabel)
+    : (status.liveDetail ?? status.latestEvent ?? t("cockpit.statusLatestEvent"));
+  const progressBarAria = status.progressMode === "determinate" && status.progressValue !== null
+    ? {
+      "aria-label": progressBarLabel,
+      "aria-valuemin": 0,
+      "aria-valuemax": 100,
+      "aria-valuenow": status.progressValue,
+    }
+    : {
+      "aria-label": progressBarLabel,
+      "aria-valuemin": 0,
+      "aria-valuemax": 100,
+    };
 
   return (
     <div
@@ -51,7 +66,13 @@ export function CockpitLiveStatusStrip({
             {status.liveDetail ? <span className="studio-cockpit-live-status-detail">{status.liveDetail}</span> : null}
           </div>
           {hasProgress ? (
-            <div className="studio-cockpit-live-progress" data-progress-mode={status.progressMode} style={progressStyle} />
+            <div
+              className="studio-cockpit-live-progress"
+              data-progress-mode={status.progressMode}
+              style={progressStyle}
+              role="progressbar"
+              {...progressBarAria}
+            />
           ) : null}
         </>
       ) : status.latestEvent ? (

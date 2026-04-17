@@ -493,6 +493,26 @@ h3 { font-size: 1.25rem; }
 .chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
 
+@keyframes liveStripEnter {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes livePulseBadge {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.06); }
+}
+
+@keyframes liveProgressHold {
+  0% { transform: scaleX(0.985); }
+  100% { transform: scaleX(1.03); }
+}
+
+@keyframes liveProgressPulse {
+  0% { transform: translateX(-35%); }
+  100% { transform: translateX(300%); }
+}
+
 /* Panel slide transition */
 .chat-panel-enter {
   transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -743,6 +763,16 @@ h3 { font-size: 1.25rem; }
   border: 1px solid color-mix(in oklch, var(--border) 54%, transparent);
   border-radius: 1.1rem;
   background: color-mix(in oklch, var(--background) 84%, transparent);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 240ms ease, box-shadow 240ms ease;
+}
+
+.studio-cockpit-live-status-strip {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--studio-chip-accent) 15%, transparent),
+    0 12px 28px -24px color-mix(in oklch, var(--studio-chip-accent) 32%, transparent);
+  animation: liveStripEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .studio-cockpit-status-pills {
@@ -750,6 +780,41 @@ h3 { font-size: 1.25rem; }
   flex-wrap: wrap;
   gap: 0.5rem;
   min-width: 0;
+}
+
+.studio-cockpit-live-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.studio-cockpit-live-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  background: linear-gradient(135deg, var(--studio-cta-start), var(--studio-cta-end));
+  color: var(--studio-cta-text);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 16px -10px color-mix(in oklch, var(--studio-cta-text) 36%, transparent);
+  animation: livePulseBadge 2.4s ease-in-out infinite;
+}
+
+.studio-cockpit-live-status-stage,
+.studio-cockpit-live-status-detail {
+  color: color-mix(in oklch, var(--foreground) 82%, var(--muted-foreground));
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.studio-cockpit-live-status-stage {
+  font-weight: 700;
+  color: var(--studio-state-text);
 }
 
 .studio-cockpit-status-event {
@@ -768,6 +833,45 @@ h3 { font-size: 1.25rem; }
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--muted-foreground);
+}
+
+.studio-cockpit-live-progress {
+  position: relative;
+  width: 100%;
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--primary) 28%, transparent);
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+}
+
+.studio-cockpit-live-progress::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: min(var(--cockpit-live-progress, 0%), 100%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--studio-state-ok), var(--studio-state-text));
+  transform-origin: left;
+}
+
+.studio-cockpit-live-progress[data-progress-mode="determinate"]::before {
+  animation: liveProgressHold 8s ease-in-out infinite alternate;
+}
+
+.studio-cockpit-live-progress[data-progress-mode="indeterminate"]::before {
+  width: 25%;
+  animation: liveProgressPulse 1.45s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-cockpit-live-status-strip,
+  .studio-cockpit-live-status-badge,
+  .studio-cockpit-live-progress::before,
+  .studio-cockpit-live-progress {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .studio-cockpit-mode-hint {
