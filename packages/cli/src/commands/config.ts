@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findProjectRoot, log, logError, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH } from "../utils.js";
 
-const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+const DEFAULT_GEMINI_CLI_MODEL = "auto-gemini-3";
 
 export const configCommand = new Command("config")
   .description("Manage project configuration");

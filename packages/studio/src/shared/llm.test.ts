@@ -53,9 +53,9 @@ describe("llm capability helpers", () => {
     expect(defaultModelForProvider("codex-cli", capabilities)).toBe("gpt-5.5-codex-preview");
   });
 
-  it("uses Gemini 3.1 Pro Preview as the Gemini CLI fallback default", () => {
-    expect(modelSuggestionsForProvider("gemini-cli")).toEqual(["gemini-3.1-pro-preview"]);
-    expect(defaultModelForProvider("gemini-cli")).toBe("gemini-3.1-pro-preview");
+  it("uses auto-gemini-3 as the Gemini CLI fallback default", () => {
+    expect(modelSuggestionsForProvider("gemini-cli")).toEqual(["auto-gemini-3"]);
+    expect(defaultModelForProvider("gemini-cli")).toBe("auto-gemini-3");
   });
 
   it("prefers discovered reasoning efforts over fallback suggestions", () => {

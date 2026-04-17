@@ -27,8 +27,8 @@ const capabilities = {
       reasoningSource: "fallback",
     },
     "gemini-cli": {
-      models: ["gemini-3.1-pro-preview"],
-      defaultModel: "gemini-3.1-pro-preview",
+      models: ["auto-gemini-3"],
+      defaultModel: "auto-gemini-3",
       reasoningEfforts: [],
       modelSource: "fallback",
       reasoningSource: "fallback",

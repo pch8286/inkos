@@ -79,7 +79,7 @@ export type InputGovernanceMode = z.infer<typeof InputGovernanceModeSchema>;
 const ModelOverrideValueSchema = z.union([z.string(), AgentLLMOverrideSchema]);
 export type ModelOverrideValue = z.infer<typeof ModelOverrideValueSchema>;
 
-export const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+export const DEFAULT_GEMINI_CLI_MODEL = "auto-gemini-3";
 
 const MODEL_OVERRIDE_PROVIDERS = new Set(["anthropic", "openai", "custom", "gemini-cli", "codex-cli"]);
 const MODEL_OVERRIDE_REASONING = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);

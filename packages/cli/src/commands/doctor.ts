@@ -8,7 +8,7 @@ import {
   inspectNodeRuntimePinFiles,
 } from "../runtime-requirements.js";
 
-const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+const DEFAULT_GEMINI_CLI_MODEL = "auto-gemini-3";
 
 export const doctorCommand = new Command("doctor")
   .description("Check environment and project health")

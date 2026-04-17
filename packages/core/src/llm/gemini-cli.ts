@@ -132,6 +132,80 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, JSON.stringify(value, null, 2), "utf-8");
 }
 
+async function readJsonIfPresent(path: string): Promise<Record<string, unknown>> {
+  try {
+    const raw = await readFile(path, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function getBooleanSetting(input: unknown): boolean | undefined {
+  return typeof input === "boolean" ? input : undefined;
+}
+
+function getStringSetting(input: unknown): string | undefined {
+  return typeof input === "string" && input.trim().length > 0 ? input.trim() : undefined;
+}
+
+async function buildGeminiCliSettings(client: LLMClient): Promise<Record<string, unknown>> {
+  const sourceSettings = await readJsonIfPresent(join(getGeminiCliSourceHome(client), ".gemini", "settings.json"));
+  const sourceGeneral = sourceSettings.general && typeof sourceSettings.general === "object"
+    ? sourceSettings.general as Record<string, unknown>
+    : {};
+  const sourceSecurity = sourceSettings.security && typeof sourceSettings.security === "object"
+    ? sourceSettings.security as Record<string, unknown>
+    : {};
+  const sourceAuth = sourceSecurity.auth && typeof sourceSecurity.auth === "object"
+    ? sourceSecurity.auth as Record<string, unknown>
+    : {};
+  const sourceTools = sourceSettings.tools && typeof sourceSettings.tools === "object"
+    ? sourceSettings.tools as Record<string, unknown>
+    : {};
+
+  const previewFeatures = getBooleanSetting(sourceGeneral.previewFeatures);
+  const selectedType = getStringSetting(sourceAuth.selectedType) ?? "oauth-personal";
+  const autoAccept = getBooleanSetting(sourceTools.autoAccept);
+
+  return {
+    general: {
+      ...(previewFeatures !== undefined ? { previewFeatures } : {}),
+      devtools: false,
+      enableAutoUpdate: false,
+      enableAutoUpdateNotification: false,
+    },
+    admin: {
+      extensions: { enabled: false },
+      mcp: { enabled: false },
+      skills: { enabled: false },
+    },
+    security: {
+      folderTrust: { enabled: false },
+      auth: { selectedType },
+    },
+    hooksConfig: {
+      enabled: false,
+      notifications: false,
+    },
+    skills: {
+      enabled: false,
+      disabled: [],
+    },
+    experimental: {
+      enableAgents: false,
+      extensionReloading: false,
+    },
+    ...(autoAccept !== undefined ? { tools: { autoAccept } } : {}),
+    telemetry: {
+      enabled: false,
+    },
+  };
+}
+
 async function ensureGeminiCliHome(
   client: LLMClient,
   model: string,
@@ -150,41 +224,7 @@ async function ensureGeminiCliHome(
     await writeJson(registryPath, { projects: {} });
   }
 
-  const settings: Record<string, unknown> = {
-    general: {
-      devtools: false,
-      enableAutoUpdate: false,
-      enableAutoUpdateNotification: false,
-    },
-    admin: {
-      extensions: { enabled: false },
-      mcp: { enabled: false },
-      skills: { enabled: false },
-    },
-    security: {
-      folderTrust: { enabled: false },
-      auth: { selectedType: "oauth-personal" },
-    },
-    hooksConfig: {
-      enabled: false,
-      notifications: false,
-    },
-    skills: {
-      enabled: false,
-      disabled: [],
-    },
-    experimental: {
-      enableAgents: false,
-      extensionReloading: false,
-    },
-    tools: {
-      sandbox: false,
-      core: [],
-    },
-    telemetry: {
-      enabled: false,
-    },
-  };
+  const settings = await buildGeminiCliSettings(client);
 
   if (options.includeTools) {
     if (!options.projectRoot || !options.tools) {
@@ -227,8 +267,12 @@ await runGeminiCliBridge(${JSON.stringify(bridgeContextPath)}, "call", process.a
     await chmod(discoverPath, 0o755);
     await chmod(callPath, 0o755);
 
-    (settings.tools as Record<string, unknown>).discoveryCommand = discoverPath;
-    (settings.tools as Record<string, unknown>).callCommand = callPath;
+    const settingsTools = settings.tools && typeof settings.tools === "object"
+      ? settings.tools as Record<string, unknown>
+      : {};
+    settingsTools.discoveryCommand = discoverPath;
+    settingsTools.callCommand = callPath;
+    settings.tools = settingsTools;
   }
 
   await writeJson(join(geminiDir, "settings.json"), settings);

@@ -26,6 +26,7 @@ async function createFakeGeminiCliFixture(): Promise<{
   readonly commandPath: string;
   readonly oauthPath: string;
   readonly isolatedHomeBase: string;
+  readonly sourceHome: string;
 }> {
   const root = await mkdtemp(join(tmpdir(), "inkos-fake-gemini-cli-"));
   tempDirs.push(root);
@@ -34,10 +35,24 @@ async function createFakeGeminiCliFixture(): Promise<{
   const sourceGeminiDir = join(sourceHome, ".gemini");
   const isolatedHomeBase = join(root, "isolated-home");
   const oauthPath = join(sourceGeminiDir, "oauth_creds.json");
+  const sourceSettingsPath = join(sourceGeminiDir, "settings.json");
   const commandPath = join(root, "fake-gemini.mjs");
 
   await mkdir(sourceGeminiDir, { recursive: true });
   await writeFile(oauthPath, JSON.stringify({ test: true }), "utf-8");
+  await writeFile(sourceSettingsPath, JSON.stringify({
+    general: {
+      previewFeatures: true,
+    },
+    security: {
+      auth: {
+        selectedType: "oauth-personal",
+      },
+    },
+    tools: {
+      autoAccept: true,
+    },
+  }, null, 2), "utf-8");
 
   const script = `#!/usr/bin/env node
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -52,7 +67,7 @@ const stdin = await new Promise((resolve, reject) => {
 });
 
 const modelIndex = args.indexOf("--model");
-const model = modelIndex >= 0 ? args[modelIndex + 1] : "gemini-3.1-pro-preview";
+const model = modelIndex >= 0 ? args[modelIndex + 1] : "auto-gemini-3";
 const settingsPath = join(process.env.GEMINI_CLI_HOME, ".gemini", "settings.json");
 const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 const toolMode = args.includes("--approval-mode");
@@ -73,6 +88,13 @@ if (toolMode) {
 } else {
   const content = stdin.includes("ping")
     ? "FAKE_OK"
+    : stdin.includes("settings snapshot")
+      ? JSON.stringify({
+        previewFeatures: settings.general?.previewFeatures ?? null,
+        selectedType: settings.security?.auth?.selectedType ?? null,
+        toolsCore: settings.tools?.core ?? null,
+        autoAccept: settings.tools?.autoAccept ?? null,
+      })
     : stdin.includes("which model")
       ? model
       : "UNEXPECTED_PROMPT";
@@ -89,7 +111,7 @@ console.log(JSON.stringify({
   await writeFile(commandPath, script, "utf-8");
   await chmod(commandPath, 0o755);
 
-  return { commandPath, oauthPath, isolatedHomeBase };
+  return { commandPath, oauthPath, isolatedHomeBase, sourceHome };
 }
 
 async function createFakeCodexCliFixture(): Promise<{
@@ -322,7 +344,7 @@ describe("chatCompletion stream fallback", () => {
       },
     };
 
-    const error = await captureError(chatCompletion(client, "gemini-3.1-pro-preview", [
+    const error = await captureError(chatCompletion(client, "auto-gemini-3", [
       { role: "user", content: "ping" },
     ]));
 
@@ -344,7 +366,7 @@ describe("chatCompletion stream fallback", () => {
 
     const error = await captureError(chatWithTools(
       client,
-      "gemini-3.1-pro-preview",
+      "auto-gemini-3",
       [{ role: "user", content: "list books" }],
       [],
     ));
@@ -371,7 +393,7 @@ describe("chatCompletion stream fallback", () => {
       },
     };
 
-    const result = await chatCompletion(client, "gemini-3.1-pro-preview", [
+    const result = await chatCompletion(client, "auto-gemini-3", [
       { role: "user", content: "ping" },
     ]);
 
@@ -383,7 +405,7 @@ describe("chatCompletion stream fallback", () => {
     });
   });
 
-  it("uses Gemini 3.1 Pro Preview when the gemini-cli model is blank", async () => {
+  it("uses auto-gemini-3 when the gemini-cli model is blank", async () => {
     const fixture = await createFakeGeminiCliFixture();
     const client: LLMClient = {
       provider: "gemini-cli",
@@ -406,7 +428,39 @@ describe("chatCompletion stream fallback", () => {
       { role: "user", content: "which model" },
     ]);
 
-    expect(result.content).toBe("gemini-3.1-pro-preview");
+    expect(result.content).toBe("auto-gemini-3");
+  });
+
+  it("preserves previewFeatures and omits empty core tool config in isolated Gemini settings", async () => {
+    const fixture = await createFakeGeminiCliFixture();
+    const client: LLMClient = {
+      provider: "gemini-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          geminiCliCommand: fixture.commandPath,
+          geminiCliOauthSource: fixture.oauthPath,
+          geminiCliSourceHome: fixture.sourceHome,
+          geminiCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const result = await chatCompletion(client, "", [
+      { role: "user", content: "settings snapshot" },
+    ]);
+
+    expect(JSON.parse(result.content)).toEqual({
+      previewFeatures: true,
+      selectedType: "oauth-personal",
+      toolsCore: null,
+      autoAccept: true,
+    });
   });
 
   it("writes executable discovery and call commands for gemini-cli tool mode", async () => {
@@ -431,7 +485,7 @@ describe("chatCompletion stream fallback", () => {
 
     const result = await chatWithTools(
       client,
-      "gemini-3.1-pro-preview",
+      "auto-gemini-3",
       [{ role: "user", content: "inspect tool bridge setup" }],
       [{
         name: "list_books",

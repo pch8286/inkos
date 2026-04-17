@@ -106,7 +106,7 @@ describe("CLI integration", () => {
 
       const envContent = await readFile(join(projectDir, ".env"), "utf-8");
       expect(envContent).toContain("INKOS_LLM_API_KEY");
-      expect(envContent).toContain("# INKOS_LLM_MODEL=gemini-3.1-pro-preview");
+      expect(envContent).toContain("# INKOS_LLM_MODEL=auto-gemini-3");
     });
 
     it("creates .gitignore", async () => {
@@ -218,7 +218,7 @@ describe("CLI integration", () => {
 
       const envContent = await readFile(join(projectDir, ".inkos", ".env"), "utf-8");
       expect(envContent).toContain("INKOS_LLM_PROVIDER=gemini-cli");
-      expect(envContent).toContain("INKOS_LLM_MODEL=gemini-3.1-pro-preview");
+      expect(envContent).toContain("INKOS_LLM_MODEL=auto-gemini-3");
       expect(envContent).not.toContain("INKOS_LLM_API_KEY=");
       expect(envContent).not.toContain("INKOS_LLM_BASE_URL=");
     });

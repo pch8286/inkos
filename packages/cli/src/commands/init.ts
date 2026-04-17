@@ -3,7 +3,7 @@ import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import { log, logError, GLOBAL_ENV_PATH } from "../utils.js";
 
-const DEFAULT_GEMINI_CLI_MODEL = "gemini-3.1-pro-preview";
+const DEFAULT_GEMINI_CLI_MODEL = "auto-gemini-3";
 
 async function hasGlobalConfig(): Promise<boolean> {
   try {

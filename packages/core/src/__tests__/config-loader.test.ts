@@ -99,7 +99,7 @@ describe("loadProjectConfig local provider auth", () => {
 
     expect(config.llm.provider).toBe("gemini-cli");
     expect(config.llm.baseUrl).toBe("https://gemini-cli.invalid");
-    expect(config.llm.model).toBe("gemini-3.1-pro-preview");
+    expect(config.llm.model).toBe("auto-gemini-3");
     expect(config.llm.apiKey).toBe("");
   });
 
