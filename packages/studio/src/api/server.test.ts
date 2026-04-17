@@ -14,6 +14,40 @@ const loadProjectConfigMock = vi.fn();
 const serveMock = vi.fn();
 const pipelineConfigs: unknown[] = [];
 const globalEnvPath = join(tmpdir(), "inkos-global.env");
+const readerSettingsSchemaMock = {
+  safeParse(value: unknown): { success: true; data: unknown } | { success: false; error: Error } {
+    const isReaderDeviceSettings = (settings: unknown): boolean => {
+      if (typeof settings !== "object" || settings === null) {
+        return false;
+      }
+
+      const record = settings as Record<string, unknown>;
+      const fontSize = record.fontSize;
+      const lineHeight = record.lineHeight;
+
+      return (record.fontPreset === "sans" || record.fontPreset === "serif" || record.fontPreset === "myeongjo")
+        && typeof fontSize === "number"
+        && Number.isInteger(fontSize)
+        && fontSize >= 12
+        && fontSize <= 28
+        && typeof lineHeight === "number"
+        && lineHeight >= 1.3
+        && lineHeight <= 2.2;
+    };
+
+    if (
+      typeof value === "object"
+      && value !== null
+      && isReaderDeviceSettings((value as Record<string, unknown>).mobile)
+      && isReaderDeviceSettings((value as Record<string, unknown>).desktop)
+    ) {
+      return { success: true, data: value };
+    }
+
+    return { success: false, error: new Error("Invalid reader settings") };
+  },
+};
+const READER_SETTINGS_TEST_TIMEOUT_MS = 15000;
 
 const logger = {
   child: () => logger,
@@ -97,12 +131,13 @@ vi.mock("@actalk/inkos-core", () => {
     }
   }
 
-  return {
-    StateManager: MockStateManager,
-    PipelineRunner: MockPipelineRunner,
-    Scheduler: MockScheduler,
-    createLLMClient: createLLMClientMock,
-    createLogger: vi.fn((options?: { tag?: string; sinks?: Array<{ write: (entry: { level: string; tag: string; message: string; timestamp: string }) => void }> }) => {
+    return {
+      StateManager: MockStateManager,
+      PipelineRunner: MockPipelineRunner,
+      Scheduler: MockScheduler,
+      ReaderSettingsSchema: readerSettingsSchemaMock,
+      createLLMClient: createLLMClientMock,
+      createLogger: vi.fn((options?: { tag?: string; sinks?: Array<{ write: (entry: { level: string; tag: string; message: string; timestamp: string }) => void }> }) => {
       const tag = options?.tag ?? "studio";
       const sinks = options?.sinks ?? [];
       const emit = (level: "info" | "warn" | "error", message: string) => {
@@ -190,6 +225,11 @@ function makeBookInitProposal(input: { id?: string; title?: string; genre?: stri
     },
   };
 }
+
+const sampleReaderSettings = {
+  mobile: { fontPreset: "myeongjo", fontSize: 16, lineHeight: 1.72 },
+  desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.85 },
+} as const;
 
 interface StudioAppLike {
   readonly request: (input: string, init?: RequestInit) => Response | Promise<Response>;
@@ -3222,6 +3262,65 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(saved.platform).toBe("munpia");
   });
 
+  it("returns reader settings in the book detail payload", async () => {
+    await mkdir(join(root, "books", "reader-settings-book"), { recursive: true });
+    await writeFile(join(root, "books", "reader-settings-book", "book.json"), JSON.stringify({
+      id: "reader-settings-book",
+      title: "Reader Settings Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      readerSettings: sampleReaderSettings,
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/reader-settings-book");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      book: expect.objectContaining({
+        id: "reader-settings-book",
+        readerSettings: sampleReaderSettings,
+      }),
+    });
+  }, READER_SETTINGS_TEST_TIMEOUT_MS);
+
+  it("returns reader settings in the chapter detail payload", async () => {
+    await mkdir(join(root, "books", "reader-settings-chapter-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "reader-settings-chapter-book", "book.json"), JSON.stringify({
+      id: "reader-settings-chapter-book",
+      title: "Reader Settings Chapter Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+      readerSettings: sampleReaderSettings,
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "reader-settings-chapter-book", "chapters", "0001-intro.md"), "# 1화\n\n본문.", "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/reader-settings-chapter-book/chapters/1");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      chapterNumber: 1,
+      readerSettings: sampleReaderSettings,
+    });
+  }, READER_SETTINGS_TEST_TIMEOUT_MS);
+
   it("updates an existing book title through the API", async () => {
     await mkdir(join(root, "books", "rename-book"), { recursive: true });
     await writeFile(join(root, "books", "rename-book", "book.json"), JSON.stringify({
@@ -3258,6 +3357,81 @@ describe("createStudioServer daemon lifecycle", () => {
     const saved = JSON.parse(await readFile(join(root, "books", "rename-book", "book.json"), "utf-8")) as Record<string, unknown>;
     expect(saved.title).toBe("After Rename");
   });
+
+  it("persists reader settings when updating an existing book through the API", async () => {
+    await mkdir(join(root, "books", "reader-settings-write-book"), { recursive: true });
+    await writeFile(join(root, "books", "reader-settings-write-book", "book.json"), JSON.stringify({
+      id: "reader-settings-write-book",
+      title: "Before Reader Settings",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/reader-settings-write-book", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        readerSettings: sampleReaderSettings,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      book: expect.objectContaining({
+        id: "reader-settings-write-book",
+        readerSettings: sampleReaderSettings,
+      }),
+    });
+
+    const saved = JSON.parse(await readFile(join(root, "books", "reader-settings-write-book", "book.json"), "utf-8")) as Record<string, unknown>;
+    expect(saved.readerSettings).toEqual(sampleReaderSettings);
+  }, READER_SETTINGS_TEST_TIMEOUT_MS);
+
+  it("rejects malformed reader settings when updating a book through the API", async () => {
+    await mkdir(join(root, "books", "reader-settings-invalid-book"), { recursive: true });
+    await writeFile(join(root, "books", "reader-settings-invalid-book", "book.json"), JSON.stringify({
+      id: "reader-settings-invalid-book",
+      title: "Before Invalid Reader Settings",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 120,
+      chapterWordCount: 2800,
+      language: "ko",
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/reader-settings-invalid-book", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        readerSettings: {
+          mobile: { fontPreset: "sans", fontSize: 10, lineHeight: "bad" },
+          desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.85 },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid readerSettings" });
+
+    const saved = JSON.parse(await readFile(join(root, "books", "reader-settings-invalid-book", "book.json"), "utf-8")) as Record<string, unknown>;
+    expect(saved.readerSettings).toBeUndefined();
+  }, READER_SETTINGS_TEST_TIMEOUT_MS);
 
   it("rejects blank book titles through the API", async () => {
     await mkdir(join(root, "books", "rename-book"), { recursive: true });

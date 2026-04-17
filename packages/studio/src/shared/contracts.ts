@@ -19,6 +19,17 @@ export interface HealthStatus {
   readonly model: string | null;
 }
 
+export interface ReaderDeviceSettings {
+  readonly fontPreset: "sans" | "serif" | "myeongjo";
+  readonly fontSize: number;
+  readonly lineHeight: number;
+}
+
+export interface ReaderSettings {
+  readonly mobile: ReaderDeviceSettings;
+  readonly desktop: ReaderDeviceSettings;
+}
+
 // --- Books ---
 
 export interface BookSummary {
@@ -45,6 +56,7 @@ export interface BookDetail extends BookSummary {
   readonly createdAt: string;
   readonly chapterWordCount: number;
   readonly language: "ko" | "zh" | "en" | null;
+  readonly readerSettings?: ReaderSettings;
 }
 
 export interface BookSetupConversationEntry {
@@ -131,6 +143,7 @@ export interface ChapterDetail extends ChapterSummary {
   readonly auditIssues: ReadonlyArray<string>;
   readonly reviewNote?: string;
   readonly content: string;
+  readonly readerSettings?: ReaderSettings;
 }
 
 export interface SaveChapterPayload {
