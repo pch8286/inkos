@@ -16,7 +16,7 @@ interface Nav {
   readonly toBookCreate?: () => void;
 }
 
-export function resolveBookIdFromSearch(search: string): string | undefined {
+function resolveBookIdFromSearch(search: string): string | undefined {
   return new URLSearchParams(search).get("bookId")?.trim() || undefined;
 }
 
