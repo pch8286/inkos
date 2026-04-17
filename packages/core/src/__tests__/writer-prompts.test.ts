@@ -104,6 +104,9 @@ describe("buildWriterSystemPrompt", () => {
 
     expect(prompt).toContain("## 核心规则");
     expect(prompt).toContain("## 硬性禁令");
+    expect(prompt).toContain("你是负责生成正文的 writer");
+    expect(prompt).toContain("重要场景先让读者看清大轮廓和空间关系，再落到局部细节");
+    expect(prompt).toContain("人物停步、俯身、伸手、偏头等动作前");
     expect(prompt).toContain("Do not reveal the mastermind");
     expect(prompt).toContain("Keep the prose restrained");
   });
@@ -133,6 +136,9 @@ describe("buildWriterSystemPrompt", () => {
 
     expect(prompt).toContain("English Variance Brief");
     expect(prompt).toContain("resistance-bearing exchange");
+    expect(prompt).toContain("You are drafting new prose, not auditing or patching old prose");
+    expect(prompt).toContain("Scene anchors before micro-detail");
+    expect(prompt).toContain("Action needs a visible trigger");
   });
 
   it("uses Korean contract branch for Korean mode and avoids non-Korean guidance headers", () => {
@@ -161,6 +167,9 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("## 분량 가이드");
     expect(prompt).toContain("## 입력 거버넌스 계약");
     expect(prompt).toContain("## 핵심 규칙");
+    expect(prompt).toContain("너는 새 문장을 쓰는 writer다");
+    expect(prompt).toContain("장면을 쓸 때는 독자가 먼저 큰 형상과 위치 관계를 잡게 하고, 세부 묘사는 그다음에 붙인다");
+    expect(prompt).toContain("인물이 멈추거나, 숙이거나, 손을 뻗거나, 시선을 돌릴 때는");
     expect(prompt).not.toContain("## Input Governance Contract");
     expect(prompt).not.toContain("## Length Guidance");
     expect(prompt).not.toContain("## 输入治理契约");

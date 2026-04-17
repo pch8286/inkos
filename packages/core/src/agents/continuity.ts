@@ -255,10 +255,10 @@ function buildDimensionNote(
   switch (id) {
     case 8:
       return language === "en"
-        ? "Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable."
+        ? "Audit as a diagnostic reader, not a rewriter: identify where the prose becomes hard to picture or parse on first read. Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable. Also flag paragraphs that jump to isolated micro-detail or abstract verdict before the reader can picture the physical setup."
         : language === "ko"
-          ? "핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지, 그리고 서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지 확인하세요."
-          : "检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。";
+          ? "진단하는 독자 시점으로 읽고, 어디서 한 번에 그림이 안 잡히는지 표시하세요. 핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지, 그리고 서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지 확인하세요. 또한 독자가 공간과 형상을 잡기 전에 뜬 세부 디테일이나 추상 판정문으로 먼저 들어가는 문단도 표시하세요."
+          : "用诊断型读者视角审阅，指出哪些地方读者无法一遍看清、需要回读。检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。同时标记那些在读者还没看清空间与轮廓前，就先跳到孤立细节或抽象判断的段落。";
     case 19:
       return language === "en"
         ? "Check whether POV shifts are signaled clearly and stay consistent with the configured viewpoint."
@@ -267,16 +267,16 @@ function buildDimensionNote(
           : "检查视角切换是否有过渡、是否与设定视角一致";
     case 16:
       return language === "en"
-        ? "In multi-character scenes, check whether dialogue carries resistance, bargaining, concealment, or pressure rather than leaving the beat in narrated summary instead of direct pressure or exchange."
+        ? "In multi-character scenes, check whether dialogue carries resistance, bargaining, concealment, or pressure rather than leaving the beat in narrated summary instead of direct pressure or exchange. When useful, the exchange should be broken with gesture, reaction, or setting detail instead of reading like disembodied lines."
         : language === "ko"
-          ? "다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지, 그리고 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지 확인하세요."
-          : "多角色场景里，检查对话是否承载阻力、试探、隐瞒或施压，而不是被说明性摘要取代。";
+          ? "다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지, 그리고 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지 확인하세요. 필요할 때는 대사가 몸짓, 반응, 주변 디테일과 함께 배치되는지도 보세요."
+          : "多角色场景里，检查对话是否承载阻力、试探、隐瞒或施压，而不是被说明性摘要取代。必要时也检查对话有没有被动作、反应、环境细节打断，而不是像脱离场景的台词串。";
     case 17:
       return language === "en"
-        ? "Flag chapters that compress important emotional, relational, or payoff beats into chronicle summary instead of scene."
+        ? "Flag chapters that compress important emotional, relational, or payoff beats into chronicle summary instead of scene. Also flag action beats whose trigger is missing, so characters kneel, reach, pause, or inspect before the reader knows what drew them there."
         : language === "ko"
-          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트를 장면 대신 나열식 요약으로 눌러버리는지 점검하세요."
-          : "检查重要情绪变化、关系推进或回收段落是否被压成流水账式摘要而没有真正落成场景。";
+          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트를 장면 대신 나열식 요약으로 눌러버리는지 점검하세요. 또한 인물이 왜 멈추고, 왜 손을 뻗고, 왜 들여다보는지 보이기 전에 동작만 먼저 뜨는 구절도 표시하세요."
+          : "检查重要情绪变化、关系推进或回收段落是否被压成流水账式摘要而没有真正落成场景。同时标记那些角色先停步、伸手、俯身、查看，但读者还不知道动作缘由的句段。";
     case 24:
       return language === "en"
         ? "Cross-check subplot_board and chapter_summaries: flag any subplot that stays dormant long enough to feel abandoned, or a recent run where every subplot is only restated instead of genuinely moving."

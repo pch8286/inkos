@@ -145,8 +145,11 @@ describe("ReviserAgent", () => {
         | undefined;
       const systemPrompt = messages?.[0]?.content ?? "";
 
+      expect(systemPrompt).toContain("尽量小的改动");
       expect(systemPrompt).toContain("优先保留原文的绝大部分句段");
       expect(systemPrompt).toContain("除非问题跨越整章");
+      expect(systemPrompt).toContain("先让读者看清场景的大轮廓和位置关系，再落到局部细节");
+      expect(systemPrompt).toContain("人物俯身、伸手、停步等动作，要让读者先看懂动作缘由");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -291,7 +294,10 @@ describe("ReviserAgent", () => {
         | undefined;
       const systemPrompt = messages?.[0]?.content ?? "";
 
+      expect(systemPrompt).toContain("독자가 걸린 지점을 최소 수정으로 통과 가능하게 바꾸는 것");
       expect(systemPrompt).toContain("중요한 감정 변화는 감정 이름보다 행동, 감각, 말투 변화로 먼저 드러낸다");
+      expect(systemPrompt).toContain("장면의 큰 형상과 위치 관계를 먼저 세우고, 세부는 그다음에 둔다");
+      expect(systemPrompt).toContain("인물의 자세 변화와 손동작은 왜 그렇게 움직이는지 보이도록 직전 시각 정보와 연결한다");
       expect(systemPrompt).toContain("관계 변화는 짧은 직접 공방이나 망설임, 시선 회피 같은 장면 증거로 고친다");
       expect(systemPrompt).toContain("설명은 장면을 잇는 연결용으로 압축하고, 핵심 비트는 장면 안에서 체감되게 고친다");
     } finally {

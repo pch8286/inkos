@@ -6,6 +6,8 @@ import type { BookRules } from "../models/book-rules.js";
 export function buildEnglishCoreRules(_book: BookConfig): string {
   return `## Universal Writing Rules
 
+You are drafting new prose, not auditing or patching old prose. Your job is to stage scenes so the reader can parse them in one pass.
+
 ### Character Rules
 1. **Consistency**: Behavior driven by "past experience + current interests + core personality." Never break character without cause.
 2. **Dimensionality**: Core trait + contrasting detail = real person. Perfect characters are failed characters.
@@ -15,24 +17,28 @@ export function buildEnglishCoreRules(_book: BookConfig): string {
 
 ### Narrative Technique
 6. **Show, don't tell**: Convey through action and sensory detail, not exposition. Values expressed through behavior, not declared.
-7. **Sensory grounding**: Each scene includes 1-2 sensory details beyond the visual.
-8. **Chapter hooks**: Every chapter ending needs a hook—question, reveal, threat, promise.
-9. **Information layering**: Worldbuilding emerges through action. Key lore revealed at plot-critical moments. Never dump exposition.
-10. **Description serves narrative**: Environment descriptions set mood or foreshadow. One line is enough.
-11. **Downtime earns its place**: Quiet scenes must plant hooks, advance relationships, or build contrast. Pure filler is padding.
-12. **Dialogue-driven**: In scenes with character interaction, deliver conflict and information through dialogue first, narration second. Solo/escape/exploration scenes are exempt.
+7. **Scene anchors before micro-detail**: Let the reader grasp the room, object, or spatial relation before zooming into a tiny feature.
+8. **Visible mismatch before abstract verdict**: If something is wrong, show the crooked, missing, or out-of-place detail before naming the unease.
+9. **Name unfamiliar things in stages**: Introduce an object by basic shape/function first, then add specialized detail or terminology.
+10. **Action needs a visible trigger**: Before a character kneels, reaches, pauses, or flinches, show what prompted it so the motion does not float free.
+11. **Sensory grounding**: Each scene includes 1-2 sensory details beyond the visual.
+12. **Chapter hooks**: Every chapter ending needs a hook—question, reveal, threat, promise.
+13. **Information layering**: Worldbuilding emerges through action. Key lore revealed at plot-critical moments. Never dump exposition.
+14. **Description serves narrative**: Environment descriptions set mood or foreshadow. One line is enough.
+15. **Downtime earns its place**: Quiet scenes must plant hooks, advance relationships, or build contrast. Pure filler is padding.
+16. **Dialogue-driven**: In scenes with character interaction, deliver conflict and information through dialogue first, narration second. Break exchange with gesture, reaction, or setting detail when needed. Solo/escape/exploration scenes are exempt.
 
 ### Logic / Consistency
-12. **World rules are law**: Once established, physics/magic/social rules cannot bend for plot convenience.
-13. **Cost matters**: Every power, ability, or advantage must have a cost or limitation that creates real trade-offs.
-14. **Consequences stick**: Actions have consequences. Characters can't escape repercussions through luck or author fiat.
-15. **No reset buttons**: The world must change permanently in response to major events.
+17. **World rules are law**: Once established, physics/magic/social rules cannot bend for plot convenience.
+18. **Cost matters**: Every power, ability, or advantage must have a cost or limitation that creates real trade-offs.
+19. **Consequences stick**: Actions have consequences. Characters can't escape repercussions through luck or author fiat.
+20. **No reset buttons**: The world must change permanently in response to major events.
 
 ### Reader Psychology
-16. **Promise and payoff**: Every planted hook must be resolved. Every mystery must have an answer.
-17. **Escalation**: Each conflict should feel higher-stakes than the last—either externally or emotionally.
-18. **Reader proxy**: One character should react with surprise/excitement/fear when remarkable things happen, giving readers permission to feel the same.
-19. **Pacing breathing room**: After a high-intensity sequence, give 0.5-1 chapter of lower intensity before the next escalation.`;
+21. **Promise and payoff**: Every planted hook must be resolved. Every mystery must have an answer.
+22. **Escalation**: Each conflict should feel higher-stakes than the last—either externally or emotionally.
+23. **Reader proxy**: One character should react with surprise/excitement/fear when remarkable things happen, giving readers permission to feel the same.
+24. **Pacing breathing room**: After a high-intensity sequence, give 0.5-1 chapter of lower intensity before the next escalation.`;
 }
 
 // English equivalent of buildAntiAIExamples()
@@ -97,7 +103,10 @@ export function buildEnglishPreWriteChecklist(book: BookConfig, gp: GenreProfile
     "Outline anchor: Which volume_outline plot point does this chapter advance?",
     "POV: Whose perspective? Consistent throughout?",
     "Hook planted: What question/promise/threat carries reader to next chapter?",
+    "Visual anchor: Can the reader picture the physical setup before the prose zooms into small details?",
     "Sensory grounding: At least 2 non-visual senses per major scene",
+    "Action causality: Does each pause, reach, kneel, or glance have a visible trigger in the scene?",
+    "Reader parse order: In key beats, does the prose move from visible setup -> notable mismatch -> closer detail -> character action?",
     "Character consistency: Does every character act from their established motivation?",
     "Information boundary: No character references info they haven't witnessed",
     `Pacing: Chapter targets ${book.chapterWordCount} words. ${gp.pacingRule}`,

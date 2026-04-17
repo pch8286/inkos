@@ -242,9 +242,12 @@ describe("ContinuityAuditor", () => {
         | undefined;
       const systemPrompt = messages?.[0]?.content ?? "";
 
+      expect(systemPrompt).toContain("진단하는 독자 시점으로 읽고");
       expect(systemPrompt).toContain("핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지");
       expect(systemPrompt).toContain("다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지");
       expect(systemPrompt).toContain("서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지");
+      expect(systemPrompt).toContain("독자가 공간과 형상을 잡기 전에 뜬 세부 디테일");
+      expect(systemPrompt).toContain("왜 멈추고, 왜 손을 뻗고, 왜 들여다보는지");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -316,9 +319,13 @@ describe("ContinuityAuditor", () => {
         | undefined;
       const systemPrompt = messages?.[0]?.content ?? "";
 
+      expect(systemPrompt).toContain("Audit as a diagnostic reader, not a rewriter");
       expect(systemPrompt).toContain("reported after the fact");
       expect(systemPrompt).toContain("narrated summary instead of direct pressure or exchange");
       expect(systemPrompt).toContain("explains motives, stakes, or meaning that the scene already makes inferable");
+      expect(systemPrompt).toContain("before the reader can picture the physical setup");
+      expect(systemPrompt).toContain("gesture, reaction, or setting detail");
+      expect(systemPrompt).toContain("action beats whose trigger is missing");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
