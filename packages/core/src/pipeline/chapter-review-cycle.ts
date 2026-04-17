@@ -27,6 +27,21 @@ export interface ChapterReviewCycleResult {
   readonly normalizeApplied: boolean;
 }
 
+function isActionableStyleIssue(issue: AuditIssue): boolean {
+  if (issue.severity !== "warning") {
+    return false;
+  }
+
+  const text = `${issue.category} ${issue.description} ${issue.suggestion}`;
+  return [
+    "문체", "Style", "文风",
+    "대사", "Dialogue", "台词",
+    "나열식", "Chronicle", "流水账",
+    "AI", "段落", "문단",
+    "감정 직설", "대사 압력",
+  ].some((needle) => text.includes(needle));
+}
+
 export async function runChapterReviewCycle(params: {
   readonly book: Pick<{ genre: string }, "genre">;
   readonly bookDir: string;
@@ -82,8 +97,8 @@ export async function runChapterReviewCycle(params: {
     found: ReadonlyArray<{ severity: string }>;
     issues: ReadonlyArray<AuditIssue>;
   };
-  readonly logWarn: (message: { zh: string; en: string }) => void;
-  readonly logStage: (message: { zh: string; en: string }) => void;
+  readonly logWarn: (message: { zh: string; en: string; ko?: string }) => void;
+  readonly logStage: (message: { zh: string; en: string; ko?: string }) => void;
 }): Promise<ChapterReviewCycleResult> {
   let totalUsage = params.initialUsage;
   let postReviseCount = 0;
@@ -96,6 +111,7 @@ export async function runChapterReviewCycle(params: {
     params.logWarn({
       zh: `检测到 ${params.initialOutput.postWriteErrors.length} 个后写错误，审计前触发 spot-fix 修补`,
       en: `${params.initialOutput.postWriteErrors.length} post-write errors detected, triggering spot-fix before audit`,
+      ko: `후작성 오류 ${params.initialOutput.postWriteErrors.length}건 감지, 검수 전 spot-fix 실행`,
     });
     const reviser = params.createReviser();
     const spotFixIssues = params.initialOutput.postWriteErrors.map((violation) => ({
@@ -131,7 +147,7 @@ export async function runChapterReviewCycle(params: {
   normalizeApplied = normalizeApplied || normalizedBeforeAudit.applied;
   params.assertChapterContentNotEmpty(finalContent, "draft generation");
 
-  params.logStage({ zh: "审计草稿", en: "auditing draft" });
+  params.logStage({ zh: "审计草稿", en: "auditing draft", ko: "초안 검수" });
   const llmAudit = await params.auditor.auditChapter(
     params.bookDir,
     finalContent,
@@ -149,59 +165,63 @@ export async function runChapterReviewCycle(params: {
     summary: llmAudit.summary,
   };
 
-  if (!auditResult.passed) {
-    const criticalIssues = auditResult.issues.filter((issue) => issue.severity === "critical");
-    if (criticalIssues.length > 0) {
-      const reviser = params.createReviser();
-      params.logStage({ zh: "自动修复关键问题", en: "auto-revising critical issues" });
-      const reviseOutput = await reviser.reviseChapter(
+  const criticalIssues = auditResult.issues.filter((issue) => issue.severity === "critical");
+  const actionableStyleWarnings = auditResult.issues.filter((issue) => isActionableStyleIssue(issue));
+
+  if (criticalIssues.length > 0 || actionableStyleWarnings.length > 0) {
+    const reviser = params.createReviser();
+    params.logStage({
+      zh: criticalIssues.length > 0 ? "自动修复关键问题" : "自动修复风格问题",
+      en: criticalIssues.length > 0 ? "auto-revising critical issues" : "auto-revising style issues",
+      ko: criticalIssues.length > 0 ? "치명적 문제 자동 수정" : "문체 문제 자동 수정",
+    });
+    const reviseOutput = await reviser.reviseChapter(
+      params.bookDir,
+      finalContent,
+      params.chapterNumber,
+      criticalIssues.length > 0 ? auditResult.issues : actionableStyleWarnings,
+      "spot-fix",
+      params.book.genre,
+      {
+        ...params.reducedControlInput,
+        lengthSpec: params.lengthSpec,
+      },
+    );
+    totalUsage = params.addUsage(totalUsage, reviseOutput.tokenUsage);
+
+    if (reviseOutput.revisedContent.length > 0) {
+      const normalizedRevision = await params.normalizeDraftLengthIfNeeded(reviseOutput.revisedContent);
+      totalUsage = params.addUsage(totalUsage, normalizedRevision.tokenUsage);
+      postReviseCount = normalizedRevision.wordCount;
+      normalizeApplied = normalizeApplied || normalizedRevision.applied;
+
+      const preMarkers = params.analyzeAITells(finalContent);
+      const postMarkers = params.analyzeAITells(normalizedRevision.content);
+      if (postMarkers.issues.length <= preMarkers.issues.length) {
+        finalContent = normalizedRevision.content;
+        finalWordCount = normalizedRevision.wordCount;
+        revised = true;
+        params.assertChapterContentNotEmpty(finalContent, "revision");
+      }
+
+      const reAudit = await params.auditor.auditChapter(
         params.bookDir,
         finalContent,
         params.chapterNumber,
-        auditResult.issues,
-        "spot-fix",
         params.book.genre,
-        {
-          ...params.reducedControlInput,
-          lengthSpec: params.lengthSpec,
-        },
+        params.reducedControlInput
+          ? { ...params.reducedControlInput, temperature: 0 }
+          : { temperature: 0 },
       );
-      totalUsage = params.addUsage(totalUsage, reviseOutput.tokenUsage);
-
-      if (reviseOutput.revisedContent.length > 0) {
-        const normalizedRevision = await params.normalizeDraftLengthIfNeeded(reviseOutput.revisedContent);
-        totalUsage = params.addUsage(totalUsage, normalizedRevision.tokenUsage);
-        postReviseCount = normalizedRevision.wordCount;
-        normalizeApplied = normalizeApplied || normalizedRevision.applied;
-
-        const preMarkers = params.analyzeAITells(finalContent);
-        const postMarkers = params.analyzeAITells(normalizedRevision.content);
-        if (postMarkers.issues.length <= preMarkers.issues.length) {
-          finalContent = normalizedRevision.content;
-          finalWordCount = normalizedRevision.wordCount;
-          revised = true;
-          params.assertChapterContentNotEmpty(finalContent, "revision");
-        }
-
-        const reAudit = await params.auditor.auditChapter(
-          params.bookDir,
-          finalContent,
-          params.chapterNumber,
-          params.book.genre,
-          params.reducedControlInput
-            ? { ...params.reducedControlInput, temperature: 0 }
-            : { temperature: 0 },
-        );
-        totalUsage = params.addUsage(totalUsage, reAudit.tokenUsage);
-        const reAITells = params.analyzeAITells(finalContent);
-        const reSensitive = params.analyzeSensitiveWords(finalContent);
-        const reHasBlocked = reSensitive.found.some((item) => item.severity === "block");
-        auditResult = params.restoreLostAuditIssues(auditResult, {
-          passed: reHasBlocked ? false : reAudit.passed,
-          issues: [...reAudit.issues, ...reAITells.issues, ...reSensitive.issues],
-          summary: reAudit.summary,
-        });
-      }
+      totalUsage = params.addUsage(totalUsage, reAudit.tokenUsage);
+      const reAITells = params.analyzeAITells(finalContent);
+      const reSensitive = params.analyzeSensitiveWords(finalContent);
+      const reHasBlocked = reSensitive.found.some((item) => item.severity === "block");
+      auditResult = params.restoreLostAuditIssues(auditResult, {
+        passed: reHasBlocked ? false : reAudit.passed,
+        issues: [...reAudit.issues, ...reAITells.issues, ...reSensitive.issues],
+        summary: reAudit.summary,
+      });
     }
   }
 

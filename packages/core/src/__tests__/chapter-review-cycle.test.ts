@@ -171,4 +171,129 @@ describe("runChapterReviewCycle", () => {
     expect(result.finalContent).toBe("original draft");
     expect(result.revised).toBe(false);
   });
+
+  it("runs one bounded spot-fix pass for selected style warnings", async () => {
+    const warningAudit = createAuditResult({
+      passed: true,
+      issues: [{
+        severity: "warning",
+        category: "문체 검사",
+        description: "핵심 감정 변화가 요약으로만 처리됩니다.",
+        suggestion: "행동과 말투 변화로 먼저 드러내세요.",
+      }],
+    });
+    const auditChapter = vi.fn()
+      .mockResolvedValueOnce(warningAudit)
+      .mockResolvedValueOnce(createAuditResult());
+    const reviseChapter = vi.fn().mockResolvedValue({
+      revisedContent: "scene-strengthened draft",
+      wordCount: 21,
+      fixedIssues: ["scene fix"],
+      updatedState: "",
+      updatedLedger: "",
+      updatedHooks: "",
+      tokenUsage: ZERO_USAGE,
+    });
+    const normalizeDraftLengthIfNeeded = vi.fn()
+      .mockResolvedValueOnce({
+        content: "original draft",
+        wordCount: 13,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "scene-strengthened draft",
+        wordCount: 21,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      });
+
+    const result = await runChapterReviewCycle({
+      book: { genre: "modern-fantasy" },
+      bookDir: "/tmp/book",
+      chapterNumber: 1,
+      initialOutput: {
+        content: "original draft",
+        wordCount: 13,
+        postWriteErrors: [],
+      },
+      lengthSpec: LENGTH_SPEC,
+      reducedControlInput: undefined,
+      initialUsage: ZERO_USAGE,
+      createReviser: () => ({ reviseChapter }),
+      auditor: { auditChapter },
+      normalizeDraftLengthIfNeeded,
+      assertChapterContentNotEmpty: () => undefined,
+      addUsage: (left, right) => ({
+        promptTokens: left.promptTokens + (right?.promptTokens ?? 0),
+        completionTokens: left.completionTokens + (right?.completionTokens ?? 0),
+        totalTokens: left.totalTokens + (right?.totalTokens ?? 0),
+      }),
+      restoreLostAuditIssues: (_previous, next) => next,
+      analyzeAITells: () => ({ issues: [] as AuditIssue[] }),
+      analyzeSensitiveWords: () => ({ found: [] as Array<{ severity: "warn" | "block" }>, issues: [] as AuditIssue[] }),
+      logWarn: () => undefined,
+      logStage: () => undefined,
+    });
+
+    expect(reviseChapter).toHaveBeenCalledTimes(1);
+    expect(reviseChapter.mock.calls[0]?.[3]).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        category: "문체 검사",
+      }),
+    ]);
+    expect(result.finalContent).toBe("scene-strengthened draft");
+    expect(result.revised).toBe(true);
+  });
+
+  it("does not auto-fix non-actionable warnings when no critical issue exists", async () => {
+    const reviseChapter = vi.fn();
+    const auditChapter = vi.fn().mockResolvedValue(createAuditResult({
+      passed: true,
+      issues: [{
+        severity: "warning",
+        category: "독자 기대 관리",
+        description: "장기 압박이 누적됩니다.",
+        suggestion: "후속 회차에서 해소 타이밍을 조정하세요.",
+      }],
+    }));
+
+    const result = await runChapterReviewCycle({
+      book: { genre: "modern-fantasy" },
+      bookDir: "/tmp/book",
+      chapterNumber: 1,
+      initialOutput: {
+        content: "original draft",
+        wordCount: 13,
+        postWriteErrors: [],
+      },
+      lengthSpec: LENGTH_SPEC,
+      reducedControlInput: undefined,
+      initialUsage: ZERO_USAGE,
+      createReviser: () => ({ reviseChapter }),
+      auditor: { auditChapter },
+      normalizeDraftLengthIfNeeded: vi.fn().mockResolvedValue({
+        content: "original draft",
+        wordCount: 13,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      }),
+      assertChapterContentNotEmpty: () => undefined,
+      addUsage: (left, right) => ({
+        promptTokens: left.promptTokens + (right?.promptTokens ?? 0),
+        completionTokens: left.completionTokens + (right?.completionTokens ?? 0),
+        totalTokens: left.totalTokens + (right?.totalTokens ?? 0),
+      }),
+      restoreLostAuditIssues: (_previous, next) => next,
+      analyzeAITells: () => ({ issues: [] as AuditIssue[] }),
+      analyzeSensitiveWords: () => ({ found: [] as Array<{ severity: "warn" | "block" }>, issues: [] as AuditIssue[] }),
+      logWarn: () => undefined,
+      logStage: () => undefined,
+    });
+
+    expect(reviseChapter).not.toHaveBeenCalled();
+    expect(result.finalContent).toBe("original draft");
+    expect(result.revised).toBe(false);
+  });
 });

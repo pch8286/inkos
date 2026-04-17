@@ -176,6 +176,154 @@ describe("ContinuityAuditor", () => {
     }
   });
 
+  it("asks Korean audits to inspect scene-vs-summary and narrator over-conclusion", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-ko-style-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-book",
+          title: "Korean Book",
+          genre: "modern-fantasy",
+          platform: "naver-series",
+          chapterWordCount: 220,
+          targetChapters: 60,
+          status: "active",
+          language: "ko",
+          createdAt: "2026-04-17T00:00:00.000Z",
+          updatedAt: "2026-04-17T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# 현재 상태\n\n- 도윤은 부서진 맹세패를 숨기고 있다.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# 복선 풀\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# 챕터 요약\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# 서브플롯 보드\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# 감정선\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# 캐릭터 상호작용 매트릭스\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# 볼륨 아웃라인\n\n## 1장\n스승의 흔적을 따라간다.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# 문체 가이드\n\n- 장면 중심으로 쓴다.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: JSON.stringify({
+        passed: true,
+        issues: [],
+        summary: "ok",
+      }),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await auditor.auditChapter(bookDir, "본문", 1, "modern-fantasy");
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+
+      expect(systemPrompt).toContain("핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지");
+      expect(systemPrompt).toContain("다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지");
+      expect(systemPrompt).toContain("서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps English style checks aligned with scene-vs-summary guidance", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-en-scene-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "english-book",
+          title: "English Book",
+          genre: "other",
+          platform: "royalroad",
+          chapterWordCount: 800,
+          targetChapters: 60,
+          status: "active",
+          language: "en",
+          createdAt: "2026-04-17T00:00:00.000Z",
+          updatedAt: "2026-04-17T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- Mara keeps the warehouse key hidden.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# Subplot Board\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# Emotional Arcs\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# Character Matrix\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nReturn to the mentor debt.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Keep the prose restrained.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: JSON.stringify({
+        passed: true,
+        issues: [],
+        summary: "ok",
+      }),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await auditor.auditChapter(bookDir, "Chapter body.", 1, "other");
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+
+      expect(systemPrompt).toContain("reported after the fact");
+      expect(systemPrompt).toContain("narrated summary instead of direct pressure or exchange");
+      expect(systemPrompt).toContain("explains motives, stakes, or meaning that the scene already makes inferable");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses selected summary and hook evidence instead of full long-history markdown in governed mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-auditor-test-"));
     const bookDir = join(root, "book");

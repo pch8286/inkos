@@ -253,12 +253,30 @@ function buildDimensionNote(
   }
 
   switch (id) {
+    case 8:
+      return language === "en"
+        ? "Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable."
+        : language === "ko"
+          ? "핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지, 그리고 서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지 확인하세요."
+          : "检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。";
     case 19:
       return language === "en"
         ? "Check whether POV shifts are signaled clearly and stay consistent with the configured viewpoint."
         : language === "ko"
           ? "시점 전환이 명확한 징표와 함께 이루어지고, 설정된 관점과 일치하는지 확인하세요."
           : "检查视角切换是否有过渡、是否与设定视角一致";
+    case 16:
+      return language === "en"
+        ? "In multi-character scenes, check whether dialogue carries resistance, bargaining, concealment, or pressure rather than leaving the beat in narrated summary instead of direct pressure or exchange."
+        : language === "ko"
+          ? "다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지, 그리고 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지 확인하세요."
+          : "多角色场景里，检查对话是否承载阻力、试探、隐瞒或施压，而不是被说明性摘要取代。";
+    case 17:
+      return language === "en"
+        ? "Flag chapters that compress important emotional, relational, or payoff beats into chronicle summary instead of scene."
+        : language === "ko"
+          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트를 장면 대신 나열식 요약으로 눌러버리는지 점검하세요."
+          : "检查重要情绪变化、关系推进或回收段落是否被压成流水账式摘要而没有真正落成场景。";
     case 24:
       return language === "en"
         ? "Cross-check subplot_board and chapter_summaries: flag any subplot that stays dormant long enough to feel abandoned, or a recent run where every subplot is only restated instead of genuinely moving."

@@ -254,6 +254,7 @@ export class PipelineRunner {
       this.logWarn(resolvedLanguage, {
         zh: `风格指纹提取失败，已跳过：${detail}`,
         en: `Style fingerprint extraction failed and was skipped: ${detail}`,
+        ko: `스타일 지문 추출 실패로 건너뜀: ${detail}`,
       });
     }
   }
@@ -275,6 +276,7 @@ export class PipelineRunner {
       this.logStage(params.stageLanguage, {
         zh: `审核基础设定（第${attempt + 1}轮）`,
         en: `reviewing foundation (round ${attempt + 1})`,
+        ko: `기초 설정 검토 (${attempt + 1}차)`,
       });
 
       const review = await params.reviewer.review({
@@ -299,6 +301,7 @@ export class PipelineRunner {
       this.logWarn(params.stageLanguage, {
         zh: `基础设定未通过审核（${review.totalScore}分），正在重新生成...`,
         en: `Foundation rejected (${review.totalScore}/100), regenerating...`,
+        ko: `기초 설정 검토 미통과 (${review.totalScore}/100), 다시 생성 중...`,
       });
 
       foundation = await params.generate(this.buildFoundationReviewFeedback(review, params.language));
@@ -470,7 +473,7 @@ export class PipelineRunner {
     const architect = new ArchitectAgent(this.agentCtxFor("architect", book.id));
     const stageLanguage = await this.resolveBookLanguage(book);
 
-    this.logStage(stageLanguage, { zh: "生成基础设定", en: "generating foundation" });
+    this.logStage(stageLanguage, { zh: "生成基础设定", en: "generating foundation", ko: "기초 설정 생성" });
     const { profile: gp } = await this.loadGenreProfile(book.genre);
     const reviewer = new FoundationReviewerAgent(this.agentCtxFor("foundation-reviewer", book.id));
     const resolvedLanguage = resolveWritingLanguage(book.language ?? gp.language);
@@ -504,10 +507,10 @@ export class PipelineRunner {
     const { profile: gp } = await this.loadGenreProfile(book.genre);
 
     try {
-      this.logStage(stageLanguage, { zh: "保存书籍配置", en: "saving book config" });
+      this.logStage(stageLanguage, { zh: "保存书籍配置", en: "saving book config", ko: "책 설정 저장" });
       await this.state.saveBookConfigAt(stagingBookDir, book);
 
-      this.logStage(stageLanguage, { zh: "写入基础设定文件", en: "writing foundation files" });
+      this.logStage(stageLanguage, { zh: "写入基础设定文件", en: "writing foundation files", ko: "기초 설정 파일 작성" });
       await architect.writeFoundationFiles(
         stagingBookDir,
         foundation,
@@ -515,7 +518,7 @@ export class PipelineRunner {
         book.language ?? gp.language,
       );
 
-      this.logStage(stageLanguage, { zh: "初始化控制文档", en: "initializing control documents" });
+      this.logStage(stageLanguage, { zh: "初始化控制文档", en: "initializing control documents", ko: "제어 문서 초기화" });
       await this.state.ensureControlDocumentsAt(
         stagingBookDir,
         book.language ?? gp.language,
@@ -524,7 +527,7 @@ export class PipelineRunner {
 
       await this.state.saveChapterIndexAt(stagingBookDir, []);
 
-      this.logStage(stageLanguage, { zh: "创建初始快照", en: "creating initial snapshot" });
+      this.logStage(stageLanguage, { zh: "创建初始快照", en: "creating initial snapshot", ko: "초기 스냅샷 생성" });
       await this.state.snapshotStateAt(stagingBookDir, 0);
 
       if (await this.pathExists(bookDir)) {
@@ -575,17 +578,17 @@ export class PipelineRunner {
     const bookDir = this.state.bookDir(book.id);
     const stageLanguage = await this.resolveBookLanguage(book);
 
-    this.logStage(stageLanguage, { zh: "保存书籍配置", en: "saving book config" });
+    this.logStage(stageLanguage, { zh: "保存书籍配置", en: "saving book config", ko: "책 설정 저장" });
     await this.state.saveBookConfig(book.id, book);
 
     // Step 1: Import source material → fanfic_canon.md
-    this.logStage(stageLanguage, { zh: "导入同人正典", en: "importing fanfic canon" });
+    this.logStage(stageLanguage, { zh: "导入同人正典", en: "importing fanfic canon", ko: "동인 원작 정전 불러오기" });
     const fanficCanon = await this.importFanficCanon(book.id, sourceText, sourceName, fanficMode);
 
     // Step 2: Generate foundation with review loop
     const architect = new ArchitectAgent(this.agentCtxFor("architect", book.id));
     const reviewer = new FoundationReviewerAgent(this.agentCtxFor("foundation-reviewer", book.id));
-    this.logStage(stageLanguage, { zh: "生成同人基础设定", en: "generating fanfic foundation" });
+    this.logStage(stageLanguage, { zh: "生成同人基础设定", en: "generating fanfic foundation", ko: "동인 기초 설정 생성" });
     const { profile: gp } = await this.loadGenreProfile(book.genre);
     const resolvedLanguage = resolveWritingLanguage(book.language ?? gp.language);
     const foundation = await this.generateAndReviewFoundation({
@@ -601,24 +604,24 @@ export class PipelineRunner {
       language: resolvedLanguage,
       stageLanguage,
     });
-    this.logStage(stageLanguage, { zh: "写入基础设定文件", en: "writing foundation files" });
+    this.logStage(stageLanguage, { zh: "写入基础设定文件", en: "writing foundation files", ko: "기초 설정 파일 작성" });
     await architect.writeFoundationFiles(
       bookDir,
       foundation,
       gp.numericalSystem,
       book.language ?? gp.language,
     );
-    this.logStage(stageLanguage, { zh: "初始化控制文档", en: "initializing control documents" });
+    this.logStage(stageLanguage, { zh: "初始化控制文档", en: "initializing control documents", ko: "제어 문서 초기화" });
     await this.state.ensureControlDocuments(book.id, this.config.externalContext);
 
     // Step 3: Generate style guide from source material
     if (sourceText.length >= 500) {
-      this.logStage(stageLanguage, { zh: "提取原作风格指纹", en: "extracting source style fingerprint" });
+      this.logStage(stageLanguage, { zh: "提取原作风格指纹", en: "extracting source style fingerprint", ko: "원작 스타일 지문 추출" });
       await this.tryGenerateStyleGuide(book.id, sourceText, sourceName, stageLanguage);
     }
 
     // Step 4: Initialize chapters directory + snapshot
-    this.logStage(stageLanguage, { zh: "创建初始快照", en: "creating initial snapshot" });
+    this.logStage(stageLanguage, { zh: "创建初始快照", en: "creating initial snapshot", ko: "초기 스냅샷 생성" });
     await mkdir(join(bookDir, "chapters"), { recursive: true });
     await this.state.saveChapterIndex(book.id, []);
     await this.state.snapshotState(book.id, 0);
@@ -633,7 +636,7 @@ export class PipelineRunner {
       const bookDir = this.state.bookDir(bookId);
       const chapterNumber = await this.state.getNextChapterNumber(bookId);
       const stageLanguage = await this.resolveBookLanguage(book);
-      this.logStage(stageLanguage, { zh: "准备章节输入", en: "preparing chapter inputs" });
+      this.logStage(stageLanguage, { zh: "准备章节输入", en: "preparing chapter inputs", ko: "장 입력 준비" });
       const writeInput = await this.prepareWriteInput(
         book,
         bookDir,
@@ -648,7 +651,7 @@ export class PipelineRunner {
       );
 
       const writer = new WriterAgent(this.agentCtxFor("writer", bookId));
-      this.logStage(stageLanguage, { zh: "撰写章节草稿", en: "writing chapter draft" });
+      this.logStage(stageLanguage, { zh: "撰写章节草稿", en: "writing chapter draft", ko: "장 초안 작성" });
       const output = await writer.writeChapter({
         book,
         bookDir,
@@ -709,7 +712,7 @@ export class PipelineRunner {
       await writeFile(filePath, `${heading}\n\n${draftOutput.content}`, "utf-8");
 
       // Save truth files
-      this.logStage(stageLanguage, { zh: "落盘草稿与真相文件", en: "persisting draft and truth files" });
+      this.logStage(stageLanguage, { zh: "落盘草稿与真相文件", en: "persisting draft and truth files", ko: "초안과 truth file 저장" });
       await writer.saveChapter(bookDir, draftOutput, gp.numericalSystem, resolvedLang);
       await writer.saveNewTruthFiles(bookDir, draftOutput, resolvedLang);
       await this.syncLegacyStructuredStateFromMarkdown(bookDir, chapterNumber, draftOutput);
@@ -734,7 +737,7 @@ export class PipelineRunner {
       await this.markBookActiveIfNeeded(bookId);
 
       // Snapshot
-      this.logStage(stageLanguage, { zh: "更新章节索引与快照", en: "updating chapter index and snapshots" });
+      this.logStage(stageLanguage, { zh: "更新章节索引与快照", en: "updating chapter index and snapshots", ko: "장 인덱스와 스냅샷 갱신" });
       await this.state.snapshotState(bookId, chapterNumber);
       await this.syncCurrentStateFactHistory(bookId, chapterNumber);
 
@@ -763,7 +766,7 @@ export class PipelineRunner {
     const bookDir = this.state.bookDir(bookId);
     const chapterNumber = await this.state.getNextChapterNumber(bookId);
     const stageLanguage = await this.resolveBookLanguage(book);
-    this.logStage(stageLanguage, { zh: "规划下一章意图", en: "planning next chapter intent" });
+    this.logStage(stageLanguage, { zh: "规划下一章意图", en: "planning next chapter intent", ko: "다음 장 의도 계획" });
     const { plan } = await this.createGovernedArtifacts(
       book,
       bookDir,
@@ -787,7 +790,7 @@ export class PipelineRunner {
     const bookDir = this.state.bookDir(bookId);
     const chapterNumber = await this.state.getNextChapterNumber(bookId);
     const stageLanguage = await this.resolveBookLanguage(book);
-    this.logStage(stageLanguage, { zh: "组装章节运行时上下文", en: "composing chapter runtime context" });
+    this.logStage(stageLanguage, { zh: "组装章节运行时上下文", en: "composing chapter runtime context", ko: "장 런타임 컨텍스트 구성" });
     const { plan, composed } = await this.createGovernedArtifacts(
       book,
       bookDir,
@@ -824,6 +827,7 @@ export class PipelineRunner {
     this.logStage(language, {
       zh: `审计第${targetChapter}章`,
       en: `auditing chapter ${targetChapter}`,
+      ko: `제${targetChapter}장 검수`,
     });
     const evaluation = await this.evaluateMergedAudit({
       auditor,
@@ -884,6 +888,7 @@ export class PipelineRunner {
       this.logStage(stageLanguage, {
         zh: `加载第${targetChapter}章修订上下文`,
         en: `loading revision context for chapter ${targetChapter}`,
+        ko: `제${targetChapter}장 수정 컨텍스트 로드`,
       });
       const index = await this.state.loadChapterIndex(bookId);
       const chapterMeta = index.find((ch) => ch.number === targetChapter);
@@ -946,6 +951,7 @@ export class PipelineRunner {
       this.logStage(stageLanguage, {
         zh: `修订第${targetChapter}章`,
         en: `revising chapter ${targetChapter}`,
+        ko: `제${targetChapter}장 수정`,
       });
       const reviseOutput = await reviser.reviseChapter(
         bookDir,
@@ -1047,6 +1053,7 @@ export class PipelineRunner {
       this.logStage(stageLanguage, {
         zh: `落盘第${targetChapter}章修订结果`,
         en: `persisting revision for chapter ${targetChapter}`,
+        ko: `제${targetChapter}장 수정본 저장`,
       });
       const chaptersDir = join(bookDir, "chapters");
       const files = await readdir(chaptersDir);
@@ -1058,7 +1065,9 @@ export class PipelineRunner {
       const reviseLang = book.language ?? gp.language;
       const reviseHeading = reviseLang === "en"
         ? `# Chapter ${targetChapter}: ${chapterMeta.title}`
-        : `# 第${targetChapter}章 ${chapterMeta.title}`;
+        : reviseLang === "ko"
+          ? `# 제${targetChapter}장 ${chapterMeta.title}`
+          : `# 第${targetChapter}章 ${chapterMeta.title}`;
       await writeFile(
         join(chaptersDir, existingFile),
         `${reviseHeading}\n\n${normalizedRevision.content}`,
@@ -1109,6 +1118,7 @@ export class PipelineRunner {
       this.logStage(stageLanguage, {
         zh: `更新第${targetChapter}章索引与快照`,
         en: `updating chapter index and snapshots for chapter ${targetChapter}`,
+        ko: `제${targetChapter}장 인덱스와 스냅샷 갱신`,
       });
       await this.state.snapshotState(bookId, targetChapter);
       await this.syncNarrativeMemoryIndex(bookId);
@@ -1207,7 +1217,7 @@ export class PipelineRunner {
     await this.assertNoPendingStateRepair(bookId);
     const chapterNumber = await this.state.getNextChapterNumber(bookId);
     const stageLanguage = await this.resolveBookLanguage(book);
-    this.logStage(stageLanguage, { zh: "准备章节输入", en: "preparing chapter inputs" });
+    this.logStage(stageLanguage, { zh: "准备章节输入", en: "preparing chapter inputs", ko: "장 입력 준비" });
     const writeInput = await this.prepareWriteInput(
       book,
       bookDir,
@@ -1230,7 +1240,7 @@ export class PipelineRunner {
 
     // 1. Write chapter
     const writer = new WriterAgent(this.agentCtxFor("writer", bookId));
-    this.logStage(stageLanguage, { zh: "撰写章节草稿", en: "writing chapter draft" });
+    this.logStage(stageLanguage, { zh: "撰写章节草稿", en: "writing chapter draft", ko: "장 초안 작성" });
     const output = await writer.writeChapter({
       book,
       bookDir,
@@ -1280,8 +1290,8 @@ export class PipelineRunner {
     const normalizeApplied = reviewResult.normalizeApplied;
 
     // 4. Save the final chapter and truth files from a single persistence source
-    this.logStage(stageLanguage, { zh: "落盘最终章节", en: "persisting final chapter" });
-    this.logStage(stageLanguage, { zh: "生成最终真相文件", en: "rebuilding final truth files" });
+    this.logStage(stageLanguage, { zh: "落盘最终章节", en: "persisting final chapter", ko: "최종 장 저장" });
+    this.logStage(stageLanguage, { zh: "生成最终真相文件", en: "rebuilding final truth files", ko: "최종 truth file 재생성" });
     const chapterIndexBeforePersist = await this.state.loadChapterIndex(bookId);
     const { resolveDuplicateTitle } = await import("../agents/post-write-validator.js");
     const initialTitleResolution = resolveDuplicateTitle(
@@ -1364,7 +1374,7 @@ export class PipelineRunner {
     this.logLengthWarnings(lengthWarnings);
 
     // 4.1 Validate settler output before writing
-    this.logStage(stageLanguage, { zh: "校验真相文件变更", en: "validating truth file updates" });
+    this.logStage(stageLanguage, { zh: "校验真相文件变更", en: "validating truth file updates", ko: "truth file 변경 검증" });
     const storyDir = join(bookDir, "story");
     const [oldState, oldHooks, oldLedger] = await Promise.all([
       readFile(join(storyDir, "current_state.md"), "utf-8").catch(() => ""),
@@ -1447,7 +1457,7 @@ export class PipelineRunner {
       saveTruthFiles: async () => {
         await writer.saveNewTruthFiles(bookDir, persistenceOutput, pipelineLang);
         await this.syncLegacyStructuredStateFromMarkdown(bookDir, chapterNumber, persistenceOutput);
-        this.logStage(stageLanguage, { zh: "同步记忆索引", en: "syncing memory indexes" });
+        this.logStage(stageLanguage, { zh: "同步记忆索引", en: "syncing memory indexes", ko: "메모리 인덱스 동기화" });
         await this.syncNarrativeMemoryIndex(bookId);
       },
       saveChapterIndex: (index) => this.state.saveChapterIndex(bookId, index),
@@ -1461,7 +1471,7 @@ export class PipelineRunner {
       snapshotState: () => this.state.snapshotState(bookId, chapterNumber),
       syncCurrentStateFactHistory: () => this.syncCurrentStateFactHistory(bookId, chapterNumber),
       logSnapshotStage: () =>
-        this.logStage(stageLanguage, { zh: "更新章节索引与快照", en: "updating chapter index and snapshots" }),
+        this.logStage(stageLanguage, { zh: "更新章节索引与快照", en: "updating chapter index and snapshots", ko: "장 인덱스와 스냅샷 갱신" }),
     });
 
     // 6. Send notification
@@ -1531,7 +1541,7 @@ export class PipelineRunner {
       throw new Error(`Only the latest state-degraded chapter can be repaired safely (latest is ${latestChapter}).`);
     }
 
-    this.logStage(stageLanguage, { zh: "修复章节状态结算", en: "repairing chapter state settlement" });
+    this.logStage(stageLanguage, { zh: "修复章节状态结算", en: "repairing chapter state settlement", ko: "장 상태 정산 복구" });
     const { profile: gp } = await this.loadGenreProfile(book.genre);
     const pipelineLang = book.language ?? gp.language;
     const content = await this.readChapterContent(bookDir, targetChapter);
@@ -1883,6 +1893,7 @@ ${matrix}`,
         log?.info(this.localize(resolvedLanguage, {
           zh: `步骤 1：从 ${input.chapters.length} 章生成基础设定...`,
           en: `Step 1: Generating foundation from ${input.chapters.length} chapters...`,
+          ko: `1단계: ${input.chapters.length}개 장에서 기초 설정 생성...`,
         }));
         const allText = input.chapters.map((c, i) =>
           resolvedLanguage === "en"
@@ -1918,6 +1929,7 @@ ${matrix}`,
           log?.info(this.localize(resolvedLanguage, {
             zh: "提取原文风格指纹...",
             en: "Extracting source style fingerprint...",
+            ko: "원문 스타일 지문 추출 중...",
           }));
           await this.tryGenerateStyleGuide(input.bookId, allText, book.title, resolvedLanguage);
         }
@@ -1925,6 +1937,7 @@ ${matrix}`,
         log?.info(this.localize(resolvedLanguage, {
           zh: "基础设定已生成。",
           en: "Foundation generated.",
+          ko: "기초 설정 생성 완료.",
         }));
       }
 
@@ -1932,6 +1945,7 @@ ${matrix}`,
       log?.info(this.localize(resolvedLanguage, {
         zh: `步骤 2：从第 ${startFrom} 章开始顺序回放...`,
         en: `Step 2: Sequential replay from chapter ${startFrom}...`,
+        ko: `2단계: 제${startFrom}장부터 순차 재생...`,
       }));
       const analyzer = new ChapterAnalyzerAgent(this.agentCtxFor("chapter-analyzer", input.bookId));
       const writer = new WriterAgent(this.agentCtxFor("writer", input.bookId));
@@ -1947,6 +1961,7 @@ ${matrix}`,
         log?.info(this.localize(resolvedLanguage, {
           zh: `分析章节 ${chapterNumber}/${input.chapters.length}：${ch.title}...`,
           en: `Analyzing chapter ${chapterNumber}/${input.chapters.length}: ${ch.title}...`,
+          ko: `장 분석 ${chapterNumber}/${input.chapters.length}: ${ch.title}...`,
         }));
 
         // Analyze chapter to get truth file updates
@@ -2014,6 +2029,7 @@ ${matrix}`,
       log?.info(this.localize(resolvedLanguage, {
         zh: `完成。已导入 ${importedCount} 章，共 ${formatLengthCount(totalWords, countingMode)}。下一章：${nextChapter}`,
         en: `Done. ${importedCount} chapters imported, ${formatLengthCount(totalWords, countingMode)}. Next chapter: ${nextChapter}`,
+        ko: `완료. ${importedCount}개 장을 가져왔고 총 ${formatLengthCount(totalWords, countingMode)}입니다. 다음 장: ${nextChapter}`,
       }));
 
       return {
@@ -2246,6 +2262,7 @@ ${matrix}`,
       this.logWarn(this.languageFromLengthSpec(params.lengthSpec), {
         zh: `字数归一化被拒绝：第${params.chapterNumber}章 ${writerCount} -> ${normalized.finalCount}（砍了${Math.round((1 - normalized.finalCount / writerCount) * 100)}%，超过安全阈值）`,
         en: `Length normalization rejected for chapter ${params.chapterNumber}: ${writerCount} -> ${normalized.finalCount} (cut ${Math.round((1 - normalized.finalCount / writerCount) * 100)}%, exceeds safety threshold)`,
+        ko: `분량 정규화 거부: 제${params.chapterNumber}장 ${writerCount} -> ${normalized.finalCount} (안전 임계치 초과)`,
       });
       return {
         content: params.chapterContent,
@@ -2257,6 +2274,7 @@ ${matrix}`,
     this.logInfo(this.languageFromLengthSpec(params.lengthSpec), {
       zh: `审计前字数归一化：第${params.chapterNumber}章 ${writerCount} -> ${normalized.finalCount}`,
       en: `Length normalization before audit for chapter ${params.chapterNumber}: ${writerCount} -> ${normalized.finalCount}`,
+      ko: `검수 전 분량 정규화: 제${params.chapterNumber}장 ${writerCount} -> ${normalized.finalCount}`,
     });
 
     return {
@@ -2291,6 +2309,7 @@ ${matrix}`,
             this.logWarn(await this.resolveBookLanguageById(bookId), {
               zh: "当前 Node 运行时不支持 SQLite 记忆索引，继续使用 Markdown 回退方案。",
               en: "SQLite memory index unavailable on this Node runtime; continuing with markdown fallback.",
+              ko: "현재 Node 런타임에서 SQLite 메모리 인덱스를 지원하지 않아 Markdown fallback으로 계속 진행합니다.",
             });
             await this.logMemoryIndexDebugInfo(bookId, error);
           }
@@ -2300,6 +2319,7 @@ ${matrix}`,
       this.logWarn(await this.resolveBookLanguageById(bookId), {
         zh: `状态事实同步已跳过：${String(error)}`,
         en: `State fact sync skipped: ${String(error)}`,
+        ko: `상태 사실 동기화를 건너뜀: ${String(error)}`,
       });
     }
   }
@@ -2341,6 +2361,7 @@ ${matrix}`,
             this.logWarn(await this.resolveBookLanguageById(bookId), {
               zh: "当前 Node 运行时不支持 SQLite 记忆索引，继续使用 Markdown 回退方案。",
               en: "SQLite memory index unavailable on this Node runtime; continuing with markdown fallback.",
+              ko: "현재 Node 런타임에서 SQLite 메모리 인덱스를 지원하지 않아 Markdown fallback으로 계속 진행합니다.",
             });
             await this.logMemoryIndexDebugInfo(bookId, error);
           }
@@ -2350,6 +2371,7 @@ ${matrix}`,
       this.logWarn(await this.resolveBookLanguageById(bookId), {
         zh: `叙事记忆同步已跳过：${String(error)}`,
         en: `Narrative memory sync skipped: ${String(error)}`,
+        ko: `서사 메모리 동기화를 건너뜀: ${String(error)}`,
       });
     }
   }
@@ -2456,6 +2478,7 @@ ${matrix}`,
     this.logWarn(await this.resolveBookLanguageById(bookId), {
       zh: `SQLite 记忆索引调试：node=${process.version}; execArgv=${JSON.stringify(process.execArgv)}; code=${code || "(none)"}; message=${message}`,
       en: `SQLite memory debug: node=${process.version}; execArgv=${JSON.stringify(process.execArgv)}; code=${code || "(none)"}; message=${message}`,
+      ko: `SQLite 메모리 디버그: node=${process.version}; execArgv=${JSON.stringify(process.execArgv)}; code=${code || "(none)"}; message=${message}`,
     });
   }
 
@@ -2528,6 +2551,7 @@ ${matrix}`,
       this.localize(this.languageFromLengthSpec(lengthSpec), {
         zh: `第${chapterNumber}章经过一次字数归一化后仍超出硬区间（${lengthSpec.hardMin}-${lengthSpec.hardMax}，实际 ${finalCount}）。`,
         en: `Chapter ${chapterNumber} remains outside hard range (${lengthSpec.hardMin}-${lengthSpec.hardMax}, actual ${finalCount}) after a single normalization pass.`,
+        ko: `제${chapterNumber}장은 1회 분량 정규화 후에도 하드 범위(${lengthSpec.hardMin}-${lengthSpec.hardMax}, 실제 ${finalCount})를 벗어났습니다.`,
       }),
     ];
   }
@@ -2582,16 +2606,19 @@ ${matrix}`,
       this.localize(params.language, {
         zh: "# 审计纠偏",
         en: "# Audit Drift",
+        ko: "# 검수 교정",
       }),
       "",
       this.localize(params.language, {
         zh: "## 审计纠偏（自动生成，下一章写作前参照）",
         en: "## Audit Drift Correction",
+        ko: "## 검수 교정",
       }),
       "",
       this.localize(params.language, {
         zh: `> 第${params.chapterNumber}章审计发现以下问题，下一章写作时必须避免：`,
         en: `> Chapter ${params.chapterNumber} audit found the following issues to avoid in the next chapter:`,
+        ko: `> 제${params.chapterNumber}장 검수에서 다음 문제를 확인했습니다. 다음 장에서는 반드시 피하세요:`,
       }),
       ...params.issues.map((issue) => `> - [${issue.severity}] ${issue.category}: ${issue.description}`),
       "",
@@ -2604,8 +2631,10 @@ ${matrix}`,
     const headers = [
       "## 审计纠偏（自动生成，下一章写作前参照）",
       "## Audit Drift Correction",
+      "## 검수 교정",
       "# 审计纠偏",
       "# Audit Drift",
+      "# 검수 교정",
     ];
 
     let cutIndex = -1;

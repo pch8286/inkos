@@ -1326,6 +1326,62 @@ describe("PipelineRunner", () => {
     }
   });
 
+  it("logs Korean stage messages during writeNextChapter for Korean books", async () => {
+    const { logger, infos } = createCaptureLogger();
+    const { root, runner, state, bookId } = await createRunnerFixture({
+      inputGovernanceMode: "v2",
+      logger,
+    });
+    const koreanBook = {
+      ...(await state.loadBookConfig(bookId)),
+      genre: "modern-fantasy",
+      language: "ko" as const,
+      chapterWordCount: 220,
+    };
+
+    await state.saveBookConfig(bookId, koreanBook);
+    await Promise.all([
+      writeFile(join(state.bookDir(bookId), "story", "current_focus.md"), "# 현재 포커스\n\n스승과 맹세패 갈등으로 다시 모은다.\n", "utf-8"),
+      writeFile(join(state.bookDir(bookId), "story", "volume_outline.md"), "# 볼륨 아웃라인\n\n## 제1장\n사라진 스승의 흔적을 따라간다.\n", "utf-8"),
+      writeFile(join(state.bookDir(bookId), "story", "current_state.md"), "# 현재 상태\n\n- 도윤은 부서진 맹세패를 숨기고 있다.\n", "utf-8"),
+      writeFile(join(state.bookDir(bookId), "story", "story_bible.md"), "# 세계관\n\n- 옥새는 부서지지 않는다.\n", "utf-8"),
+      writeFile(join(state.bookDir(bookId), "story", "pending_hooks.md"), "# 떡밥\n\n- 스승이 왜 사라졌는지 아직 밝혀지지 않았다.\n", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        chapterNumber: 1,
+        content: "한국어 파이프라인 초고.",
+        wordCount: "한국어 파이프라인 초고.".length,
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(
+      createAuditResult({
+        passed: true,
+        issues: [],
+        summary: "clean",
+      }),
+    );
+
+    try {
+      await runner.writeNextChapter(bookId, 220);
+
+      expect(infos).toEqual(expect.arrayContaining([
+        "단계: 장 입력 준비",
+        "단계: 장 초안 작성",
+        "단계: 초안 검수",
+        "단계: 최종 장 저장",
+        "단계: 최종 truth file 재생성",
+        "단계: truth file 변경 검증",
+        "단계: 메모리 인덱스 동기화",
+        "단계: 장 인덱스와 스냅샷 갱신",
+      ]));
+      expect(infos.join("\n")).not.toContain("阶段：");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   it("writes English audit drift guidance into a dedicated file without polluting current_state", async () => {
     const { root, runner, state, bookId } = await createRunnerFixture();
     const englishBook = {
@@ -1387,6 +1443,60 @@ describe("PipelineRunner", () => {
       expect(driftFile).not.toContain("## 审计纠偏");
       expect(driftFile).not.toContain("下一章写作前参照");
       expect(currentState).not.toContain("Audit Drift Correction");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes Korean audit drift guidance into a dedicated file without Chinese fallback", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const koreanBook = {
+      ...(await state.loadBookConfig(bookId)),
+      genre: "modern-fantasy",
+      language: "ko" as const,
+      chapterWordCount: 220,
+    };
+
+    await state.saveBookConfig(bookId, koreanBook);
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        chapterNumber: 1,
+        title: "각성의 밤",
+        content: "도윤은 새벽 안개를 헤치고 폐사 앞에 섰다.",
+        wordCount: "도윤은 새벽 안개를 헤치고 폐사 앞에 섰다.".replace(/\s+/g, "").length,
+        updatedState: createStateCard({
+          chapter: 1,
+          location: "폐사 앞",
+          protagonistState: "도윤은 맹세패를 숨긴 채 스승의 흔적을 더듬는다.",
+          goal: "사라진 스승의 흔적을 좇는다.",
+          conflict: "새벽 직전의 시간대를 정확히 이어 가야 한다.",
+        }),
+        updatedHooks: "# 떡밥\n\n- 스승이 남긴 맹세패의 의미는 아직 드러나지 않았다.\n",
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(
+      createAuditResult({
+        passed: true,
+        issues: [{
+          severity: "warning",
+          category: "연속성",
+          description: "다음 장에서는 새벽 시간 흐름을 더 정확히 이어야 한다.",
+          suggestion: "장면 전환 전에 시간대 연결 단서를 먼저 남겨라.",
+        }],
+        summary: "warning only",
+      }),
+    );
+
+    try {
+      await runner.writeNextChapter(bookId, 220);
+
+      const driftFile = await readFile(join(state.bookDir(bookId), "story", "audit_drift.md"), "utf-8");
+      const currentState = await readFile(join(state.bookDir(bookId), "story", "current_state.md"), "utf-8");
+      expect(driftFile).toContain("## 검수 교정");
+      expect(driftFile).toContain("> 제1장 검수에서 다음 문제를 확인했습니다.");
+      expect(driftFile).not.toContain("## 审计纠偏");
+      expect(driftFile).not.toContain("Audit Drift");
+      expect(currentState).not.toContain("검수 교정");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1753,6 +1863,66 @@ describe("PipelineRunner", () => {
       );
       expect(chapterMeta?.lengthWarnings?.[0]).toContain("超出硬区间");
       expect(chapterMeta?.lengthTelemetry?.lengthWarning).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records a Korean length warning when a single normalize pass still misses the hard range", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const koreanBook = {
+      ...(await state.loadBookConfig(bookId)),
+      genre: "modern-fantasy",
+      language: "ko" as const,
+      chapterWordCount: 220,
+    };
+    const overlongDraft = "너무 긴 문장이다.".repeat(60);
+    const stillOverHard = "정리했지만 아직도 길다.".repeat(70);
+
+    await state.saveBookConfig(bookId, koreanBook);
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        chapterNumber: 1,
+        content: overlongDraft,
+        wordCount: overlongDraft.replace(/\s+/g, "").length,
+      }),
+    );
+    const normalizeChapter = vi.mocked(
+      LengthNormalizerAgent.prototype.normalizeChapter,
+    ).mockResolvedValue({
+      normalizedContent: stillOverHard,
+      finalCount: stillOverHard.replace(/\s+/g, "").length,
+      applied: true,
+      mode: "compress",
+      tokenUsage: ZERO_USAGE,
+    });
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(
+      createAuditResult({
+        passed: true,
+        issues: [],
+        summary: "clean",
+      }),
+    );
+    vi.spyOn(ChapterAnalyzerAgent.prototype, "analyzeChapter").mockResolvedValue(
+      createAnalyzedOutput({
+        content: stillOverHard,
+        wordCount: stillOverHard.replace(/\s+/g, "").length,
+      }),
+    );
+
+    try {
+      const result = await runner.writeNextChapter(bookId, 220);
+      const chapterIndex = await state.loadChapterIndex(bookId);
+      const chapterMeta = chapterIndex.find((entry) => entry.number === 1);
+
+      expect(normalizeChapter).toHaveBeenCalledTimes(1);
+      expect((result as { lengthWarnings?: ReadonlyArray<string> }).lengthWarnings?.[0]).toContain(
+        "하드 범위",
+      );
+      expect((result as { lengthWarnings?: ReadonlyArray<string> }).lengthWarnings?.[0]).not.toContain(
+        "超出硬区间",
+      );
+      expect(chapterMeta?.lengthWarnings?.[0]).toContain("하드 범위");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -3882,6 +4052,81 @@ describe("PipelineRunner", () => {
 
       expect(reviseChapter).toHaveBeenCalledTimes(1);
       expect(reviseChapter.mock.calls[0]?.[4]).toBe("spot-fix");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Korean chapter headings Korean after reviseDraft", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+    const chaptersDir = join(state.bookDir(bookId), "chapters");
+    const koreanBook = {
+      ...(await state.loadBookConfig(bookId)),
+      genre: "modern-fantasy",
+      language: "ko" as const,
+      chapterWordCount: 220,
+    };
+
+    await state.saveBookConfig(bookId, koreanBook);
+    await Promise.all([
+      writeFile(join(chaptersDir, "0001_각성의_밤.md"), "# 제1장 각성의 밤\n\n원문 본문.", "utf-8"),
+      writeFile(join(storyDir, "current_state.md"), createStateCard({
+        chapter: 1,
+        location: "폐사 입구",
+        protagonistState: "도윤은 부서진 맹세패를 숨기고 있다.",
+        goal: "사라진 스승의 흔적을 찾는다.",
+        conflict: "문턱을 넘기 전에 결심을 굳혀야 한다.",
+      }), "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# 떡밥\n", "utf-8"),
+    ]);
+    await state.saveChapterIndex(bookId, [{
+      number: 1,
+      title: "각성의 밤",
+      status: "audit-failed",
+      wordCount: "원문 본문.".replace(/\s+/g, "").length,
+      createdAt: "2026-03-19T00:00:00.000Z",
+      updatedAt: "2026-03-19T00:00:00.000Z",
+      auditIssues: [],
+      lengthWarnings: [],
+    }]);
+
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter")
+      .mockResolvedValueOnce(
+        createAuditResult({
+          passed: false,
+          issues: [CRITICAL_ISSUE],
+          summary: "needs revision",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createAuditResult({
+          passed: true,
+          issues: [],
+          summary: "clean",
+        }),
+      );
+    vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: "수정된 본문.",
+        wordCount: "수정된 본문.".replace(/\s+/g, "").length,
+        updatedState: createStateCard({
+          chapter: 1,
+          location: "폐사 입구",
+          protagonistState: "도윤은 문턱 앞에서 숨을 고른다.",
+          goal: "사라진 스승의 흔적을 찾는다.",
+          conflict: "폐사 안으로 들어갈지 결단해야 한다.",
+        }),
+        updatedHooks: "# 떡밥\n",
+      }),
+    );
+
+    try {
+      await runner.reviseDraft(bookId, 1);
+
+      const saved = await readFile(join(chaptersDir, "0001_각성의_밤.md"), "utf-8");
+      expect(saved.startsWith("# 제1장 각성의 밤\n\n")).toBe(true);
+      expect(saved).not.toContain("# 第1章");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

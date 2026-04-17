@@ -224,6 +224,151 @@ describe("ReviserAgent", () => {
     }
   });
 
+  it("teaches Korean spot-fix revisions through concrete scene upgrades", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-reviser-positive-ko-"));
+    const bookDir = join(root, "book");
+    await mkdir(join(bookDir, "story"), { recursive: true });
+    await writeFile(
+      join(bookDir, "book.json"),
+      JSON.stringify({
+        id: "korean-book",
+        title: "Korean Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        chapterWordCount: 220,
+        targetChapters: 60,
+        status: "active",
+        language: "ko",
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+      }, null, 2),
+      "utf-8",
+    );
+
+    const agent = new ReviserAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ReviserAgent.prototype as never, "chat" as never).mockResolvedValue({
+      content: [
+        "=== FIXED_ISSUES ===",
+        "- repaired",
+        "",
+        "=== PATCHES ===",
+        "--- PATCH 1 ---",
+        "TARGET_TEXT:",
+        "원문 본문",
+        "REPLACEMENT_TEXT:",
+        "수정된 본문",
+        "--- END PATCH ---",
+        "",
+        "=== UPDATED_STATE ===",
+        "상태 카드",
+        "",
+        "=== UPDATED_HOOKS ===",
+        "복선 풀",
+      ].join("\n"),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await agent.reviseChapter(bookDir, "원문 본문", 3, [CRITICAL_ISSUE], "spot-fix", "modern-fantasy");
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+
+      expect(systemPrompt).toContain("중요한 감정 변화는 감정 이름보다 행동, 감각, 말투 변화로 먼저 드러낸다");
+      expect(systemPrompt).toContain("관계 변화는 짧은 직접 공방이나 망설임, 시선 회피 같은 장면 증거로 고친다");
+      expect(systemPrompt).toContain("설명은 장면을 잇는 연결용으로 압축하고, 핵심 비트는 장면 안에서 체감되게 고친다");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps anti-detect mode aligned with positive scene guidance instead of ban-only language", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-reviser-positive-antidetect-"));
+    const bookDir = join(root, "book");
+    await mkdir(join(bookDir, "story"), { recursive: true });
+    await writeFile(
+      join(bookDir, "book.json"),
+      JSON.stringify({
+        id: "korean-book",
+        title: "Korean Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        chapterWordCount: 220,
+        targetChapters: 60,
+        status: "active",
+        language: "ko",
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+      }, null, 2),
+      "utf-8",
+    );
+
+    const agent = new ReviserAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ReviserAgent.prototype as never, "chat" as never).mockResolvedValue({
+      content: [
+        "=== FIXED_ISSUES ===",
+        "- repaired",
+        "",
+        "=== REVISED_CONTENT ===",
+        "수정된 본문",
+        "",
+        "=== UPDATED_STATE ===",
+        "상태 카드",
+        "",
+        "=== UPDATED_HOOKS ===",
+        "복선 풀",
+      ].join("\n"),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await agent.reviseChapter(bookDir, "원문 본문", 3, [CRITICAL_ISSUE], "anti-detect", "modern-fantasy");
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const systemPrompt = messages?.[0]?.content ?? "";
+
+      expect(systemPrompt).toContain("구체적인 반응과 감각");
+      expect(systemPrompt).toContain("장면으로 체감");
+      expect(systemPrompt).toContain("군중 반응은 뭉뚱그리지 말고 개별 반응");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("reconstructs revised content from spot-fix patches and preserves untouched text", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-reviser-spotfix-patch-test-"));
     const bookDir = join(root, "book");

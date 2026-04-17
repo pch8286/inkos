@@ -244,6 +244,7 @@ export class WriterAgent extends BaseAgent {
     this.logInfo(resolvedLanguage, {
       zh: `阶段 1：创作正文（第${chapterNumber}章）`,
       en: `Phase 1: creative writing for chapter ${chapterNumber}`,
+      ko: `단계 1: 본문 집필 (제${chapterNumber}장)`,
     });
 
     // Scale maxTokens to chapter word count (Chinese ≈ 1.5 tokens/char)
@@ -264,6 +265,7 @@ export class WriterAgent extends BaseAgent {
     this.logInfo(resolvedLanguage, {
       zh: `阶段 2：状态结算（第${chapterNumber}章，${creative.wordCount}字）`,
       en: `Phase 2: state settlement for chapter ${chapterNumber} (${creative.wordCount} words)`,
+      ko: `단계 2: 상태 정산 (제${chapterNumber}장, ${creative.wordCount}자)`,
     });
     const isGovernedSettlement = Boolean(input.chapterIntent && input.contextPackage && input.ruleStack);
     const filteredHooksForSettlement = isGovernedSettlement && input.contextPackage
@@ -354,6 +356,7 @@ export class WriterAgent extends BaseAgent {
       this.logWarn(resolvedLanguage, {
         zh: `后写校验：第${chapterNumber}章 ${postWriteErrors.length} 个错误，${postWriteWarnings.length} 个警告`,
         en: `Post-write: ${postWriteErrors.length} errors, ${postWriteWarnings.length} warnings in chapter ${chapterNumber}`,
+        ko: `후작성 검증: 제${chapterNumber}장 오류 ${postWriteErrors.length}건, 경고 ${postWriteWarnings.length}건`,
       });
       for (const v of ruleViolations) {
         this.ctx.logger?.warn(`[${v.severity}] ${v.rule}: ${v.description}`);
@@ -363,6 +366,7 @@ export class WriterAgent extends BaseAgent {
       this.logWarn(resolvedLanguage, {
         zh: `AI 味检查：第${chapterNumber}章发现 ${aiTellIssues.length} 个问题`,
         en: `AI-tell check: ${aiTellIssues.length} issues in chapter ${chapterNumber}`,
+        ko: `AI 티 검사: 제${chapterNumber}장에서 ${aiTellIssues.length}개 문제 감지`,
       });
       for (const issue of aiTellIssues) {
         this.ctx.logger?.warn(`[${issue.severity}] ${issue.category}: ${issue.description}`);
@@ -372,6 +376,7 @@ export class WriterAgent extends BaseAgent {
       this.logWarn(resolvedLanguage, {
         zh: `伏笔健康：第${chapterNumber}章发现 ${hookHealthIssues.length} 条警告`,
         en: `Hook health: ${hookHealthIssues.length} warning(s) in chapter ${chapterNumber}`,
+        ko: `떡밥 건강도: 제${chapterNumber}장에서 경고 ${hookHealthIssues.length}건 감지`,
       });
       for (const issue of hookHealthIssues) {
         this.ctx.logger?.warn(`[${issue.severity}] ${issue.category}: ${issue.description}`);
@@ -543,6 +548,7 @@ export class WriterAgent extends BaseAgent {
     this.logInfo(resolvedLang, {
       zh: `阶段 2a：提取第${params.chapterNumber}章事实`,
       en: `Phase 2a: observing facts for chapter ${params.chapterNumber}`,
+      ko: `단계 2a: 제${params.chapterNumber}장 사실 추출`,
     });
     const observerResponse = await this.chat(
       [
@@ -557,6 +563,7 @@ export class WriterAgent extends BaseAgent {
     this.logInfo(resolvedLang, {
       zh: "阶段 2b：把观察结果回写到真相文件",
       en: "Phase 2b: reflecting observations into truth files",
+      ko: "단계 2b: 관측 결과를 truth file에 반영",
     });
     const normalizedHooks = renderHookSnapshot(parsePendingHooksMarkdown(params.hooks), resolvedLang);
     const settlerSystem = buildSettlerSystemPrompt(

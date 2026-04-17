@@ -35,6 +35,12 @@ const TRANSITION_WORDS: Record<AITellLanguage, ReadonlyArray<string>> = {
   en: ["however", "meanwhile", "on the other hand", "nevertheless", "even so", "still"],
 };
 
+const EMOTION_LABEL_PATTERNS: Record<AITellLanguage, ReadonlyArray<RegExp>> = {
+  ko: [/(?:분노|두려움|불안(?:함)?|슬픔|절망|안도)(?:을|를)?\s+(?:느꼈다|느끼고 있었다)/g],
+  zh: [],
+  en: [],
+};
+
 /**
  * Analyze text content for structural AI-tell patterns.
  * Returns issues that can be merged into audit results.
@@ -136,6 +142,22 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
           ? "전환어를 반복하기보다 행동, 시점 전환, 시간 점프 같은 장면 변화로 흐름을 넘기세요"
         : "用情节自然转折替代转折词，或换用不同的过渡手法（动作切入、时间跳跃、视角切换）",
     });
+  }
+
+  if (resolvedLanguage === "ko") {
+    let directEmotionLabels = 0;
+    for (const pattern of EMOTION_LABEL_PATTERNS.ko) {
+      const matches = content.match(pattern);
+      directEmotionLabels += matches?.length ?? 0;
+    }
+    if (directEmotionLabels >= 3) {
+      issues.push({
+        severity: "warning",
+        category: "감정 직설",
+        description: "감정 이름을 직접 붙이는 문장이 짧은 구간에 반복됩니다.",
+        suggestion: "감정 이름을 줄이고 몸의 반응, 멈칫함, 말투, 시선 변화 같은 장면 증거로 바꾸세요.",
+      });
+    }
   }
 
   // dim 23: List-like structure (consecutive sentences with same prefix pattern)

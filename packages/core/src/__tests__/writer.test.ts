@@ -985,6 +985,128 @@ describe("WriterAgent", () => {
     }
   });
 
+  it("logs Korean phase messages during writeChapter for Korean books", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-writer-log-ko-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    const chaptersDir = join(bookDir, "chapters");
+    const { logger, infos } = createCaptureLogger();
+    await mkdir(storyDir, { recursive: true });
+    await mkdir(chaptersDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(join(storyDir, "story_bible.md"), "# 세계관\n\n- 옥새는 부서지지 않는다.\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# 볼륨 아웃라인\n\n## 제1장\n사라진 스승의 흔적을 따라간다.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# 스타일 가이드\n\n- 문장을 절제한다.\n", "utf-8"),
+      writeFile(join(storyDir, "current_state.md"), "# 현재 상태\n\n- 도윤은 부서진 맹세패를 숨기고 있다.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), [
+        "# 떡밥",
+        "",
+        "| hook_id | start_chapter | type | status | last_advanced | expected_payoff | notes |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| oath-token | 1 | mystery | open | 0 | 5 | 맹세패의 정체 |",
+      ].join("\n"), "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), [
+        "# 화별 요약",
+        "",
+        "| chapter | title | characters | events | stateChanges | hookActivity | mood | chapterType |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| 0 | 프롤로그 | 도윤 | 비가 그친 뒤 폐사에 도착한다 | 긴장 고조 | oath-token seeded | 불길 | setup |",
+      ].join("\n"), "utf-8"),
+    ]);
+
+    const agent = new WriterAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+      logger,
+    });
+
+    vi.spyOn(WriterAgent.prototype as never, "chat" as never)
+      .mockResolvedValueOnce({
+        content: [
+          "=== CHAPTER_TITLE ===",
+          "각성의 밤",
+          "",
+          "=== CHAPTER_CONTENT ===",
+          "도윤은 닫힌 문 앞에서 숨을 고르며 오래된 맹세를 떠올렸다.",
+          "",
+          "=== PRE_WRITE_CHECK ===",
+          "- ok",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "=== OBSERVATIONS ===\n- observed",
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "=== POST_SETTLEMENT ===",
+          "| hook update | oath-token advanced | synced |",
+          "",
+          "=== UPDATED_STATE ===",
+          "상태 카드",
+          "",
+          "=== UPDATED_HOOKS ===",
+          "떡밥",
+          "",
+          "=== CHAPTER_SUMMARY ===",
+          "| 1 | 각성의 밤 | 도윤 | 도윤이 폐사 앞에서 맹세를 떠올린다 | 결의 강화 | oath-token advanced | 긴장 | setup |",
+          "",
+          "=== UPDATED_SUBPLOTS ===",
+          "서브플롯",
+          "",
+          "=== UPDATED_EMOTIONAL_ARCS ===",
+          "감정선",
+          "",
+          "=== UPDATED_CHARACTER_MATRIX ===",
+          "인물 매트릭스",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    try {
+      await agent.writeChapter({
+        book: {
+          id: "writer-book",
+          title: "Writer Book",
+          platform: "naver-series",
+          genre: "modern-fantasy",
+          status: "active",
+          targetChapters: 120,
+          chapterWordCount: 2200,
+          language: "ko",
+          createdAt: "2026-03-23T00:00:00.000Z",
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        },
+        bookDir,
+        chapterNumber: 1,
+        lengthSpec: buildLengthSpec(220, "ko"),
+      });
+
+      expect(infos).toEqual(expect.arrayContaining([
+        "단계 1: 본문 집필 (제1장)",
+        "단계 2: 상태 정산 (제1장, 25자)",
+        "단계 2a: 제1장 사실 추출",
+        "단계 2b: 관측 결과를 truth file에 반영",
+      ]));
+      expect(infos.join("\n")).not.toContain("阶段");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("renders explicit title history, mood trail, and canon blocks in governed creative prompts", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-writer-governed-evidence-test-"));
     const bookDir = join(root, "book");

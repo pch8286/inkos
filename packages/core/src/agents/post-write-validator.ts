@@ -57,6 +57,8 @@ const COLLECTIVE_SHOCK_PATTERNS = [
   /(?:全场|一片)[，,]?(?:寂静|哗然|沸腾|震动)/,
 ];
 
+const KOREAN_DIRECT_EXCHANGE_VERBS = ["말", "묻", "답", "웃", "소리", "속삭", "쏘아붙", "내뱉"];
+
 // --- Validator ---
 
 export function validatePostWrite(
@@ -256,6 +258,11 @@ export function validatePostWrite(
 
   violations.push(...detectParagraphShapeWarnings(content, "zh"));
 
+  const dialoguePressureViolation = detectDialoguePressureWarning(content, languageOverride ?? genreProfile.language);
+  if (dialoguePressureViolation) {
+    violations.push(dialoguePressureViolation);
+  }
+
   // 11. Book-level prohibitions
   // Short prohibitions (2-30 chars): exact substring match
   // Long prohibitions (>30 chars): skip — these are conceptual rules for prompt-level enforcement only
@@ -273,6 +280,36 @@ export function validatePostWrite(
   }
 
   return violations;
+}
+
+function detectDialoguePressureWarning(
+  content: string,
+  language: WritingLanguage,
+): PostWriteViolation | undefined {
+  if (language === "en") {
+    return undefined;
+  }
+
+  if (language !== "ko") {
+    return undefined;
+  }
+
+  const dialogueMarkers = content.match(/[“"'「『][^”"'」』]+[”"'」』]/g) ?? [];
+  const KoreanNameLikeTokens = [...new Set(
+    (content.match(/[가-힣]{2,4}/g) ?? [])
+      .filter((token) => !KOREAN_DIRECT_EXCHANGE_VERBS.some((needle) => token.includes(needle))),
+  )];
+
+  if (KoreanNameLikeTokens.length >= 2 && dialogueMarkers.length < 2 && content.length >= 60) {
+    return {
+      rule: "대사 압력",
+      severity: "warning",
+      description: "다인 장면이 직접 공방 없이 설명 위주로 지나갑니다.",
+      suggestion: "짧은 대사 한두 번이라도 넣어 서로의 압박, 회피, 협상, 떠보기를 직접 드러내세요.",
+    };
+  }
+
+  return undefined;
 }
 
 /**

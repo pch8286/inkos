@@ -7,6 +7,7 @@ import {
   validatePostWrite,
   type PostWriteViolation,
 } from "../agents/post-write-validator.js";
+import { analyzeAITells } from "../agents/ai-tells.js";
 import type { GenreProfile } from "../models/genre-profile.js";
 
 const baseProfile: GenreProfile = {
@@ -193,6 +194,27 @@ describe("validatePostWrite", () => {
     const result = validatePostWrite(content, baseProfile, null, "en");
     expect(findRule(result, "Dialogue pressure")).toBeDefined();
     expect(findRule(result, "Dialogue pressure")?.severity).toBe("warning");
+  });
+
+  it("warns when a Korean multi-character scene has almost no direct exchange", () => {
+    const content = [
+      "민호와 서진은 복도 끝에서 서로를 막아섰다.",
+      "민호는 서진이 열쇠를 숨겼다고 몰아붙였고 서진은 끝내 고개를 들지 않았다.",
+      "두 사람은 계속 같은 자리에 선 채 긴장만 키웠다.",
+    ].join(" ");
+
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "대사 압력")).toBeDefined();
+    expect(findRule(result, "대사 압력")?.severity).toBe("warning");
+  });
+
+  it("warns when Korean prose repeatedly names emotion instead of externalizing it", () => {
+    const content = "그는 분노를 느꼈다. 그는 두려움을 느꼈다. 그는 불안함을 느꼈다.";
+    const result = analyzeAITells(content, "ko");
+
+    expect(result.issues.some((issue) => issue.category === "감정 직설")).toBe(true);
   });
 
   it("detects paragraph density drift against recent chapters", () => {
