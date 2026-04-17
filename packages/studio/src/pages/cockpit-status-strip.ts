@@ -80,6 +80,7 @@ export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): Cockpi
     isLive,
     liveStage: isLive ? stage : null,
     liveDetail: deriveLiveDetail({
+      stage,
       isLive,
       createJobs: input.createJobs,
       latestEvent,
@@ -195,6 +196,7 @@ function deriveProgressMode(stage: CockpitStatusStage): {
 }
 
 function deriveLiveDetail(input: {
+  readonly stage: CockpitStatusStage;
   readonly isLive: boolean;
   readonly createJobs: ReadonlyArray<CockpitCreateJob>;
   readonly latestEvent: string | null;
@@ -220,15 +222,17 @@ function deriveLiveDetail(input: {
     return false;
   });
 
-  if (activeCreateJobWithDetail) {
-    const createJobStage = trimText(activeCreateJobWithDetail.stage);
-    if (createJobStage) {
-      return createJobStage;
-    }
+  if (input.stage === "queued" || input.stage === "creating") {
+    if (activeCreateJobWithDetail) {
+      const createJobStage = trimText(activeCreateJobWithDetail.stage);
+      if (createJobStage) {
+        return createJobStage;
+      }
 
-    const createJobMessage = trimText(activeCreateJobWithDetail.message);
-    if (createJobMessage) {
-      return createJobMessage;
+      const createJobMessage = trimText(activeCreateJobWithDetail.message);
+      if (createJobMessage) {
+        return createJobMessage;
+      }
     }
   }
 
@@ -263,7 +267,37 @@ function extractActivityMessage(data: unknown): string | null {
     }
   }
 
-  return null;
+  const chapterSummary = summarizeChapter(record.chapterNumber) || summarizeChapter(record.chapter);
+  const bookId = trimText(record.bookId);
+  const title = trimText(record.title);
+
+  if (bookId) {
+    return chapterSummary ? `${bookId} · ${chapterSummary}` : bookId;
+  }
+
+  if (title) {
+    return chapterSummary ? `${title} · ${chapterSummary}` : title;
+  }
+
+  return chapterSummary;
+}
+
+function summarizeChapter(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0) {
+    return `#${value}`;
+  }
+
+  const trimmed = trimText(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const numberValue = Number(trimmed);
+  return Number.isFinite(numberValue) ? `#${numberValue}` : null;
 }
 
 function trimText(value: unknown): string | null {
