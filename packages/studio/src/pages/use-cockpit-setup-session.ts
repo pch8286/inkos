@@ -88,17 +88,46 @@ export function buildHiddenSetupResetState(projectLanguage: "ko" | "zh" | "en") 
   };
 }
 
+export interface SetupMutationRequestState {
+  readonly version: number;
+  readonly visible: boolean;
+}
+
+const staleSetupMutation = Symbol("stale-setup-mutation");
+
+export function isCurrentSetupMutationRequest(
+  request: SetupMutationRequestState,
+  current: SetupMutationRequestState,
+) {
+  return request.visible && current.visible && request.version === current.version;
+}
+
+export function isStaleSetupMutation(cause: unknown) {
+  return cause === staleSetupMutation;
+}
+
 export async function runSetupMutationWithBestEffortFollowUp<Result>(input: {
   readonly mutate: () => Promise<Result>;
   readonly apply: (result: Result) => void;
   readonly followUp?: () => Promise<unknown>;
+  readonly isCurrent?: () => boolean;
 }): Promise<Result> {
-  const result = await input.mutate();
-  input.apply(result);
-  if (input.followUp) {
-    void input.followUp().catch(() => undefined);
+  try {
+    const result = await input.mutate();
+    if (input.isCurrent && !input.isCurrent()) {
+      throw staleSetupMutation;
+    }
+    input.apply(result);
+    if (input.followUp) {
+      void input.followUp().catch(() => undefined);
+    }
+    return result;
+  } catch (cause) {
+    if (input.isCurrent && !input.isCurrent()) {
+      throw staleSetupMutation;
+    }
+    throw cause;
   }
-  return result;
 }
 
 export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
@@ -130,6 +159,22 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   const [autoCreatePhase, setAutoCreatePhase] = useState<SetupAutoCreatePhase | null>(null);
   const [autoCreateFailedPhase, setAutoCreateFailedPhase] = useState<SetupAutoCreatePhase | null>(null);
   const setupCreateAttemptRef = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null);
+  const setupMutationRequestRef = useRef<SetupMutationRequestState>({
+    version: 0,
+    visible: input.showNewSetup,
+  });
+  const previousShowNewSetupRef = useRef(input.showNewSetup);
+
+  if (previousShowNewSetupRef.current !== input.showNewSetup) {
+    const version = previousShowNewSetupRef.current && !input.showNewSetup
+      ? setupMutationRequestRef.current.version + 1
+      : setupMutationRequestRef.current.version;
+    setupMutationRequestRef.current = {
+      version,
+      visible: input.showNewSetup,
+    };
+    previousShowNewSetupRef.current = input.showNewSetup;
+  }
 
   const setupModelSuggestions = useMemo(
     () => modelSuggestionsForProvider(input.projectProvider, input.llmCapabilities),
@@ -261,6 +306,9 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [input]);
 
   const handleSetupRequestFailure = useCallback(async (cause: unknown, sessionId?: string | null) => {
+    if (isStaleSetupMutation(cause)) {
+      return;
+    }
     const message = cause instanceof Error ? cause.message : String(cause);
     if (sessionId && isBookSetupRevisionMismatchMessage(message)) {
       await recoverLatestSetupSession(sessionId, input.t("cockpit.setupRevisionChanged"));
@@ -317,6 +365,14 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       }
     }
   }, [input.projectLanguage, input.showNewSetup, setupRecoveryError]);
+
+  const captureSetupMutationRequest = useCallback((): SetupMutationRequestState => {
+    return { ...setupMutationRequestRef.current };
+  }, []);
+
+  const isActiveSetupMutationRequest = useCallback((request: SetupMutationRequestState) => {
+    return isCurrentSetupMutationRequest(request, setupMutationRequestRef.current);
+  }, []);
 
   useEffect(() => {
     if (!foundationPreviewTabs.length) {
@@ -377,6 +433,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [input, setupLlmForm.model, setupLlmForm.reasoningEffort]);
 
   const requestSetupProposal = useCallback(async () => {
+    const request = captureSetupMutationRequest();
     return runSetupMutationWithBestEffortFollowUp({
       mutate: async () => postApi<BookSetupSessionPayload>("/book-setup/propose", {
         sessionId: setupSession?.id,
@@ -398,11 +455,14 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
         focusSetupInspector();
       },
       followUp: loadRecentSetupSessions,
+      isCurrent: () => isActiveSetupMutationRequest(request),
     });
   }, [
+    captureSetupMutationRequest,
     currentSetupDraftFingerprint,
     focusSetupInspector,
     input,
+    isActiveSetupMutationRequest,
     loadRecentSetupSessions,
     setupBrief,
     setupGenre,
@@ -415,6 +475,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   ]);
 
   const requestSetupApproval = useCallback(async (session: BookSetupSessionPayload) => {
+    const request = captureSetupMutationRequest();
     return runSetupMutationWithBestEffortFollowUp({
       mutate: async () => {
         const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
@@ -426,10 +487,12 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
         focusSetupInspector();
       },
       followUp: loadRecentSetupSessions,
+      isCurrent: () => isActiveSetupMutationRequest(request),
     });
-  }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
+  }, [captureSetupMutationRequest, currentSetupDraftFingerprint, focusSetupInspector, isActiveSetupMutationRequest, loadRecentSetupSessions]);
 
   const requestFoundationPreview = useCallback(async (session: BookSetupSessionPayload) => {
+    const request = captureSetupMutationRequest();
     return runSetupMutationWithBestEffortFollowUp({
       mutate: async () => {
         const request: BookSetupRevisionRequest = { expectedRevision: session.revision };
@@ -442,10 +505,12 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
         focusSetupInspector();
       },
       followUp: loadRecentSetupSessions,
+      isCurrent: () => isActiveSetupMutationRequest(request),
     });
-  }, [currentSetupDraftFingerprint, focusSetupInspector, loadRecentSetupSessions]);
+  }, [captureSetupMutationRequest, currentSetupDraftFingerprint, focusSetupInspector, isActiveSetupMutationRequest, loadRecentSetupSessions]);
 
   const requestCreateSetup = useCallback(async (session: BookSetupSessionPayload) => {
+    const request = captureSetupMutationRequest();
     return runSetupMutationWithBestEffortFollowUp({
       mutate: async () => {
         const request: BookSetupCreateRequest = {
@@ -480,8 +545,9 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
           loadRecentSetupSessions(),
         ]);
       },
+      isCurrent: () => isActiveSetupMutationRequest(request),
     });
-  }, [currentSetupDraftFingerprint, focusSetupInspector, input, loadRecentSetupSessions]);
+  }, [captureSetupMutationRequest, currentSetupDraftFingerprint, focusSetupInspector, input, isActiveSetupMutationRequest, loadRecentSetupSessions]);
 
   const handlePrepareSetupProposal = useCallback(async () => {
     if (!setupTitle.trim()) {
@@ -655,6 +721,9 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     });
 
     if (outcome.status === "failure") {
+      if (isStaleSetupMutation(outcome.cause)) {
+        return;
+      }
       setAutoCreateFailedPhase(outcome.phase);
       if (outcome.session) {
         setSetupSession(outcome.session);
