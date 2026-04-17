@@ -373,11 +373,14 @@ export class ComposerAgent extends BaseAgent {
     const path = join(storyDir, fileName);
     const content = await this.readFileOrDefault(path);
     if (!content || content === "(文件尚未创建)") return null;
+    const excerpt = fileName === "story_bible.md"
+      ? this.pickStoryBibleDigest(content, preferredExcerpts)
+      : this.pickExcerpt(content, preferredExcerpts);
 
     return {
       source: `story/${fileName}`,
       reason,
-      excerpt: this.pickExcerpt(content, preferredExcerpts),
+      excerpt,
     };
   }
 
@@ -390,6 +393,52 @@ export class ComposerAgent extends BaseAgent {
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.length > 0 && !line.startsWith("#"));
+  }
+
+  private pickStoryBibleDigest(content: string, preferredExcerpts: ReadonlyArray<string>): string | undefined {
+    const selected = new Set<string>();
+    const digest: string[] = [];
+
+    for (const preferred of preferredExcerpts) {
+      const normalized = preferred.trim();
+      if (!normalized || !content.includes(preferred) || selected.has(normalized)) {
+        continue;
+      }
+      selected.add(normalized);
+      digest.push(normalized);
+      if (digest.length >= 4) {
+        return digest.join("\n");
+      }
+    }
+
+    const meaningfulLines = content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => this.isStoryBibleDigestLine(line))
+      .map((line) => line.replace(/^[-*+]\s*/, "").trim());
+
+    for (const line of meaningfulLines) {
+      if (selected.has(line)) {
+        continue;
+      }
+      selected.add(line);
+      digest.push(line);
+      if (digest.length >= 4) {
+        break;
+      }
+    }
+
+    return digest.length > 0 ? digest.join("\n") : undefined;
+  }
+
+  private isStoryBibleDigestLine(line: string): boolean {
+    if (!line || line.startsWith("#")) {
+      return false;
+    }
+    if (/^\|(?:\s*:?-+:?\s*\|)+$/.test(line)) {
+      return false;
+    }
+    return true;
   }
 
   private toFactAnchor(predicate: string): string {

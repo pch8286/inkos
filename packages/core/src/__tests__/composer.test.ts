@@ -123,6 +123,43 @@ describe("ComposerAgent", () => {
     await expect(readFile(result.contextPath, "utf-8")).resolves.toContain("current_focus.md");
   });
 
+  it("extracts a multi-item story bible digest for governed context instead of a single line", async () => {
+    await writeFile(
+      join(storyDir, "story_bible.md"),
+      [
+        "# Story Bible",
+        "",
+        "## Core Rules",
+        "- The jade seal cannot be destroyed.",
+        "- Every guild oath leaves a scar on the palm.",
+        "",
+        "## Factions",
+        "- The river guild never enters shrine ground armed.",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const composer = new ComposerAgent({
+      client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await composer.composeChapter({
+      book,
+      bookDir,
+      chapterNumber: 4,
+      plan,
+    });
+
+    const storyBibleEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "story/story_bible.md");
+    expect(storyBibleEntry?.excerpt).toContain("The jade seal cannot be destroyed.");
+    expect(storyBibleEntry?.excerpt).toContain("Every guild oath leaves a scar on the palm.");
+    expect(storyBibleEntry?.excerpt).toContain("The river guild never enters shrine ground armed.");
+  });
+
   it("emits a rule stack with hard, soft, and diagnostic sections", async () => {
     const composer = new ComposerAgent({
       client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],

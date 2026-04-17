@@ -12,6 +12,7 @@ export function buildGovernedMemoryEvidenceBlocks(
   readonly titleHistoryBlock?: string;
   readonly moodTrailBlock?: string;
   readonly canonBlock?: string;
+  readonly storyBibleBlock?: string;
 } {
   const resolvedLanguage = language ?? "ko";
   const hookEntries = contextPackage.selectedContext.filter((entry) =>
@@ -35,6 +36,9 @@ export function buildGovernedMemoryEvidenceBlocks(
   const canonEntries = contextPackage.selectedContext.filter((entry) =>
     entry.source === "story/parent_canon.md"
     || entry.source === "story/fanfic_canon.md",
+  );
+  const storyBibleEntries = contextPackage.selectedContext.filter((entry) =>
+    entry.source === "story/story_bible.md",
   );
 
   return {
@@ -80,6 +84,16 @@ export function buildGovernedMemoryEvidenceBlocks(
           canonEntries,
         )
       : undefined,
+    storyBibleBlock: storyBibleEntries.length > 0
+      ? renderStoryBibleBlock(
+          resolvedLanguage === "en"
+            ? "Story Bible Digest"
+            : resolvedLanguage === "ko"
+              ? "설정집 핵심 요약"
+              : "设定集核心摘要",
+          storyBibleEntries,
+        )
+      : undefined,
   };
 }
 
@@ -99,4 +113,20 @@ function renderEvidenceBlock(
   );
 
   return `\n## ${heading}\n${lines.join("\n")}\n`;
+}
+
+function renderStoryBibleBlock(
+  heading: string,
+  entries: ContextPackage["selectedContext"],
+): string {
+  const lines = entries.flatMap((entry) =>
+    (entry.excerpt ?? entry.reason)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^[-*+]\s*/, "").trim()),
+  );
+  const dedupedLines = [...new Set(lines)];
+
+  return `\n## ${heading}\n${dedupedLines.map((line) => `- ${line}`).join("\n")}\n`;
 }

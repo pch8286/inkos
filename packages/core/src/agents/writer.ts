@@ -951,6 +951,7 @@ ${lengthRequirementBlock}
       blocks.titleHistoryBlock,
       blocks.moodTrailBlock,
       blocks.canonBlock,
+      blocks.storyBibleBlock,
       blocks.hookDebtBlock,
       blocks.hooksBlock,
       blocks.summariesBlock,

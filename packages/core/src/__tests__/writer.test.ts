@@ -1128,6 +1128,135 @@ describe("WriterAgent", () => {
     }
   });
 
+  it("renders a dedicated story bible digest block in governed creative prompts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-writer-story-bible-digest-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(join(storyDir, "story_bible.md"), "# Story Bible\n\n- Registry seals still matter.\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 4\nPush Mara back toward the archive ledger.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Keep the prose lean.\n", "utf-8"),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- Mara still hides the ledger fragment.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n\n- ledger-fragment\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+    ]);
+
+    const agent = new WriterAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(WriterAgent.prototype as never, "chat" as never)
+      .mockResolvedValueOnce({
+        content: [
+          "=== CHAPTER_TITLE ===",
+          "Archive Pressure",
+          "",
+          "=== CHAPTER_CONTENT ===",
+          "Mara corners Taryn beside the archive ledger.",
+          "",
+          "=== PRE_WRITE_CHECK ===",
+          "- ok",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "=== OBSERVATIONS ===\n- observed",
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "=== POST_SETTLEMENT ===",
+          "- ledger-fragment advanced",
+          "",
+          "=== UPDATED_STATE ===",
+          "state",
+          "",
+          "=== UPDATED_HOOKS ===",
+          "hooks",
+          "",
+          "=== CHAPTER_SUMMARY ===",
+          "| 4 | Archive Pressure | Mara,Taryn | Pressure rises | Trail narrows | ledger-fragment advanced | tense | confrontation |",
+          "",
+          "=== UPDATED_SUBPLOTS ===",
+          "subplots",
+          "",
+          "=== UPDATED_EMOTIONAL_ARCS ===",
+          "arcs",
+          "",
+          "=== UPDATED_CHARACTER_MATRIX ===",
+          "matrix",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    try {
+      await agent.writeChapter({
+        book: {
+          id: "writer-book",
+          title: "Writer Book",
+          platform: "other",
+          genre: "other",
+          status: "active",
+          targetChapters: 20,
+          chapterWordCount: 2200,
+          language: "en",
+          createdAt: "2026-03-26T00:00:00.000Z",
+          updatedAt: "2026-03-26T00:00:00.000Z",
+        },
+        bookDir,
+        chapterNumber: 4,
+        chapterIntent: "# Chapter Intent\n\n## Goal\nPush Mara back toward the archive ledger.\n",
+        contextPackage: {
+          chapter: 4,
+          selectedContext: [
+            {
+              source: "story/story_bible.md",
+              reason: "Preserve canon constraints referenced by mustKeep.",
+              excerpt: [
+                "- The registry seal cannot be broken by force.",
+                "- Archive wardens cannot cross shrine thresholds after sunset.",
+                "- Oath debt transfers only by witnessed confession.",
+              ].join("\n"),
+            },
+          ],
+        },
+        ruleStack: {
+          layers: [{ id: "L4", name: "current_task", precedence: 70, scope: "local" }],
+          sections: {
+            hard: ["current_state", "story_bible"],
+            soft: ["current_focus"],
+            diagnostic: ["continuity_audit"],
+          },
+          overrideEdges: [],
+          activeOverrides: [],
+        },
+        lengthSpec: buildLengthSpec(2200, "en"),
+      });
+
+      const creativePrompt = (chatSpy.mock.calls[0]?.[0] as ReadonlyArray<{ content: string }> | undefined)?.[1]?.content ?? "";
+      expect(creativePrompt).toContain("## Story Bible Digest");
+      expect(creativePrompt).toContain("registry seal cannot be broken by force");
+      expect(creativePrompt).toContain("Archive wardens cannot cross shrine thresholds after sunset");
+      expect(creativePrompt).toContain("Oath debt transfers only by witnessed confession");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("renders an explicit hook agenda block and removes placeholder hook ids from the governed write contract", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-writer-hook-agenda-test-"));
     const bookDir = join(root, "book");
