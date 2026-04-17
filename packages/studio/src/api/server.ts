@@ -864,8 +864,23 @@ function readTruthWriteScope(value: unknown): TruthWriteScope | null {
   if (record.kind === "file" && typeof record.fileName === "string" && isAllowedTruthFile(record.fileName)) {
     return { kind: "file", fileName: record.fileName };
   }
+  if (record.kind === "bundle" && Array.isArray(record.fileNames)) {
+    const fileNames = record.fileNames
+      .filter((fileName): fileName is string => typeof fileName === "string" && isAllowedTruthFile(fileName))
+      .filter((fileName, index, files) => files.indexOf(fileName) === index);
+    if (fileNames.length > 0) {
+      return { kind: "bundle", fileNames: fileNames as [string, ...string[]] };
+    }
+  }
 
   return null;
+}
+
+function hasMatchingTruthScopeFiles(scopeFiles: ReadonlyArray<string>, targetFiles: ReadonlyArray<string>): boolean {
+  const uniqueScopeFiles = [...new Set(scopeFiles)];
+  const uniqueTargetFiles = [...new Set(targetFiles)];
+  return uniqueScopeFiles.length === uniqueTargetFiles.length
+    && uniqueScopeFiles.every((fileName) => uniqueTargetFiles.includes(fileName));
 }
 
 function validateTruthWriteScope(params: {
@@ -884,6 +899,19 @@ function validateTruthWriteScope(params: {
   if (params.scope.kind === "read-only") {
     return { status: 409, error: "TRUTH_SCOPE_READ_ONLY" };
   }
+  if (params.scope.kind === "bundle") {
+    if (params.targetFile) {
+      return { status: 409, error: "TRUTH_SCOPE_FILE_MISMATCH" };
+    }
+    if (!params.requestedFiles || params.requestedFiles.length < 2) {
+      return { status: 400, error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" };
+    }
+    if (!hasMatchingTruthScopeFiles(params.scope.fileNames, params.requestedFiles)) {
+      return { status: 409, error: "TRUTH_SCOPE_FILE_MISMATCH" };
+    }
+    return null;
+  }
+
   if (params.requestedFiles && params.requestedFiles.length !== 1) {
     return { status: 400, error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" };
   }
@@ -3154,9 +3182,6 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const bookDir = state.bookDir(id);
     const book = await state.loadBookConfig(id).catch(() => null);
     const assistMode = body.mode === "question" ? "question" : "proposal";
-    if (assistMode === "proposal" && requestedTargets.length !== 1) {
-      return c.json({ error: "TRUTH_SCOPE_MULTI_FILE_UNSUPPORTED" }, 400);
-    }
     const scopeError = validateTruthWriteScope({
       scope: readTruthWriteScope(body.scope),
       requestedFiles,

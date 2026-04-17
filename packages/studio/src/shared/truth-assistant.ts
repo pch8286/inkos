@@ -307,6 +307,30 @@ export function inferTruthTargets(
   };
 }
 
+export function resolveTruthTargetsForSubmit(
+  instruction: string,
+  context: Pick<TruthAssistantContext, "detailFile" | "workspaceTargetFile" | "files">,
+): TruthTargetInference {
+  const trimmed = instruction.trim();
+  if (!trimmed) {
+    if (context.detailFile && context.files.some((file) => file.name === context.detailFile)) {
+      return {
+        status: "resolved",
+        fileNames: [context.detailFile],
+        reason: "detail-lock",
+      };
+    }
+    if (context.workspaceTargetFile && context.files.some((file) => file.name === context.workspaceTargetFile)) {
+      return {
+        status: "resolved",
+        fileNames: [context.workspaceTargetFile],
+        reason: "workspace-default",
+      };
+    }
+  }
+  return inferTruthTargets(trimmed, context);
+}
+
 export function truthThreadKey(context: Pick<TruthAssistantContext, "bookId" | "mode" | "detailFile">): string {
   return context.detailFile
     ? `truth:${context.bookId}:${context.mode}:detail:${context.detailFile}`

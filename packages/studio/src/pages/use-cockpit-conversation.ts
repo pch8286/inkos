@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { fetchJson, postApi } from "../hooks/use-api";
 import type { TFunction } from "../hooks/use-i18n";
-import type { TruthAssistResponse } from "../shared/contracts";
+import type { TruthAssistResponse, TruthFileDetail, TruthFileSummary, TruthWriteScope } from "../shared/contracts";
+import { resolveTruthTargetsForSubmit } from "../shared/truth-assistant";
+import { buildTruthAssistRequest } from "../shared/truth-write-scope";
 import {
   buildConversationTranscript,
   extractWordCount,
@@ -20,6 +22,7 @@ interface UseCockpitConversationInput {
   readonly selectedBookId: string;
   readonly selectedBookTitle: string | null;
   readonly selectedTruthFile: string;
+  readonly truthFiles: ReadonlyArray<TruthFileSummary>;
   readonly selectedChapterNumber: number | null;
   readonly setupScopeRef: {
     current: {
@@ -35,6 +38,7 @@ interface UseCockpitConversationInput {
   readonly setBusy: (busy: boolean) => void;
   readonly setError: (error: string | null) => void;
   readonly setInspectorTab: (tab: InspectorTab) => void;
+  readonly setSelectedTruthFile: (fileName: string) => void;
   readonly refetchTruthList: () => Promise<unknown> | unknown;
   readonly refetchTruthDetail: () => Promise<unknown> | unknown;
   readonly refetchBookDetail: () => Promise<unknown> | unknown;
@@ -43,6 +47,19 @@ interface UseCockpitConversationInput {
 interface SendDiscussOptions {
   readonly threadKey?: string;
   readonly forceSetup?: boolean;
+}
+
+function buildCockpitBinderScope(action: "ask" | "propose", fileNames: ReadonlyArray<string>): TruthWriteScope {
+  if (action === "ask") {
+    return { kind: "read-only" };
+  }
+  if (fileNames.length === 1) {
+    return { kind: "file", fileName: fileNames[0]! };
+  }
+  return {
+    kind: "bundle",
+    fileNames: [...fileNames] as [string, ...string[]],
+  };
 }
 
 export function useCockpitConversation(input: UseCockpitConversationInput) {
@@ -131,14 +148,37 @@ export function useCockpitConversation(input: UseCockpitConversationInput) {
 
   const sendBinderPrompt = async (rawText: string, action: "ask" | "propose") => {
     const text = rawText.trim();
-    if (!input.selectedBookId || !input.selectedTruthFile) {
+    if (!input.selectedBookId || input.truthFiles.length === 0) {
       input.setError(input.t("cockpit.noBook"));
       return;
     }
     if (!text) return;
 
+    input.setError(null);
+    const inference = resolveTruthTargetsForSubmit(text, {
+      detailFile: null,
+      workspaceTargetFile: input.selectedTruthFile,
+      files: input.truthFiles,
+    });
     const userMessage = createMessage("user", text);
     appendMessage(input.activeThreadKey, userMessage);
+
+    if (inference.status === "clarify") {
+      const labels = inference.suggestedFileNames
+        .map((fileName) => input.truthFiles.find((file) => file.name === fileName)?.label ?? fileName)
+        .join(", ");
+      appendMessage(
+        input.activeThreadKey,
+        createMessage("assistant", `${input.t("truth.agentClarify")}\n${labels}`),
+      );
+      input.setInspectorTab("focus");
+      return;
+    }
+
+    const targetFiles = inference.fileNames;
+    if (targetFiles[0] && targetFiles[0] !== input.selectedTruthFile) {
+      input.setSelectedTruthFile(targetFiles[0]!);
+    }
 
     input.setBusy(true);
     input.setError(null);
@@ -146,28 +186,41 @@ export function useCockpitConversation(input: UseCockpitConversationInput) {
       const response = await fetchJson<TruthAssistResponse>(`/books/${input.selectedBookId}/truth/assist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: input.selectedTruthFile,
-          scope: {
-            kind: "file",
-            fileName: input.selectedTruthFile,
-          },
+        body: JSON.stringify(buildTruthAssistRequest({
+          fileNames: targetFiles,
           instruction: text,
           mode: action === "ask" ? "question" : "proposal",
+          scope: buildCockpitBinderScope(action, targetFiles),
           conversation: [...activeMessages, userMessage]
             .filter((message) => message.role !== "system")
             .map((message) => ({ role: message.role, content: message.content })),
-        }),
+        })),
       });
 
       if (action === "ask" || response.mode === "question" || response.question) {
-        appendMessage(input.activeThreadKey, createMessage("assistant", response.question ?? response.content));
+        const question = response.question ?? response.content;
+        const content = response.rationale?.trim() ? `${question}\n\n${response.rationale.trim()}` : question;
+        appendMessage(input.activeThreadKey, createMessage("assistant", content));
         replaceProposal(input.activeThreadKey, null);
         input.setInspectorTab("focus");
         return;
       }
 
-      const changes = response.changes ?? [];
+      const baselineEntries = await Promise.all(
+        (response.changes ?? []).map(async (change) => {
+          try {
+            const detail = await fetchJson<TruthFileDetail>(`/books/${input.selectedBookId}/truth/${change.fileName}`);
+            return [change.fileName, detail.content ?? ""] as const;
+          } catch {
+            return [change.fileName, ""] as const;
+          }
+        }),
+      );
+      const baselines = Object.fromEntries(baselineEntries);
+      const changes = (response.changes ?? []).map((change) => ({
+        ...change,
+        beforeContent: baselines[change.fileName] ?? "",
+      }));
       replaceProposal(input.activeThreadKey, {
         changes,
         createdAt: Date.now(),

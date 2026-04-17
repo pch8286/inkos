@@ -182,7 +182,8 @@ export interface TruthAssistChange {
 
 export type TruthWriteScope =
   | { readonly kind: "read-only" }
-  | { readonly kind: "file"; readonly fileName: string };
+  | { readonly kind: "file"; readonly fileName: string }
+  | { readonly kind: "bundle"; readonly fileNames: readonly [string, ...string[]] };
 
 export interface TruthSaveRequest {
   readonly content: string;
@@ -212,7 +213,9 @@ type TruthQuestionAssistRequest = TruthAssistRequestBase & {
 
 type TruthProposalAssistRequest = TruthAssistRequestBase & {
   readonly mode: "proposal";
-  readonly scope: { readonly kind: "file"; readonly fileName: string };
+  readonly scope:
+    | { readonly kind: "file"; readonly fileName: string }
+    | { readonly kind: "bundle"; readonly fileNames: readonly [string, ...string[]] };
 };
 
 export type TruthAssistRequest =

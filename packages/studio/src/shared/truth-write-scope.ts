@@ -8,9 +8,15 @@ function normalizeTruthWriteScope(scope: TruthWriteScope): TruthWriteScope {
   if (scope.kind === "read-only") {
     return scope;
   }
+  if (scope.kind === "file") {
+    return {
+      kind: "file",
+      fileName: normalizeTargetFileName(scope.fileName),
+    };
+  }
   return {
-    kind: "file",
-    fileName: normalizeTargetFileName(scope.fileName),
+    kind: "bundle",
+    fileNames: [...new Set(scope.fileNames.map(normalizeTargetFileName).filter(Boolean))] as [string, ...string[]],
   };
 }
 
@@ -23,6 +29,8 @@ export function canWriteTruthFile(scope: TruthWriteScope, fileName: string): boo
       return false;
     case "file":
       return normalizedScope.fileName === targetFileName;
+    case "bundle":
+      return normalizedScope.fileNames.includes(targetFileName);
     default: {
       const exhaustiveScope: never = normalizedScope;
       void exhaustiveScope;
@@ -55,29 +63,40 @@ export function buildTruthAssistRequest(input: {
     }
   }
 
-  if (input.mode === "proposal" && scope.kind !== "file") {
+  if (scope.kind === "bundle") {
+    const normalizedScopeFiles = [...scope.fileNames];
+    if (
+      uniqueFileNames.length !== normalizedScopeFiles.length
+      || uniqueFileNames.some((fileName) => !normalizedScopeFiles.includes(fileName))
+    ) {
+      throw new Error("Bundle-scoped truth assist requests must target the same files as the scope.");
+    }
+  }
+
+  if (input.mode === "proposal" && scope.kind === "read-only") {
     throw new Error("Truth proposal requests require explicit file scope.");
   }
 
   if (input.mode === "proposal") {
-    const proposalScope = scope as Extract<TruthWriteScope, { kind: "file" }>;
-    return uniqueFileNames.length === 1
-      ? {
+    if (scope.kind === "file") {
+      return {
         instruction: input.instruction,
         mode: "proposal" as const,
         conversation: input.conversation,
         alignment: input.alignment,
-        scope: proposalScope,
+        scope,
         fileName: uniqueFileNames[0]!,
-      }
-      : {
-        instruction: input.instruction,
-        mode: "proposal" as const,
-        conversation: input.conversation,
-        alignment: input.alignment,
-        scope: proposalScope,
-        fileNames: uniqueFileNames as [string, ...string[]],
       };
+    }
+
+    return {
+      fileNames: uniqueFileNames as [string, ...string[]],
+      instruction: input.instruction,
+      mode: "proposal" as const,
+      conversation: input.conversation,
+      alignment: input.alignment,
+      scope,
+    };
   }
 
   return uniqueFileNames.length === 1

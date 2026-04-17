@@ -7,9 +7,9 @@ import type { TruthAssistResponse, TruthFileDetail, TruthWriteScope } from "../s
 import type { TruthAssistantContext } from "../shared/truth-assistant";
 import {
   buildTruthLineDiff,
-  inferTruthTargets,
   makeTruthPreview,
   normalizeTruthText,
+  resolveTruthTargetsForSubmit,
   summarizeTruthDiff,
   truthThreadKey,
 } from "../shared/truth-assistant";
@@ -147,30 +147,6 @@ function clearTruthThread(
   const next = { ...threads };
   delete next[key];
   return next;
-}
-
-function resolveTruthTargetsForSubmit(
-  instruction: string,
-  context: TruthAssistantContext,
-): ReturnType<typeof inferTruthTargets> {
-  const trimmed = instruction.trim();
-  if (!trimmed) {
-    if (context.detailFile && context.files.some((file) => file.name === context.detailFile)) {
-      return {
-        status: "resolved",
-        fileNames: [context.detailFile],
-        reason: "detail-lock",
-      };
-    }
-    if (context.workspaceTargetFile && context.files.some((file) => file.name === context.workspaceTargetFile)) {
-      return {
-        status: "resolved",
-        fileNames: [context.workspaceTargetFile],
-        reason: "workspace-default",
-      };
-    }
-  }
-  return inferTruthTargets(trimmed, context);
 }
 
 function buildTruthAlignmentBlock(alignment: TruthAssistantContext["alignment"] | null | undefined): string {

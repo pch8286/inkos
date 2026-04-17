@@ -972,6 +972,44 @@ describe("createStudioServer daemon lifecycle", () => {
     await expect(response.json()).resolves.toEqual({ error: "TRUTH_SCOPE_FILE_MISMATCH" });
   });
 
+  it("returns bundled truth-file proposals when the bundle scope matches the targets", async () => {
+    chatCompletionMock.mockClear();
+    await seedFitCheckBook(root, "assist-bundle-scope-book", "bundle scope 테스트", [
+      { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
+      { file: "book_rules.md", content: "# 작품 규칙\n\n- 권력 균형은 쉽게 무너지지 않는다.\n" },
+      { file: "story_bible.md", content: "# 스토리 바이블\n\n- 수도는 이동하지 않는다.\n" },
+    ]);
+    chatCompletionMock
+      .mockResolvedValueOnce({
+        content: "# 작가 의도\n\n통치 정당성의 기준을 더 선명하게 유지한다.\n",
+        usage: { promptTokens: 5, completionTokens: 7, totalTokens: 12 },
+      })
+      .mockResolvedValueOnce({
+        content: "# 작품 규칙\n\n- 권력 투쟁은 제도적 결과를 남겨야 한다.\n",
+        usage: { promptTokens: 6, completionTokens: 8, totalTokens: 14 },
+      });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/assist-bundle-scope-book/truth/assist", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        fileNames: ["author_intent.md", "book_rules.md"],
+        mode: "proposal",
+        instruction: "통치 정당성과 권력 규칙을 함께 정리해줘",
+        scope: { kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { changes: ReadonlyArray<{ fileName: string; content: string }> };
+    expect(body.changes).toHaveLength(2);
+    expect(body.changes.map((change) => change.fileName)).toEqual(["author_intent.md", "book_rules.md"]);
+    expect(chatCompletionMock).toHaveBeenCalledTimes(2);
+  }, 15000);
+
   it("returns a single alignment question before drafting when question mode is requested", async () => {
     await seedFitCheckBook(root, "assist-question-book", "질문 테스트", [
       { file: "author_intent.md", content: "# 작가 의도\n\n왕권과 제도의 충돌을 다룬다.\n" },
@@ -1068,7 +1106,8 @@ describe("createStudioServer daemon lifecycle", () => {
     });
   });
 
-  it("rejects bundled truth-file proposals in proposal mode for v1", async () => {
+  it("rejects file-scoped multi-target truth-file proposals", async () => {
+    chatCompletionMock.mockClear();
     await seedFitCheckBook(root, "assist-bundle-book", "묶음 제안 테스트", [
       { file: "author_intent.md", content: "# 작가 의도\n\n제도와 권력을 다룬다.\n" },
       { file: "book_rules.md", content: "# 작품 규칙\n\n- 잔혹함은 제한적으로만 사용한다.\n" },

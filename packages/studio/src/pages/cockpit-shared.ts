@@ -28,6 +28,7 @@ export interface ProposalState {
   readonly changes: ReadonlyArray<{
     readonly fileName: string;
     readonly label: string;
+    readonly beforeContent: string;
     readonly content: string;
   }>;
   readonly createdAt: number;

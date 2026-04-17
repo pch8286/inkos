@@ -224,13 +224,13 @@ export function Cockpit({
   const setupThreadKey = "project:setup";
   const activeThreadKey = useMemo(() => {
     if (mode === "binder") {
-      return `${selectedBookId || "project"}:binder:${selectedTruthFile || "none"}`;
+      return `${selectedBookId || "project"}:binder`;
     }
     if (mode === "discuss" && showNewSetup) {
       return setupThreadKey;
     }
     return `${selectedBookId || "project"}:${mode}`;
-  }, [mode, selectedBookId, selectedTruthFile, showNewSetup]);
+  }, [mode, selectedBookId, showNewSetup]);
 
   const { data: bookDetailData, error: bookDetailError, refetch: refetchBookDetail } = useApi<BookDetailResponse>(
     selectedBookId ? `/books/${selectedBookId}` : "",
@@ -264,6 +264,7 @@ export function Cockpit({
     selectedBookId,
     selectedBookTitle: selectedBook?.title ?? null,
     selectedTruthFile,
+    truthFiles: truthListData?.files ?? [],
     selectedChapterNumber,
     setupScopeRef,
     defaultChapterWordCount: bookDetailData?.book.chapterWordCount,
@@ -271,6 +272,7 @@ export function Cockpit({
     setBusy,
     setError,
     setInspectorTab,
+    setSelectedTruthFile,
     refetchTruthList,
     refetchTruthDetail,
     refetchBookDetail,
@@ -610,7 +612,7 @@ export function Cockpit({
     void runNextQueuedComposerEntryRef.current(activeThreadKey);
   }, [activeThreadKey, busy, queuedComposerEntries]);
 
-  const canUseBinder = Boolean(selectedBookId && selectedTruthFile);
+  const canUseBinder = Boolean(selectedBookId && (truthListData?.files.length ?? 0) > 0);
   const canUseDraft = Boolean(selectedBookId);
   const modeLabel = mode === "binder" ? t("cockpit.binder") : mode === "draft" ? t("cockpit.draft") : t("cockpit.discuss");
   const selectedBookLabel = showNewSetup ? t("cockpit.newSetup") : selectedBook?.title ?? t("cockpit.noBook");
@@ -964,8 +966,6 @@ export function Cockpit({
           focusPanelEmptyLabel={t("cockpit.noBook")}
           setupTabEmptyLabel={t("cockpit.setupProposalEmpty")}
           changesPanel={{
-            selectedTruthFile,
-            truthFileContent: truthDetailData?.content ?? "",
             changes: activeProposal?.changes ?? [],
             onApplyChange: (fileName, content) => void handleApplyChange(fileName, content),
           }}

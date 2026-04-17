@@ -101,9 +101,7 @@ interface FocusPanelData {
 }
 
 interface ChangesPanelData {
-  readonly selectedTruthFile: string;
-  readonly truthFileContent: string;
-  readonly changes: ReadonlyArray<{ fileName: string; label: string; content: string }>;
+  readonly changes: ReadonlyArray<{ fileName: string; label: string; beforeContent: string; content: string }>;
   readonly onApplyChange: (fileName: string, content: string) => void;
 }
 
@@ -273,8 +271,7 @@ export function CockpitInspectorPanel({
             changesPanel.changes.length > 0 ? (
               <div className="space-y-4" role="tabpanel" id={ids.changesPanelId} aria-labelledby={ids.changesTabId}>
                 {changesPanel.changes.map((change) => {
-                  const before = change.fileName === changesPanel.selectedTruthFile ? changesPanel.truthFileContent : "";
-                  const diff = buildTruthLineDiff(before, change.content);
+                  const diff = buildTruthLineDiff(change.beforeContent, change.content);
                   const summary = summarizeTruthDiff(diff);
 
                   return (

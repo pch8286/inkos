@@ -15,6 +15,12 @@ describe("canWriteTruthFile", () => {
     expect(canWriteTruthFile({ kind: "file", fileName: "book_rules.md" }, "book_rules.md")).toBe(true);
     expect(canWriteTruthFile({ kind: "file", fileName: "book_rules.md" }, "story_bible.md")).toBe(false);
   });
+
+  it("allows writes for every file inside the matching bundle scope", () => {
+    expect(canWriteTruthFile({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "author_intent.md")).toBe(true);
+    expect(canWriteTruthFile({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "book_rules.md")).toBe(true);
+    expect(canWriteTruthFile({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "story_bible.md")).toBe(false);
+  });
 });
 
 describe("isTruthProposalApplicable", () => {
@@ -22,6 +28,12 @@ describe("isTruthProposalApplicable", () => {
     expect(isTruthProposalApplicable({ kind: "file", fileName: "book_rules.md" }, "book_rules.md")).toBe(true);
     expect(isTruthProposalApplicable({ kind: "file", fileName: "book_rules.md" }, "story_bible.md")).toBe(false);
     expect(isTruthProposalApplicable({ kind: "read-only" }, "book_rules.md")).toBe(false);
+  });
+
+  it("marks bundle proposals as applicable for every file in the bundle", () => {
+    expect(isTruthProposalApplicable({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "author_intent.md")).toBe(true);
+    expect(isTruthProposalApplicable({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "book_rules.md")).toBe(true);
+    expect(isTruthProposalApplicable({ kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] }, "story_bible.md")).toBe(false);
   });
 });
 
@@ -62,6 +74,29 @@ describe("buildTruthAssistRequest", () => {
       mode: "proposal",
       scope: { kind: "read-only" },
     })).toThrow("Truth proposal requests require explicit file scope.");
+  });
+
+  it("allows proposal requests with an explicit bundle scope", () => {
+    expect(buildTruthAssistRequest({
+      fileNames: ["author_intent.md", "book_rules.md"],
+      instruction: "align both documents",
+      mode: "proposal",
+      scope: { kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] },
+    })).toEqual({
+      fileNames: ["author_intent.md", "book_rules.md"],
+      instruction: "align both documents",
+      mode: "proposal",
+      scope: { kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] },
+    });
+  });
+
+  it("rejects proposal bundle scope when the target files do not match", () => {
+    expect(() => buildTruthAssistRequest({
+      fileNames: ["author_intent.md", "book_rules.md"],
+      instruction: "align both documents",
+      mode: "proposal",
+      scope: { kind: "bundle", fileNames: ["author_intent.md", "story_bible.md"] },
+    })).toThrow("Bundle-scoped truth assist requests must target the same files as the scope.");
   });
 
   it("rejects file-scoped requests whose target does not match the scope", () => {
@@ -116,6 +151,13 @@ describe("buildTruthSaveRequest", () => {
     expect(buildTruthSaveRequest("# rules", { kind: "file", fileName: " book_rules.md " })).toEqual({
       content: "# rules",
       scope: { kind: "file", fileName: "book_rules.md" },
+    });
+  });
+
+  it("normalizes bundle scope names before emitting save payloads", () => {
+    expect(buildTruthSaveRequest("# rules", { kind: "bundle", fileNames: [" author_intent.md ", " book_rules.md "] })).toEqual({
+      content: "# rules",
+      scope: { kind: "bundle", fileNames: ["author_intent.md", "book_rules.md"] },
     });
   });
 });

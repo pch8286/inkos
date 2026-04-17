@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferTruthTargets, truthThreadKey } from "./truth-assistant";
+import { inferTruthTargets, resolveTruthTargetsForSubmit, truthThreadKey } from "./truth-assistant";
 
 const files = [
   { name: "author_intent.md", label: "작가 의도", exists: true, path: "story/author_intent.md" },
@@ -82,5 +82,31 @@ describe("truthThreadKey", () => {
       mode: "workspace",
       detailFile: "author_intent.md",
     })).toBe("truth:demo:workspace:detail:author_intent.md");
+  });
+});
+
+describe("resolveTruthTargetsForSubmit", () => {
+  it("falls back to the open detail file when the instruction is empty", () => {
+    expect(resolveTruthTargetsForSubmit("", {
+      detailFile: "author_intent.md",
+      workspaceTargetFile: "current_focus.md",
+      files,
+    })).toEqual({
+      status: "resolved",
+      fileNames: ["author_intent.md"],
+      reason: "detail-lock",
+    });
+  });
+
+  it("falls back to the workspace target when the instruction is empty", () => {
+    expect(resolveTruthTargetsForSubmit("", {
+      detailFile: null,
+      workspaceTargetFile: "current_focus.md",
+      files,
+    })).toEqual({
+      status: "resolved",
+      fileNames: ["current_focus.md"],
+      reason: "workspace-default",
+    });
   });
 });
