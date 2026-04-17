@@ -76,6 +76,70 @@ describe("deriveCockpitStatusStrip", () => {
     });
   });
 
+  it("uses explicit non-live values for idle", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+    })).toMatchObject({
+      stage: "idle",
+      isLive: false,
+      liveStage: null,
+      liveDetail: null,
+      progressMode: "none",
+      progressValue: null,
+    });
+  });
+
+  it("uses explicit non-live values for ready", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      setupDiscussionState: "ready",
+    })).toMatchObject({
+      stage: "ready",
+      isLive: false,
+      liveStage: null,
+      liveDetail: null,
+      progressMode: "none",
+      progressValue: null,
+    });
+  });
+
+  it("uses create-job message for live detail when stage is unavailable", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      isLive: true,
+      liveDetail: "waiting for worker",
+    });
+  });
+
+  it("falls back to latest event for live detail when there is no active create-job detail", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "draft:log · writing chapter 12",
+    });
+  });
+
+  it("falls back to target label for live detail when no create job or event is present", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      busy: true,
+    })).toMatchObject({
+      stage: "working",
+      liveDetail: "Book",
+    });
+  });
+
   it("shows preparing-proposal when setup proposal work is active", () => {
     expect(deriveCockpitStatusStrip({
       provider: "codex-cli",

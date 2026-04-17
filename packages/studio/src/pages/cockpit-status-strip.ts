@@ -64,7 +64,8 @@ export interface CockpitStatusStrip {
 export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): CockpitStatusStrip {
   const stage = deriveCockpitStage(input);
   const targetLabel = resolveTargetLabel(input);
-  const latestEvent = summarizeLatestEvent(input.activityEntries);
+  const latestEventInfo = summarizeLatestEvent(input.activityEntries);
+  const latestEvent = latestEventInfo.summary;
   const { mode: progressMode, value: progressValue } = deriveProgressMode(stage);
   const isLive = stage !== "idle" && stage !== "ready";
 
@@ -75,7 +76,7 @@ export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): Cockpi
     stage,
     targetLabel,
     latestEvent,
-    latestEventIsError: latestEventIsError(input.activityEntries, latestEvent),
+    latestEventIsError: latestEventInfo.isError,
     isLive,
     liveStage: isLive ? stage : null,
     liveDetail: deriveLiveDetail({
@@ -137,17 +138,26 @@ function resolveTargetLabel(input: CockpitStatusStripInput): string {
   return input.selectedBookLabel.trim() || "—";
 }
 
-function summarizeLatestEvent(entries: ReadonlyArray<CockpitStatusActivityEntry>): string | null {
+function summarizeLatestEvent(entries: ReadonlyArray<CockpitStatusActivityEntry>): {
+  summary: string | null;
+  isError: boolean;
+} {
   const sortedEntries = [...entries].sort((a, b) => b.timestamp - a.timestamp);
 
   for (const entry of sortedEntries) {
     const summary = deriveEntrySummary(entry);
     if (summary) {
-      return summary;
+      return {
+        summary,
+        isError: /\berror\b/i.test(entry.event),
+      };
     }
   }
 
-  return null;
+  return {
+    summary: null,
+    isError: false,
+  };
 }
 
 function deriveEntrySummary(entry: CockpitStatusActivityEntry): string | null {
@@ -210,29 +220,6 @@ function deriveLiveDetail(input: {
   }
 
   return input.targetLabel;
-}
-
-function latestEventIsError(
-  entries: ReadonlyArray<CockpitStatusActivityEntry>,
-  latestEvent: string | null,
-): boolean {
-  if (!latestEvent) {
-    return false;
-  }
-
-  const sortedEntries = [...entries].sort((a, b) => b.timestamp - a.timestamp);
-  for (const entry of sortedEntries) {
-    const summary = deriveEntrySummary(entry);
-    if (!summary) {
-      continue;
-    }
-
-    if (summary === latestEvent) {
-      return /\berror\b/i.test(entry.event);
-    }
-  }
-
-  return false;
 }
 
 function normalizeReasoningLabel(value: string | null | undefined): string | null {
