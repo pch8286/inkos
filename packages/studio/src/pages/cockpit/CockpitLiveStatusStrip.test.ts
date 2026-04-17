@@ -51,6 +51,11 @@ describe("CockpitLiveStatusStrip", () => {
     expect(html).toContain("Creating");
     expect(html).toContain('data-progress-mode="determinate"');
     expect(html).toContain("--cockpit-live-progress:85%");
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-label="Creating: foundation.md"');
+    expect(html).toContain('aria-valuenow="85"');
+    expect(html).toContain('aria-valuemin="0"');
+    expect(html).toContain('aria-valuemax="100"');
   });
 
   it("renders indeterminate progress for generic work", () => {
@@ -78,6 +83,8 @@ describe("CockpitLiveStatusStrip", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('data-progress-mode="indeterminate"');
+    expect(html).toContain('role="progressbar"');
+    expect(html).not.toContain("aria-valuenow");
     expect(html).toContain("Working");
   });
 
