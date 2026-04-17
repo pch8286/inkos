@@ -44,6 +44,9 @@ describe("CockpitLiveStatusStrip", () => {
       }),
     );
 
+    expect(html).toContain('class="studio-cockpit-status-strip studio-cockpit-live-status-strip mb-3"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
     expect(html).toContain("LIVE");
     expect(html).toContain("Creating");
     expect(html).toContain('data-progress-mode="determinate"');
@@ -71,6 +74,9 @@ describe("CockpitLiveStatusStrip", () => {
       }),
     );
 
+    expect(html).toContain('class="studio-cockpit-status-strip studio-cockpit-live-status-strip mb-3"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
     expect(html).toContain('data-progress-mode="indeterminate"');
     expect(html).toContain("Working");
   });
@@ -96,7 +102,41 @@ describe("CockpitLiveStatusStrip", () => {
       }),
     );
 
+    expect(html).toContain('class="studio-cockpit-status-strip studio-cockpit-live-status-strip mb-3"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("Latest Event");
     expect(html).not.toContain(">LIVE<");
     expect(html).toContain("draft:error · agent crashed");
+  });
+
+  it("does not emit a stage translation key when liveStage is null", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CockpitLiveStatusStrip, {
+        t,
+        statusPills: [],
+        status: createStatus({
+          reasoningLabel: null,
+          stage: "working",
+          targetLabel: "Book",
+          latestEvent: "draft:log · chapter 12",
+          latestEventIsError: false,
+          isLive: true,
+          liveStage: null,
+          liveDetail: "chapter 12",
+          progressMode: "none",
+          progressValue: null,
+        }),
+        StatusPill,
+      }),
+    );
+
+    expect(html).toContain('class="studio-cockpit-status-strip studio-cockpit-live-status-strip mb-3"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("LIVE");
+    expect(html).toContain("chapter 12");
+    expect(html).not.toContain("cockpit.stage.null");
+    expect(html).not.toContain(">null<");
   });
 });

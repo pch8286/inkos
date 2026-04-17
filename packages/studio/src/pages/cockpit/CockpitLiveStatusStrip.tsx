@@ -22,6 +22,9 @@ export function CockpitLiveStatusStrip({
   statusPills,
   StatusPill,
 }: CockpitLiveStatusStripProps) {
+  const liveStageLabel = status.liveStage
+    ? t(`cockpit.stage.${status.liveStage}`)
+    : null;
   const isLive = status.isLive && !status.latestEventIsError;
   const hasProgress = status.progressMode !== "none";
   const progressStyle = status.progressMode === "determinate" && status.progressValue !== null
@@ -29,7 +32,11 @@ export function CockpitLiveStatusStrip({
     : undefined;
 
   return (
-    <div className="studio-cockpit-live-status-strip">
+    <div
+      className="studio-cockpit-status-strip studio-cockpit-live-status-strip mb-3"
+      role="status"
+      aria-live="polite"
+    >
       <div className="studio-cockpit-status-pills">
         {statusPills.map((pill) => (
           <StatusPill key={`${pill.label}-${pill.value}`} label={pill.label} value={pill.value} accent={pill.accent} />
@@ -40,7 +47,7 @@ export function CockpitLiveStatusStrip({
         <>
           <div className="studio-cockpit-live-status-row">
             <span className="studio-cockpit-live-status-badge">LIVE</span>
-            <span className="studio-cockpit-live-status-stage">{t(`cockpit.stage.${status.liveStage}`)}</span>
+            {liveStageLabel ? <span className="studio-cockpit-live-status-stage">{liveStageLabel}</span> : null}
             {status.liveDetail ? <span className="studio-cockpit-live-status-detail">{status.liveDetail}</span> : null}
           </div>
           {hasProgress ? (
