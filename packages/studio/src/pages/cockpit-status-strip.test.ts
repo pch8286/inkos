@@ -96,6 +96,110 @@ describe("deriveCockpitStatusStrip", () => {
     });
   });
 
+  it("uses creating-job stage for creating live detail before any creating-job message", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      creatingBook: true,
+      createJobs: [
+        { bookId: "b1", title: "Message First", status: "creating", stage: null, message: "waiting for worker" },
+        { bookId: "b2", title: "Stage Second", status: "creating", stage: "queued", message: null },
+      ],
+    })).toMatchObject({
+      stage: "creating",
+      liveDetail: "queued",
+    });
+  });
+
+  it("uses creating-job message for creating live detail before latest event when no stage exists", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      creatingBook: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: "waiting for worker" },
+      ],
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "creating",
+      liveDetail: "waiting for worker",
+    });
+  });
+
+  it("uses latest event for creating live detail when no creating-job detail exists", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      creatingBook: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+      activityEntries: [
+        { event: "draft:log", data: { detail: "writing chapter 12" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "creating",
+      liveDetail: "draft:log · writing chapter 12",
+    });
+  });
+
+  it("falls back to target label for creating live detail when nothing else exists", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      creatingBook: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: null, message: null },
+      ],
+    })).toMatchObject({
+      stage: "creating",
+      liveDetail: "Book",
+    });
+  });
+
+  it("uses latest event for preparing-proposal live detail over background create-job detail", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      preparingSetupProposal: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: "queued", message: "waiting for worker" },
+      ],
+      activityEntries: [
+        { event: "setup:log", data: { detail: "drafting proposal" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "preparing-proposal",
+      liveDetail: "setup:log · drafting proposal",
+    });
+  });
+
+  it("uses target label for approving-proposal live detail when no latest event exists", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      approvingSetup: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: "queued", message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "approving-proposal",
+      liveDetail: "Book",
+    });
+  });
+
+  it("uses latest event for previewing-foundation live detail over background create-job detail", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      preparingFoundationPreview: true,
+      createJobs: [
+        { bookId: "b1", title: "Book", status: "creating", stage: "queued", message: "waiting for worker" },
+      ],
+      activityEntries: [
+        { event: "setup:log", data: { detail: "previewing foundation" }, timestamp: 10 },
+      ],
+    })).toMatchObject({
+      stage: "previewing-foundation",
+      liveDetail: "setup:log · previewing foundation",
+    });
+  });
+
   it("flags error events so the renderer can suppress live styling", () => {
     expect(deriveCockpitStatusStrip({
       ...baseInput,
