@@ -264,6 +264,45 @@ describe("deriveCockpitStatusStrip", () => {
     });
   });
 
+  it("prefers any creating-job stage over an earlier creating-job message", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      createJobs: [
+        { bookId: "b1", title: "Message First", status: "creating", stage: null, message: "waiting for worker" },
+        { bookId: "b2", title: "Stage Second", status: "creating", stage: "queued", message: null },
+      ],
+    })).toMatchObject({
+      stage: "queued",
+      liveDetail: "queued",
+    });
+  });
+
+  it("keeps the first usable creating-job stage even when a later creating job only has a message", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      createJobs: [
+        { bookId: "b1", title: "Stage First", status: "creating", stage: "queued", message: null },
+        { bookId: "b2", title: "Message Second", status: "creating", stage: null, message: "waiting for worker" },
+      ],
+    })).toMatchObject({
+      stage: "queued",
+      liveDetail: "queued",
+    });
+  });
+
+  it("uses the first usable creating-job message when no creating-job stage exists", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      createJobs: [
+        { bookId: "b1", title: "Message First", status: "creating", stage: null, message: "waiting for worker" },
+        { bookId: "b2", title: "Message Second", status: "creating", stage: null, message: "starting generator" },
+      ],
+    })).toMatchObject({
+      stage: "queued",
+      liveDetail: "waiting for worker",
+    });
+  });
+
   it("falls back to single no-detail queued create-job and event summary when available", () => {
     expect(deriveCockpitStatusStrip({
       ...baseInput,

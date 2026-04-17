@@ -206,30 +206,24 @@ function deriveLiveDetail(input: {
     return null;
   }
 
-  const activeCreateJobWithDetail = input.createJobs.find((job) => {
-    if (job.status !== "creating") {
-      return false;
-    }
-
-    if (trimText(job.stage)) {
-      return true;
-    }
-
-    if (trimText(job.message)) {
-      return true;
-    }
-
-    return false;
-  });
-
   if (input.stage === "queued" || input.stage === "creating") {
-    if (activeCreateJobWithDetail) {
-      const createJobStage = trimText(activeCreateJobWithDetail.stage);
+    for (const job of input.createJobs) {
+      if (job.status !== "creating") {
+        continue;
+      }
+
+      const createJobStage = trimText(job.stage);
       if (createJobStage) {
         return createJobStage;
       }
+    }
 
-      const createJobMessage = trimText(activeCreateJobWithDetail.message);
+    for (const job of input.createJobs) {
+      if (job.status !== "creating") {
+        continue;
+      }
+
+      const createJobMessage = trimText(job.message);
       if (createJobMessage) {
         return createJobMessage;
       }
