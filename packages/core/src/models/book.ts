@@ -29,6 +29,22 @@ export type BookStatus = z.infer<typeof BookStatusSchema>;
 export const FanficModeSchema = z.enum(["canon", "au", "ooc", "cp"]);
 export type FanficMode = z.infer<typeof FanficModeSchema>;
 
+export const ReaderFontPresetSchema = z.enum(["sans", "serif", "myeongjo"]);
+export type ReaderFontPreset = z.infer<typeof ReaderFontPresetSchema>;
+
+export const ReaderDeviceSettingsSchema = z.object({
+  fontPreset: ReaderFontPresetSchema,
+  fontSize: z.number().int().min(12).max(28),
+  lineHeight: z.number().min(1.3).max(2.2),
+});
+export type ReaderDeviceSettings = z.infer<typeof ReaderDeviceSettingsSchema>;
+
+export const ReaderSettingsSchema = z.object({
+  mobile: ReaderDeviceSettingsSchema,
+  desktop: ReaderDeviceSettingsSchema,
+});
+export type ReaderSettings = z.infer<typeof ReaderSettingsSchema>;
+
 export const BookConfigSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -42,6 +58,7 @@ export const BookConfigSchema = z.object({
   updatedAt: z.string().datetime(),
   parentBookId: z.string().optional(),
   fanficMode: FanficModeSchema.optional(),
+  readerSettings: ReaderSettingsSchema.optional(),
 });
 
 export type BookConfig = z.infer<typeof BookConfigSchema>;

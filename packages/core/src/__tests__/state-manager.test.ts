@@ -42,6 +42,23 @@ describe("StateManager", () => {
       expect(loaded).toEqual(bookConfig);
     });
 
+    it("round-trips reader settings through save and load", async () => {
+      await manager.saveBookConfig("test-book", {
+        ...bookConfig,
+        readerSettings: {
+          mobile: { fontPreset: "myeongjo", fontSize: 16, lineHeight: 1.72 },
+          desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+        },
+      });
+
+      const loaded = await manager.loadBookConfig("test-book");
+
+      expect(loaded.readerSettings).toEqual({
+        mobile: { fontPreset: "myeongjo", fontSize: 16, lineHeight: 1.72 },
+        desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+      });
+    });
+
     it("creates the book directory on save", async () => {
       await manager.saveBookConfig("new-book", {
         ...bookConfig,

@@ -44,9 +44,11 @@ import type {
   BookSetupRevisionRequest,
   BookSetupCreateRequest,
   BookSetupSessionListPayload,
+  ReaderSettings,
   TruthSaveRequest,
   TruthWriteScope,
 } from "../shared/contracts.js";
+import { ReaderSettingsSchema } from "@actalk/inkos-core";
 
 // --- Event bus for SSE ---
 
@@ -299,6 +301,11 @@ function inferLegacyBookSetupSessionRevision(session: Record<string, unknown>): 
     return 2;
   }
   return 1;
+}
+
+function normalizeReaderSettings(value: unknown): ReaderSettings | null {
+  const parsed = ReaderSettingsSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord | null {
@@ -3098,7 +3105,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       if (!match) return c.json({ error: "Chapter not found" }, 404);
       const content = await readFile(join(chaptersDir, match), "utf-8");
       const book = await state.loadBookConfig(id);
-      return c.json({ chapterNumber: num, filename: match, content, language: book.language ?? "ko" });
+      return c.json({
+        chapterNumber: num,
+        filename: match,
+        content,
+        language: book.language ?? "ko",
+        readerSettings: book.readerSettings,
+      });
     } catch {
       return c.json({ error: "Chapter not found" }, 404);
     }
@@ -4165,12 +4178,21 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       status?: string;
       language?: StudioLanguage;
       platform?: string;
+      readerSettings?: ReaderSettings;
     }>();
     try {
       const book = await state.loadBookConfig(id);
       const nextTitle = updates.title === undefined ? undefined : updates.title.trim();
       if (nextTitle !== undefined && nextTitle.length === 0) {
         return c.json({ error: "Book title cannot be empty" }, 400);
+      }
+      let readerSettings: ReaderSettings | undefined;
+      if (updates.readerSettings !== undefined) {
+        const normalized = normalizeReaderSettings(updates.readerSettings);
+        if (!normalized) {
+          return c.json({ error: "Invalid readerSettings" }, 400);
+        }
+        readerSettings = normalized;
       }
       const updated = {
         ...book,
@@ -4180,6 +4202,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         ...(updates.status !== undefined ? { status: updates.status as typeof book.status } : {}),
         ...(updates.language !== undefined ? { language: resolveStudioLanguage(updates.language) } : {}),
         ...(updates.platform !== undefined ? { platform: normalizeStudioPlatform(updates.platform) } : {}),
+        ...(readerSettings !== undefined ? { readerSettings } : {}),
         updatedAt: new Date().toISOString(),
       };
       await state.saveBookConfig(id, updated);

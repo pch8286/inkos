@@ -72,6 +72,55 @@ describe("BookConfigSchema", () => {
     expect(config.language).toBe("en");
   });
 
+  it("accepts device-specific reader settings on BookConfig", () => {
+    const config = BookConfigSchema.parse({
+      ...validBook,
+      readerSettings: {
+        mobile: { fontPreset: "myeongjo", fontSize: 16, lineHeight: 1.72 },
+        desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+      },
+    });
+
+    expect(config.readerSettings?.mobile.fontPreset).toBe("myeongjo");
+    expect(config.readerSettings?.desktop.fontSize).toBe(18);
+  });
+
+  it("rejects unsupported reader font presets", () => {
+    expect(() =>
+      BookConfigSchema.parse({
+        ...validBook,
+        readerSettings: {
+          mobile: { fontPreset: "display", fontSize: 16, lineHeight: 1.72 },
+          desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects reader font sizes below the minimum", () => {
+    expect(() =>
+      BookConfigSchema.parse({
+        ...validBook,
+        readerSettings: {
+          mobile: { fontPreset: "myeongjo", fontSize: 11, lineHeight: 1.72 },
+          desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects reader line heights above the maximum", () => {
+    expect(() =>
+      BookConfigSchema.parse({
+        ...validBook,
+        readerSettings: {
+          mobile: { fontPreset: "myeongjo", fontSize: 16, lineHeight: 2.21 },
+          desktop: { fontPreset: "serif", fontSize: 18, lineHeight: 1.82 },
+        },
+      }),
+    ).toThrow();
+  });
+
   it("applies default targetChapters and chapterWordCount", () => {
     const minimal = {
       id: "b1",
