@@ -5,6 +5,7 @@ function setupPrimaryActionInput(
   overrides: Partial<Parameters<typeof deriveSetupPrimaryAction>[0]> = {},
 ): Parameters<typeof deriveSetupPrimaryAction>[0] {
   return {
+    showNewSetup: true,
     discussionState: "discussing",
     draftDirty: false,
     canPrepare: false,
@@ -47,6 +48,28 @@ describe("deriveCockpitRailVisibility", () => {
 });
 
 describe("deriveSetupPrimaryAction", () => {
+  it("returns discuss instead of auto-create when hidden setup retains a ready draft", () => {
+    expect(deriveSetupPrimaryAction({
+      ...setupPrimaryActionInput({
+        discussionState: "ready",
+        canPrepare: true,
+      }),
+      showNewSetup: false,
+    } as Parameters<typeof deriveSetupPrimaryAction>[0])).toBe("discuss");
+  });
+
+  it("returns discuss instead of auto-create when hidden setup retains an approved session", () => {
+    expect(deriveSetupPrimaryAction({
+      ...setupPrimaryActionInput({
+        discussionState: "ready",
+        canPrepare: true,
+        sessionStatus: "approved",
+        hasFoundationPreview: true,
+      }),
+      showNewSetup: false,
+    } as Parameters<typeof deriveSetupPrimaryAction>[0])).toBe("discuss");
+  });
+
   it("returns discuss while the setup is still being discussed and cannot advance", () => {
     expect(deriveSetupPrimaryAction(setupPrimaryActionInput())).toBe("discuss");
   });

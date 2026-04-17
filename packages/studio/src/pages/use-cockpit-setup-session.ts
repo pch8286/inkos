@@ -569,6 +569,11 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
   }, [handleSetupRequestFailure, input, requestCreateSetup, setupDraftDirty, setupSession]);
 
   const handleAutoCreateSetup = useCallback(async () => {
+    if (!input.showNewSetup) {
+      input.setError(input.t("cockpit.createRequiresOpenSetup"));
+      return;
+    }
+
     const needsFreshProposal = !setupSession || setupDraftDirty;
 
     if (!setupTitle.trim()) {

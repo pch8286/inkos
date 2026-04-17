@@ -23,6 +23,7 @@ export type SetupPrimaryAction =
   | "create";
 
 export interface SetupPrimaryActionInput {
+  readonly showNewSetup: boolean;
   readonly discussionState: SetupDiscussionState;
   readonly draftDirty: boolean;
   readonly canPrepare: boolean;
@@ -61,6 +62,10 @@ export function deriveCockpitRailVisibility(input: CockpitRailVisibilityInput): 
 }
 
 export function deriveSetupPrimaryAction(input: SetupPrimaryActionInput): SetupPrimaryAction {
+  if (!input.showNewSetup) {
+    return "discuss";
+  }
+
   if (input.sessionStatus === "creating") {
     return "create";
   }

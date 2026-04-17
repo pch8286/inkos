@@ -475,6 +475,7 @@ export function Cockpit({
   const focusPreviewContent = mode === "draft" ? (chapterDetailData?.content ?? "") : (truthDetailData?.content ?? "");
   const railVisibility = deriveCockpitRailVisibility({ mode, showNewSetup });
   const setupPrimaryAction = deriveSetupPrimaryAction({
+    showNewSetup,
     discussionState: setupDiscussionState,
     draftDirty: setupDraftDirty,
     canPrepare: setupCanPrepareProposal,
@@ -644,15 +645,22 @@ export function Cockpit({
     }
   };
 
-  const secondarySetupActions: ReadonlyArray<SetupPrimaryAction> = ([
-    "discuss",
-    "mark-ready",
-    "auto-create",
-    "prepare-proposal",
-    "approve",
-    "preview-foundation",
-    "create",
-  ] as const).filter((action): action is SetupPrimaryAction => action !== setupPrimaryAction);
+  const secondarySetupActions: ReadonlyArray<SetupPrimaryAction> = (
+    showNewSetup
+      ? [
+        "discuss",
+        "mark-ready",
+        "auto-create",
+        "prepare-proposal",
+        "approve",
+        "preview-foundation",
+        "create",
+      ]
+      : [
+        "discuss",
+        "mark-ready",
+      ]
+  ).filter((action): action is SetupPrimaryAction => action !== setupPrimaryAction);
 
   return (
     <div className="space-y-6">
