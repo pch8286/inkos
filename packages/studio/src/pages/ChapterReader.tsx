@@ -56,14 +56,15 @@ const MAX_READER_LINE_HEIGHT = 2.2;
 
 function buildChapterReaderText(data: Pick<ChapterReaderData, "chapterNumber" | "content" | "language">): ChapterReaderText {
   const lines = data.content.split("\n");
-  const titleLine = lines.find((line) => line.startsWith("# "));
+  const titleLineIndex = lines.findIndex((line) => line.startsWith("# "));
+  const titleLine = titleLineIndex >= 0 ? lines[titleLineIndex] : undefined;
   const title = titleLine
     ? localizeChapterTitle(titleLine, data.chapterNumber, data.language)
     : defaultLocalizedChapterTitle(data.chapterNumber, data.language);
-  const body = lines
-    .filter((line) => line !== titleLine)
-    .join("\n")
-    .trim();
+  const bodyLines = titleLineIndex >= 0
+    ? [...lines.slice(0, titleLineIndex), ...lines.slice(titleLineIndex + 1)]
+    : lines;
+  const body = bodyLines.join("\n").trim();
 
   return {
     title,
@@ -118,6 +119,28 @@ function clampReaderFontSize(value: number): number {
 
 function clampReaderLineHeight(value: number): number {
   return Number(Math.min(MAX_READER_LINE_HEIGHT, Math.max(MIN_READER_LINE_HEIGHT, value)).toFixed(2));
+}
+
+export async function runChapterDecision(params: {
+  pendingDecision: "approve" | "reject" | null;
+  nextDecision: "approve" | "reject";
+  request: () => Promise<void>;
+  setPendingDecision: (value: "approve" | "reject" | null) => void;
+  onSuccess: () => void;
+  onError: (message: string) => void;
+}): Promise<void> {
+  if (params.pendingDecision) {
+    return;
+  }
+
+  params.setPendingDecision(params.nextDecision);
+  try {
+    await params.request();
+    params.onSuccess();
+  } catch (decisionError) {
+    params.onError(decisionError instanceof Error ? decisionError.message : `${params.nextDecision} failed`);
+    params.setPendingDecision(null);
+  }
 }
 
 export function ReaderSettingsDiffSummary({
@@ -375,6 +398,7 @@ export function ChapterReader({
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<"approve" | "reject" | null>(null);
 
   if (loading) {
     return (
@@ -426,13 +450,29 @@ export function ChapterReader({
   };
 
   const handleApprove = async () => {
-    await postApi(`/books/${bookId}/chapters/${chapterNumber}/approve`);
-    nav.toBook(bookId);
+    await runChapterDecision({
+      pendingDecision,
+      nextDecision: "approve",
+      request: async () => {
+        await postApi(`/books/${bookId}/chapters/${chapterNumber}/approve`);
+      },
+      setPendingDecision,
+      onSuccess: () => nav.toBook(bookId),
+      onError: (message) => alert(message),
+    });
   };
 
   const handleReject = async () => {
-    await postApi(`/books/${bookId}/chapters/${chapterNumber}/reject`);
-    nav.toBook(bookId);
+    await runChapterDecision({
+      pendingDecision,
+      nextDecision: "reject",
+      request: async () => {
+        await postApi(`/books/${bookId}/chapters/${chapterNumber}/reject`);
+      },
+      setPendingDecision,
+      onSuccess: () => nav.toBook(bookId),
+      onError: (message) => alert(message),
+    });
   };
 
   const handleToggleReaderSettings = () => {
@@ -589,14 +629,16 @@ export function ChapterReader({
 
           <button
             onClick={handleApprove}
-            className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-600 shadow-sm transition-all hover:bg-emerald-500 hover:text-white"
+            disabled={pendingDecision !== null}
+            className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-600 shadow-sm transition-all hover:bg-emerald-500 hover:text-white disabled:opacity-50"
           >
             <CheckCircle2 size={14} />
             {t("reader.approve")}
           </button>
           <button
             onClick={handleReject}
-            className="flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-2 text-xs font-bold text-destructive shadow-sm transition-all hover:bg-destructive hover:text-white"
+            disabled={pendingDecision !== null}
+            className="flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-2 text-xs font-bold text-destructive shadow-sm transition-all hover:bg-destructive hover:text-white disabled:opacity-50"
           >
             <XCircle size={14} />
             {t("reader.reject")}

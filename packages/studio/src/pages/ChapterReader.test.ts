@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TFunction } from "../hooks/use-i18n";
-import { ChapterReader, ChapterReaderPreviewFrame, ReaderSettingsDiffSummary } from "./ChapterReader";
+import { ChapterReader, ChapterReaderPreviewFrame, ReaderSettingsDiffSummary, runChapterDecision } from "./ChapterReader";
 
 const useApiMock = vi.fn();
 const fetchJsonMock = vi.fn();
@@ -87,6 +87,24 @@ describe("ChapterReaderPreviewFrame", () => {
     expect(html).toContain("var(--font-sans)");
   });
 
+  it("keeps body lines that happen to repeat the chapter heading text", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChapterReaderPreviewFrame, {
+        chapter: {
+          ...sampleChapter,
+          content: "# 제1장\n\n제1장\n\n다음 문단입니다.",
+          readerSettings: sampleReaderSettings,
+        },
+        viewMode: "mobile",
+        showReaderSettings: false,
+        t,
+      }),
+    );
+
+    expect(html).toContain(">제1장</p>");
+    expect(html).toContain("다음 문단입니다.");
+  });
+
   it("uses draft settings for the live reading surface while reader settings are open", () => {
     const html = renderToStaticMarkup(
       createElement(ChapterReaderPreviewFrame, {
@@ -134,5 +152,51 @@ describe("ReaderSettingsDiffSummary", () => {
     expect(diffHtml).toContain("reader.mobile");
     expect(diffHtml).toContain("reader.font");
     expect(sameHtml).toBe("");
+  });
+});
+
+describe("runChapterDecision", () => {
+  it("ignores duplicate submissions while a decision is already pending", async () => {
+    const request = vi.fn(async () => undefined);
+    const setPendingDecision = vi.fn();
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+
+    await runChapterDecision({
+      pendingDecision: "approve",
+      nextDecision: "reject",
+      request,
+      setPendingDecision,
+      onSuccess,
+      onError,
+    });
+
+    expect(request).not.toHaveBeenCalled();
+    expect(setPendingDecision).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("clears the pending state and surfaces errors when the request fails", async () => {
+    const request = vi.fn(async () => {
+      throw new Error("network down");
+    });
+    const setPendingDecision = vi.fn();
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+
+    await runChapterDecision({
+      pendingDecision: null,
+      nextDecision: "approve",
+      request,
+      setPendingDecision,
+      onSuccess,
+      onError,
+    });
+
+    expect(setPendingDecision).toHaveBeenNthCalledWith(1, "approve");
+    expect(setPendingDecision).toHaveBeenNthCalledWith(2, null);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith("network down");
   });
 });
