@@ -95,6 +95,8 @@ export class PlannerAgent extends BaseAgent {
     const directives = this.buildStructuredDirectives({
       chapterNumber: input.chapterNumber,
       language: input.book.language,
+      authorIntent,
+      currentFocus,
       volumeOutline,
       outlineNode,
       matchedOutlineAnchor,
@@ -138,11 +140,13 @@ export class PlannerAgent extends BaseAgent {
   private buildStructuredDirectives(input: {
     readonly chapterNumber: number;
     readonly language?: string;
+    readonly authorIntent: string;
+    readonly currentFocus: string;
     readonly volumeOutline: string;
     readonly outlineNode: string | undefined;
     readonly matchedOutlineAnchor: boolean;
     readonly chapterSummaries: string;
-  }): Pick<ChapterIntent, "sceneDirective" | "arcDirective" | "moodDirective" | "titleDirective"> {
+  }): Pick<ChapterIntent, "sceneDirective" | "arcDirective" | "moodDirective" | "titleDirective" | "engineDirectives"> {
     const recentSummaries = parseChapterSummariesMarkdown(input.chapterSummaries)
       .filter((summary) => summary.chapter < input.chapterNumber)
       .sort((left, right) => left.chapter - right.chapter)
@@ -157,6 +161,17 @@ export class PlannerAgent extends BaseAgent {
         chapterType: summary.chapterType,
       })),
     });
+    const openingDirective = this.buildOpeningDirective(
+      input.language,
+      input.chapterNumber,
+      input.authorIntent,
+      input.currentFocus,
+    );
+    const toneDirective = this.buildToneDirective(
+      input.language,
+      input.authorIntent,
+      input.currentFocus,
+    );
 
     return {
       arcDirective: this.buildArcDirective(
@@ -165,9 +180,19 @@ export class PlannerAgent extends BaseAgent {
         input.outlineNode,
         input.matchedOutlineAnchor,
       ),
-      sceneDirective: this.buildSceneDirective(input.language, cadence),
-      moodDirective: this.buildMoodDirective(input.language, cadence),
+      sceneDirective: this.mergeDirectives(
+        this.buildSceneDirective(input.language, cadence),
+        openingDirective,
+      ),
+      moodDirective: this.mergeDirectives(
+        this.buildMoodDirective(input.language, cadence),
+        toneDirective,
+      ),
       titleDirective: this.buildTitleDirective(input.language, cadence),
+      engineDirectives: this.collectNarrativeEngine(
+        input.authorIntent,
+        input.currentFocus,
+      ),
     };
   }
 
@@ -225,6 +250,31 @@ export class PlannerAgent extends BaseAgent {
     return this.unique([
       ...this.extractFocusStyleItems(currentFocus),
       ...this.extractListItems(authorIntent, 2),
+      ...this.extractPrioritySentences(
+        currentFocus,
+        /(tone|톤|블랙코미디|black comedy|serious|진지|착각|오해|misunderstanding|컨셉 플레이|role ?play)/i,
+        2,
+      ),
+      ...this.extractPrioritySentences(
+        authorIntent,
+        /(tone|톤|블랙코미디|black comedy|serious|진지|착각|오해|misunderstanding|컨셉 플레이|role ?play)/i,
+        3,
+      ),
+    ]).slice(0, 4);
+  }
+
+  private collectNarrativeEngine(authorIntent: string, currentFocus: string): string[] {
+    return this.unique([
+      ...this.extractPrioritySentences(
+        currentFocus,
+        /(engine|핵심 엔진|서사 엔진|착각|오해|misunderstanding|misread|과잉 해석|컨셉 플레이|role ?play|잠입|infiltrat|정체|권위|persona)/i,
+        2,
+      ),
+      ...this.extractPrioritySentences(
+        authorIntent,
+        /(engine|핵심 엔진|서사 엔진|착각|오해|misunderstanding|misread|과잉 해석|컨셉 플레이|role ?play|잠입|infiltrat|정체|권위|persona)/i,
+        4,
+      ),
     ]).slice(0, 4);
   }
 
@@ -405,6 +455,82 @@ export class PlannerAgent extends BaseAgent {
     return resolvedLanguage === "zh"
       ? `标题不要再围绕“${repeatedToken}”重复命名，换一个新的意象或动作焦点。`
       : `Avoid another ${repeatedToken}-centric title. Pick a new image or action focus for this chapter title.`;
+  }
+
+  private buildOpeningDirective(
+    language: string | undefined,
+    chapterNumber: number,
+    authorIntent: string,
+    currentFocus: string,
+  ): string | undefined {
+    if (chapterNumber !== 1) {
+      return undefined;
+    }
+
+    const hints = this.unique([
+      ...this.extractPrioritySentences(
+        currentFocus,
+        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반|빙의|왕좌|잠입)/i,
+        2,
+      ),
+      ...this.extractPrioritySentences(
+        authorIntent,
+        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반|빙의|왕좌|잠입)/i,
+        3,
+      ),
+    ]).slice(0, 2);
+
+    if (hints.length === 0) {
+      return undefined;
+    }
+
+    const resolvedLanguage = resolveWritingLanguage(language);
+    const joined = hints.join(resolvedLanguage === "en" ? " / " : " / ");
+    if (resolvedLanguage === "ko") {
+      return `오프닝은 다음 요구를 직접 장면화해야 한다: ${joined}`;
+    }
+    return resolvedLanguage === "zh"
+      ? `开篇必须把以下要求直接落成场景：${joined}`
+      : `The opening must dramatize the following requirements directly: ${joined}`;
+  }
+
+  private buildToneDirective(
+    language: string | undefined,
+    authorIntent: string,
+    currentFocus: string,
+  ): string | undefined {
+    const hints = this.unique([
+      ...this.extractPrioritySentences(
+        currentFocus,
+        /(tone|톤|블랙코미디|black comedy|serious|진지|웃음|유머|comedy|dark fantasy|다크 판타지)/i,
+        2,
+      ),
+      ...this.extractPrioritySentences(
+        authorIntent,
+        /(tone|톤|블랙코미디|black comedy|serious|진지|웃음|유머|comedy|dark fantasy|다크 판타지)/i,
+        2,
+      ),
+    ]).slice(0, 2);
+
+    if (hints.length === 0) {
+      return undefined;
+    }
+
+    const resolvedLanguage = resolveWritingLanguage(language);
+    const joined = hints.join(resolvedLanguage === "en" ? " / " : " / ");
+    if (resolvedLanguage === "ko") {
+      return `톤 운용: ${joined}`;
+    }
+    return resolvedLanguage === "zh"
+      ? `本章语气：${joined}`
+      : `Tone handling: ${joined}`;
+  }
+
+  private mergeDirectives(primary?: string, secondary?: string): string | undefined {
+    if (primary && secondary) {
+      return `${primary} ${secondary}`;
+    }
+    return primary ?? secondary;
   }
 
   private renderHookBudget(activeCount: number, language: WritingLanguage): string {
@@ -679,6 +805,9 @@ export class PlannerAgent extends BaseAgent {
     const styleEmphasis = intent.styleEmphasis.length > 0
       ? intent.styleEmphasis.map((item) => `- ${item}`).join("\n")
       : "- none";
+    const engineDirectives = intent.engineDirectives.length > 0
+      ? intent.engineDirectives.map((item) => `- ${item}`).join("\n")
+      : "- none";
     const directives = [
       intent.arcDirective ? `- arc: ${intent.arcDirective}` : undefined,
       intent.sceneDirective ? `- scene: ${intent.sceneDirective}` : undefined,
@@ -715,6 +844,9 @@ export class PlannerAgent extends BaseAgent {
       "## Goal",
       intent.goal,
       "",
+      "## Narrative Engine",
+      engineDirectives,
+      "",
       "## Outline Node",
       intent.outlineNode ?? "(not found)",
       "",
@@ -747,6 +879,40 @@ export class PlannerAgent extends BaseAgent {
 
   private unique(values: ReadonlyArray<string>): string[] {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  }
+
+  private extractPrioritySentences(content: string | undefined, matcher: RegExp, limit: number): string[] {
+    const units = this.splitIntentUnits(content);
+    return units
+      .filter((unit) => matcher.test(unit))
+      .slice(0, limit);
+  }
+
+  private splitIntentUnits(content: string | undefined): string[] {
+    if (!content) {
+      return [];
+    }
+
+    const meaningfulLines = content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) =>
+        line.length > 0
+        && !line.startsWith("#")
+        && !this.isTemplatePlaceholder(line)
+        && !/^[-|]+$/.test(line),
+      )
+      .map((line) => line.startsWith("-") ? this.cleanListItem(line) ?? "" : line)
+      .filter(Boolean);
+
+    const units = meaningfulLines.flatMap((line) =>
+      line
+        .split(/(?<=[.!?。！？])\s+|\s*;\s*|\s*；\s*/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    );
+
+    return this.unique(units);
   }
 
   private isChineseLanguage(language: string | undefined): boolean {

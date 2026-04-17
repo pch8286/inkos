@@ -115,6 +115,7 @@ export class ComposerAgent extends BaseAgent {
   ): Promise<ContextPackage["selectedContext"]> {
     const entries = await Promise.all([
       this.maybeContextSource(storyDir, "current_focus.md", "Current task focus for this chapter."),
+      this.maybeContextSource(storyDir, "author_intent.md", "Long-horizon narrative engine and tone guardrails for this book."),
       this.maybeContextSource(
         storyDir,
         "audit_drift.md",
@@ -375,6 +376,8 @@ export class ComposerAgent extends BaseAgent {
     if (!content || content === "(文件尚未创建)") return null;
     const excerpt = fileName === "story_bible.md"
       ? this.pickStoryBibleDigest(content, preferredExcerpts)
+      : fileName === "author_intent.md" || fileName === "current_focus.md"
+        ? this.pickIntentDigest(content, preferredExcerpts)
       : this.pickExcerpt(content, preferredExcerpts);
 
     return {
@@ -393,6 +396,52 @@ export class ComposerAgent extends BaseAgent {
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.length > 0 && !line.startsWith("#"));
+  }
+
+  private pickIntentDigest(content: string, preferredExcerpts: ReadonlyArray<string>): string | undefined {
+    const units = content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"))
+      .flatMap((line) => line.split(/(?<=[.!?。！？])\s+|\s*;\s*|\s*；\s*/))
+      .map((line) => line.replace(/^[-*+]\s*/, "").trim())
+      .filter((line) => line.length > 0);
+
+    if (units.length === 0) {
+      return undefined;
+    }
+
+    const selected: string[] = [];
+    const seen = new Set<string>();
+    const push = (value?: string): void => {
+      const normalized = value?.trim();
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      selected.push(normalized);
+    };
+
+    for (const preferred of preferredExcerpts) {
+      if (preferred && content.includes(preferred)) {
+        push(preferred);
+      }
+    }
+
+    const priorityPattern = /(engine|핵심 엔진|서사 엔진|tone|톤|블랙코미디|black comedy|serious|진지|착각|오해|misunderstanding|misread|과잉 해석|컨셉 플레이|role ?play|opening|첫 장면|첫 화|1화|초반|빙의|잠입|정체|권위)/i;
+    for (const unit of units.filter((unit) => priorityPattern.test(unit))) {
+      push(unit);
+      if (selected.length >= 4) {
+        return selected.join("\n");
+      }
+    }
+
+    for (const unit of units) {
+      push(unit);
+      if (selected.length >= 4) {
+        break;
+      }
+    }
+
+    return selected.join("\n");
   }
 
   private pickStoryBibleDigest(content: string, preferredExcerpts: ReadonlyArray<string>): string | undefined {

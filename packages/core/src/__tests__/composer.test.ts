@@ -60,6 +60,7 @@ describe("ComposerAgent", () => {
         chapter: 4,
         goal: "Bring the focus back to the mentor conflict.",
         outlineNode: "Track the merchant guild trail.",
+        engineDirectives: [],
         mustKeep: [
           "Lin Yue still hides the broken oath token.",
           "The jade seal cannot be destroyed.",
@@ -112,8 +113,9 @@ describe("ComposerAgent", () => {
     });
 
     const selectedSources = result.contextPackage.selectedContext.map((entry) => entry.source);
-    expect(selectedSources.slice(0, 4)).toEqual([
+    expect(selectedSources.slice(0, 5)).toEqual([
       "story/current_focus.md",
+      "story/author_intent.md",
       "story/current_state.md",
       "story/story_bible.md",
       "story/volume_outline.md",
@@ -158,6 +160,40 @@ describe("ComposerAgent", () => {
     expect(storyBibleEntry?.excerpt).toContain("The jade seal cannot be destroyed.");
     expect(storyBibleEntry?.excerpt).toContain("Every guild oath leaves a scar on the palm.");
     expect(storyBibleEntry?.excerpt).toContain("The river guild never enters shrine ground armed.");
+  });
+
+  it("extracts a multi-line author intent digest instead of keeping only the first sentence", async () => {
+    await writeFile(
+      join(storyDir, "author_intent.md"),
+      [
+        "# 작가 의도",
+        "",
+        "핵심 엔진은 주인공의 진지한 마왕 컨셉 행동이 주변에 의해 거대한 대계로 오해되고, 그 오해가 실제 정치적 성과를 낳는 구조다.",
+        "톤은 진지 7, 블랙코미디 3이다.",
+        "초반에는 빙의 직후 첫 착각극을 반드시 세운 뒤 용사 파티 잠입으로 이어져야 한다.",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const composer = new ComposerAgent({
+      client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await composer.composeChapter({
+      book,
+      bookDir,
+      chapterNumber: 1,
+      plan,
+    });
+
+    const authorIntentEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "story/author_intent.md");
+    expect(authorIntentEntry?.excerpt).toContain("핵심 엔진");
+    expect(authorIntentEntry?.excerpt).toContain("블랙코미디 3");
+    expect(authorIntentEntry?.excerpt).toContain("첫 착각극");
   });
 
   it("emits a rule stack with hard, soft, and diagnostic sections", async () => {

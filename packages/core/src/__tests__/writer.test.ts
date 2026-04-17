@@ -1107,6 +1107,139 @@ describe("WriterAgent", () => {
     }
   });
 
+  it("renders Korean governed creative prompts without falling back to Chinese instructions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-writer-governed-ko-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(join(storyDir, "story_bible.md"), "# 세계관\n\n- 옥새는 부서지지 않는다.\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# 볼륨 아웃라인\n\n## 제1장\n왕좌 위 첫 착각극을 세운다.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# 스타일 가이드\n\n- 절제된 문장.\n", "utf-8"),
+      writeFile(join(storyDir, "current_state.md"), "# 현재 상태\n\n- 마왕의 몸에 빙의했다.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# 떡밥\n\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# 화별 요약\n\n", "utf-8"),
+    ]);
+
+    const agent = new WriterAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(WriterAgent.prototype as never, "chat" as never)
+      .mockResolvedValueOnce({
+        content: [
+          "=== PRE_WRITE_CHECK ===",
+          "- ok",
+          "",
+          "=== CHAPTER_TITLE ===",
+          "검은 왕좌",
+          "",
+          "=== CHAPTER_CONTENT ===",
+          "본문",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "observations",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: [
+          "=== POST_SETTLEMENT ===",
+          "ok",
+          "",
+          "=== UPDATED_STATE ===",
+          "state",
+          "",
+          "=== UPDATED_LEDGER ===",
+          "ledger",
+          "",
+          "=== UPDATED_HOOKS ===",
+          "hooks",
+          "",
+          "=== CHAPTER_SUMMARY ===",
+          "| 1 | 검은 왕좌 | 카시르 | 첫 착각극 | 역할 유지 | none | 긴장 | opening |",
+          "",
+          "=== UPDATED_SUBPLOTS ===",
+          "subplots",
+          "",
+          "=== UPDATED_EMOTIONAL_ARCS ===",
+          "arcs",
+          "",
+          "=== UPDATED_CHARACTER_MATRIX ===",
+          "matrix",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    try {
+      await agent.writeChapter({
+        book: {
+          id: "writer-book",
+          title: "Writer Book",
+          platform: "naver-series",
+          genre: "other",
+          status: "active",
+          targetChapters: 20,
+          chapterWordCount: 3000,
+          language: "ko",
+          createdAt: "2026-03-26T00:00:00.000Z",
+          updatedAt: "2026-03-26T00:00:00.000Z",
+        },
+        bookDir,
+        chapterNumber: 1,
+        chapterIntent: "# Chapter Intent\n\n## Goal\n왕좌 위 첫 착각극을 세운다.\n",
+        contextPackage: {
+          chapter: 1,
+          selectedContext: [
+            {
+              source: "story/author_intent.md",
+              reason: "장기 엔진 유지",
+              excerpt: "핵심 엔진은 착각 구조다.",
+            },
+          ],
+        },
+        ruleStack: {
+          layers: [{ id: "L4", name: "current_task", precedence: 70, scope: "local" }],
+          sections: {
+            hard: ["current_state"],
+            soft: ["author_intent", "current_focus"],
+            diagnostic: ["continuity_audit"],
+          },
+          overrideEdges: [],
+          activeOverrides: [],
+        },
+        lengthSpec: buildLengthSpec(3000, "ko"),
+      });
+
+      const creativePrompt = (chatSpy.mock.calls[0]?.[0] as ReadonlyArray<{ content: string }> | undefined)?.[1]?.content ?? "";
+      expect(creativePrompt).toContain("제1장을 집필한다.");
+      expect(creativePrompt).toContain("## 본장 의도");
+      expect(creativePrompt).toContain("## 선택된 컨텍스트");
+      expect(creativePrompt).toContain("요구 사항:");
+      expect(creativePrompt).not.toContain("请续写第1章");
+      expect(creativePrompt).not.toContain("要求：");
+    } finally {
+      chatSpy.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("renders explicit title history, mood trail, and canon blocks in governed creative prompts", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-writer-governed-evidence-test-"));
     const bookDir = join(root, "book");

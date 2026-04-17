@@ -1215,6 +1215,65 @@ describe("PlannerAgent", () => {
     expect(intentMarkdown).toContain("stale-debt");
   });
 
+  it("extracts Korean narrative-engine and opening directives from prose author intent", async () => {
+    book = {
+      ...book,
+      genre: "other",
+      language: "ko",
+    };
+
+    await Promise.all([
+      writeFile(
+        join(storyDir, "author_intent.md"),
+        [
+          "# 작가 의도",
+          "",
+          "핵심 엔진은 주인공의 진지한 마왕 컨셉 행동이 주변에 의해 거대한 대계로 오해되고, 그 오해가 실제 정치적 성과를 낳는 구조다.",
+          "톤은 진지 7, 블랙코미디 3이다.",
+          "초반에는 빙의 직후 첫 착각극을 세우고, 이후 용사 파티 잠입으로 이어지는 구조를 바탕으로 설계한다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "current_focus.md"),
+        [
+          "# 현재 포커스",
+          "",
+          "## 현재 중점",
+          "",
+          "1화에서는 빙의 사실과 마왕 역할 유지 공포를 먼저 드러낸다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "volume_outline.md"),
+        "# 볼륨 아웃라인\n",
+        "utf-8",
+      ),
+    ]);
+
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await planner.planChapter({
+      book,
+      bookDir,
+      chapterNumber: 1,
+    });
+
+    expect(result.intent.engineDirectives.join("\n")).toContain("오해");
+    expect(result.intent.engineDirectives.join("\n")).toContain("마왕 컨셉");
+    expect(result.intent.moodDirective).toContain("블랙코미디 3");
+    expect(result.intent.sceneDirective).toContain("첫 착각극");
+    await expect(readFile(result.runtimePath, "utf-8")).resolves.toContain("## Narrative Engine");
+  });
+
   it("builds stale debt agenda from broader active hooks than the retrieval subset", async () => {
     const stateDir = join(storyDir, "state");
     await mkdir(stateDir, { recursive: true });

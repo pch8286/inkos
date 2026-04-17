@@ -891,6 +891,8 @@ ${lengthRequirementBlock}
     const hookAgendaBlock = explicitHookAgenda
       ? params.language === "en"
         ? `\n## Explicit Hook Agenda\n${explicitHookAgenda}\n`
+        : params.language === "ko"
+          ? `\n## 명시적 Hook Agenda\n${explicitHookAgenda}\n`
         : `\n## 显式 Hook Agenda\n${explicitHookAgenda}\n`
       : "";
 
@@ -920,6 +922,34 @@ ${varianceBlock}
 ${lengthRequirementBlock}
 - Output PRE_WRITE_CHECK first, then the chapter
 - Output only PRE_WRITE_CHECK, CHAPTER_TITLE, and CHAPTER_CONTENT blocks`;
+    }
+
+    if (params.language === "ko") {
+      return `제${params.chapterNumber}장을 집필한다.
+
+## 본장 의도
+${params.chapterIntent}
+
+## 선택된 컨텍스트
+${contextSections || "(없음)"}
+${selectedEvidenceBlock}
+${hookAgendaBlock}
+
+## 규칙 스택
+- 하드 가드레일: ${params.ruleStack.sections.hard.join(", ") || "(없음)"}
+- 소프트 제약: ${params.ruleStack.sections.soft.join(", ") || "(없음)"}
+- 진단 규칙: ${diagnosticLines}
+
+## 현재 오버라이드
+${overrideLines}
+
+## 추적 메모
+${traceNotes}
+
+${varianceBlock}
+${lengthRequirementBlock}
+- 먼저 PRE_WRITE_CHECK 를 출력한 다음 본문을 쓴다
+- PRE_WRITE_CHECK, CHAPTER_TITLE, CHAPTER_CONTENT 세 구역만 출력한다`;
     }
 
     return `请续写第${params.chapterNumber}章。
@@ -1024,6 +1054,22 @@ ${selectedContext || "- none"}
 ${overrides}\n`;
     }
 
+    if (language === "ko") {
+      return `\n## 본장 제어 입력
+${chapterIntent}
+
+### 선택된 컨텍스트
+${selectedContext || "- none"}
+
+### 규칙 스택
+- 하드 가드레일: ${ruleStack.sections.hard.join(", ") || "(없음)"}
+- 소프트 제약: ${ruleStack.sections.soft.join(", ") || "(없음)"}
+- 진단 규칙: ${ruleStack.sections.diagnostic.join(", ") || "(없음)"}
+
+### 현재 오버라이드
+${overrides}\n`;
+    }
+
     return `\n## 本章控制输入
 ${chapterIntent}
 
@@ -1044,6 +1090,12 @@ ${overrides}\n`;
       return `Requirements:
 - Target length: ${lengthSpec.target} words
 - Acceptable range: ${lengthSpec.softMin}-${lengthSpec.softMax} words`;
+    }
+
+    if (language === "ko") {
+      return `요구 사항:
+- 목표 분량: ${lengthSpec.target}자
+- 허용 구간: ${lengthSpec.softMin}-${lengthSpec.softMax}자`;
     }
 
     return `要求：
