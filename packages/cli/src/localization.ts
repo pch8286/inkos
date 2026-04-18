@@ -2,6 +2,19 @@ import { formatLengthCount, resolveLengthCountingMode } from "@actalk/inkos-core
 
 export type CliLanguage = "ko" | "zh" | "en";
 
+type StructuralGateFindingShape = {
+  readonly code: string;
+  readonly message: string;
+  readonly evidence?: string;
+  readonly location?: string;
+};
+
+type StructuralGateNoticeShape = {
+  readonly summary: string;
+  readonly criticalFindings: ReadonlyArray<StructuralGateFindingShape>;
+  readonly softFindings: ReadonlyArray<StructuralGateFindingShape>;
+};
+
 type WriteIssue = {
   readonly severity: string;
   readonly category: string;
@@ -176,6 +189,79 @@ export function formatWriteNextComplete(language: CliLanguage): string {
     zh: "完成。",
     en: "Done.",
   });
+}
+
+export function formatWriteStructuralGateNoticeLines(
+  language: CliLanguage,
+  gate: StructuralGateNoticeShape,
+  status: "blocked" | "passed",
+): string[] {
+  if (status === "passed") {
+    if (gate.softFindings.length === 0) {
+      return [];
+    }
+
+    const codes = gate.softFindings.slice(0, 3).map((finding) => finding.code).join(", ");
+    const extraCount = gate.softFindings.length - 3;
+    const suffix = gate.softFindings.length > 3
+      ? `${codes}, ${localize(language, {
+          ko: `+${extraCount}건 더`,
+          zh: `另有 ${extraCount} 个`,
+          en: `+${extraCount} more`,
+        })}`
+      : codes;
+
+    return [
+      localize(language, {
+        ko: `  구조 게이트 참고: 소프트 이슈 ${gate.softFindings.length}건 (${suffix})`,
+        zh: `  结构门禁提示：${gate.softFindings.length} 个软性问题（${suffix}）`,
+        en: `  Structural gate note: ${gate.softFindings.length} soft finding(s) (${suffix})`,
+      }),
+    ];
+  }
+
+  const lines = [
+    localize(language, {
+      ko: `  구조 게이트 실패: ${gate.summary}`,
+      zh: `  结构门禁失败：${gate.summary}`,
+      en: `  Structural gate failed closed: ${gate.summary}`,
+    }),
+  ];
+
+  if (gate.criticalFindings.length === 0) {
+    lines.push(localize(language, {
+      ko: "  치명 이슈가 기록되지 않았습니다.",
+      zh: "  未记录关键问题。",
+      en: "  No critical findings were recorded.",
+    }));
+    return lines;
+  }
+
+  lines.push(localize(language, {
+    ko: `  치명 이슈 (${gate.criticalFindings.length}건):`,
+    zh: `  关键问题（${gate.criticalFindings.length} 个）：`,
+    en: `  Critical findings (${gate.criticalFindings.length}):`,
+  }));
+
+  for (const finding of gate.criticalFindings) {
+    lines.push(`    - [${finding.code}] ${finding.message}`);
+    if (finding.evidence) {
+      lines.push(localize(language, {
+        ko: `      근거: ${finding.evidence}`,
+        zh: `      证据：${finding.evidence}`,
+        en: `      Evidence: ${finding.evidence}`,
+      }));
+    }
+    if (finding.location) {
+      lines.push(localize(language, {
+        ko: `      위치: ${finding.location}`,
+        zh: `      位置：${finding.location}`,
+        en: `      Location: ${finding.location}`,
+      }));
+    }
+  }
+
+  return lines;
 }
 
 export function formatImportChaptersDiscovery(

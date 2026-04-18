@@ -88,12 +88,20 @@ vi.mock("@actalk/inkos-core", () => {
       await writeFile(join(bookDir, "book.json"), JSON.stringify(config, null, 2), "utf-8");
     }
 
-    async loadChapterIndex(): Promise<[]> {
-      return [];
+    async loadChapterIndex(id: string): Promise<unknown[]> {
+      try {
+        return JSON.parse(await readFile(join(this.bookDir(id), "chapters", "index.json"), "utf-8")) as unknown[];
+      } catch {
+        return [];
+      }
     }
 
-    async getNextChapterNumber(): Promise<number> {
-      return 1;
+    async getNextChapterNumber(id: string): Promise<number> {
+      const index = await this.loadChapterIndex(id) as Array<{ number?: number }>;
+      const maxChapter = index.reduce((max, entry) => (
+        typeof entry.number === "number" && entry.number > max ? entry.number : max
+      ), 0);
+      return maxChapter + 1;
     }
 
     bookDir(id: string): string {
@@ -3647,6 +3655,126 @@ describe("createStudioServer daemon lifecycle", () => {
       readerSettings: sampleReaderSettings,
     });
   }, READER_SETTINGS_TEST_TIMEOUT_MS);
+
+  it("returns structural gate summaries for saved chapters and a pending blocked next chapter", async () => {
+    await mkdir(join(root, "books", "structural-gate-book", "chapters"), { recursive: true });
+    await mkdir(join(root, "books", "structural-gate-book", "story", "runtime"), { recursive: true });
+    await writeFile(join(root, "books", "structural-gate-book", "book.json"), JSON.stringify({
+      id: "structural-gate-book",
+      title: "Structural Gate Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-18T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "structural-gate-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1화",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-18T00:00:00.000Z",
+        updatedAt: "2026-04-18T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+    await writeFile(
+      join(root, "books", "structural-gate-book", "story", "runtime", "chapter-0001.structural-gate.json"),
+      JSON.stringify({
+        firstPass: {
+          passed: true,
+          summary: "soft only",
+          criticalFindings: [],
+          softFindings: [
+            {
+              severity: "soft",
+              code: "clarity-gap",
+              message: "Scene geography is vague.",
+              evidence: "The bridge layout is unclear.",
+              location: "scene break",
+            },
+          ],
+        },
+        reviserInvoked: false,
+        finalBlockingStatus: "passed",
+      }, null, 2),
+      "utf-8",
+    );
+    await writeFile(
+      join(root, "books", "structural-gate-book", "story", "runtime", "chapter-0002.structural-gate.json"),
+      JSON.stringify({
+        firstPass: {
+          passed: false,
+          summary: "missing foundation",
+          criticalFindings: [
+            {
+              severity: "critical",
+              code: "missing-foundation",
+              message: "Opening contract is missing.",
+              location: "opening",
+            },
+          ],
+          softFindings: [],
+        },
+        secondPass: {
+          passed: false,
+          summary: "still missing foundation",
+          criticalFindings: [
+            {
+              severity: "critical",
+              code: "missing-foundation",
+              message: "Opening contract is still missing.",
+              location: "opening",
+            },
+          ],
+          softFindings: [],
+        },
+        reviserInvoked: true,
+        finalBlockingStatus: "blocked",
+      }, null, 2),
+      "utf-8",
+    );
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/structural-gate-book");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      nextChapter: 2,
+      chapters: [
+        expect.objectContaining({
+          number: 1,
+          structuralGate: expect.objectContaining({
+            chapterNumber: 1,
+            finalBlockingStatus: "passed",
+            softFindings: [
+              expect.objectContaining({
+                code: "clarity-gap",
+                message: "Scene geography is vague.",
+              }),
+            ],
+          }),
+        }),
+      ],
+      pendingStructuralGate: expect.objectContaining({
+        chapterNumber: 2,
+        finalBlockingStatus: "blocked",
+        summary: "still missing foundation",
+        criticalFindings: [
+          expect.objectContaining({
+            code: "missing-foundation",
+          }),
+        ],
+      }),
+    });
+  });
 
   it("updates an existing book title through the API", async () => {
     await mkdir(join(root, "books", "rename-book"), { recursive: true });

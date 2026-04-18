@@ -384,6 +384,109 @@ function normalizeReaderSettings(value: unknown): ReaderSettings | null {
   return parsed.success ? parsed.data : null;
 }
 
+function isStructuralGateFinding(value: unknown): value is {
+  severity: "critical" | "soft";
+  code: string;
+  message: string;
+  evidence?: string;
+  location?: string;
+} {
+  return isObjectRecord(value)
+    && (value.severity === "critical" || value.severity === "soft")
+    && typeof value.code === "string"
+    && value.code.trim().length > 0
+    && typeof value.message === "string"
+    && value.message.trim().length > 0
+    && (value.evidence === undefined || typeof value.evidence === "string")
+    && (value.location === undefined || typeof value.location === "string");
+}
+
+function isStructuralGatePassRecord(value: unknown): value is {
+  summary: string;
+  criticalFindings: ReadonlyArray<{
+    severity: "critical" | "soft";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+  softFindings: ReadonlyArray<{
+    severity: "critical" | "soft";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+} {
+  return isObjectRecord(value)
+    && typeof value.summary === "string"
+    && value.summary.trim().length > 0
+    && Array.isArray(value.criticalFindings)
+    && value.criticalFindings.every(isStructuralGateFinding)
+    && Array.isArray(value.softFindings)
+    && value.softFindings.every(isStructuralGateFinding);
+}
+
+async function loadStructuralGateSummary(
+  bookDir: string,
+  chapterNumber: number,
+): Promise<{
+  chapterNumber: number;
+  finalBlockingStatus: "passed" | "blocked";
+  summary: string;
+  reviserInvoked: boolean;
+  criticalFindings: ReadonlyArray<{
+    severity: "critical" | "soft";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+  softFindings: ReadonlyArray<{
+    severity: "critical" | "soft";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+} | null> {
+  const path = join(
+    bookDir,
+    "story",
+    "runtime",
+    `chapter-${String(chapterNumber).padStart(4, "0")}.structural-gate.json`,
+  );
+
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf-8")) as {
+      firstPass?: unknown;
+      secondPass?: unknown;
+      reviserInvoked?: unknown;
+      finalBlockingStatus?: unknown;
+    };
+    const finalPass = parsed.secondPass ?? parsed.firstPass;
+    if (!isStructuralGatePassRecord(finalPass)) {
+      return null;
+    }
+
+    const finalBlockingStatus = parsed.finalBlockingStatus === "blocked" ? "blocked" : "passed";
+    if (finalBlockingStatus === "passed" && finalPass.softFindings.length === 0) {
+      return null;
+    }
+
+    return {
+      chapterNumber,
+      finalBlockingStatus,
+      summary: finalPass.summary,
+      reviserInvoked: parsed.reviserInvoked === true,
+      criticalFindings: finalPass.criticalFindings,
+      softFindings: finalPass.softFindings,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord | null {
   if (isStoredBookSetupSession(value)) {
     return value.session;
@@ -2518,9 +2621,26 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const id = c.req.param("id");
     try {
       const book = await state.loadBookConfig(id);
+      const bookDir = state.bookDir(id);
       const chapters = await state.loadChapterIndex(id);
       const nextChapter = await state.getNextChapterNumber(id);
-      return c.json({ book, chapters, nextChapter });
+      const enrichedChapters = await Promise.all(
+        chapters.map(async (chapter) => ({
+          ...chapter,
+          structuralGate: typeof (chapter as { number?: unknown }).number === "number"
+            ? await loadStructuralGateSummary(bookDir, (chapter as { number: number }).number)
+            : null,
+        })),
+      );
+      const pendingStructuralGate = await loadStructuralGateSummary(bookDir, nextChapter);
+      return c.json({
+        book,
+        chapters: enrichedChapters,
+        nextChapter,
+        pendingStructuralGate: pendingStructuralGate?.finalBlockingStatus === "blocked"
+          ? pendingStructuralGate
+          : null,
+      });
     } catch {
       return c.json({ error: `Book "${id}" not found` }, 404);
     }
