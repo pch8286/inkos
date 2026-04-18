@@ -77,6 +77,7 @@ export {
   RuleStackSchema,
   ChapterTraceSchema,
 } from "./models/input-governance.js";
+export { type StructuralGateSeverity, type StructuralGateFindingBase, type StructuralGateCriticalFinding, type StructuralGateSoftFinding, type StructuralGateResult, StructuralGateSeveritySchema, StructuralGateFindingBaseSchema, StructuralGateCriticalFindingSchema, StructuralGateSoftFindingSchema, StructuralGateResultSchema } from "./models/structural-gate.js";
 export { PlannerAgent, type PlanChapterInput, type PlanChapterOutput } from "./agents/planner.js";
 export { ComposerAgent, type ComposeChapterInput, type ComposeChapterOutput } from "./agents/composer.js";
 
@@ -87,6 +88,7 @@ export { createLLMClient, chatCompletion, chatWithTools, createStreamMonitor, Pa
 export { BaseAgent, type AgentContext } from "./agents/base.js";
 export { ArchitectAgent, type ArchitectOutput } from "./agents/architect.js";
 export { FoundationReviewerAgent, type FoundationReviewResult } from "./agents/foundation-reviewer.js";
+export { StructuralGateAgent, type StructuralGateInput } from "./agents/structural-gate.js";
 export { WriterAgent, type WriteChapterInput, type WriteChapterOutput, type TokenUsage } from "./agents/writer.js";
 export { LengthNormalizerAgent, type NormalizeLengthInput, type NormalizeLengthOutput } from "./agents/length-normalizer.js";
 export { ContinuityAuditor, type AuditResult, type AuditIssue } from "./agents/continuity.js";
