@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
 import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "../shared/book-create-form";
+import type { BookDetailPayload } from "../shared/contracts";
 import {
   ChevronLeft,
   Zap,
@@ -29,28 +30,7 @@ import {
   Save
 } from "lucide-react";
 
-interface ChapterMeta {
-  readonly number: number;
-  readonly title: string;
-  readonly status: string;
-  readonly wordCount: number;
-}
-
-interface BookData {
-  readonly book: {
-    readonly id: string;
-    readonly title: string;
-    readonly genre: string;
-    readonly platform: string;
-    readonly status: string;
-    readonly chapterWordCount: number;
-    readonly targetChapters?: number;
-    readonly language?: string;
-    readonly fanficMode?: string;
-  };
-  readonly chapters: ReadonlyArray<ChapterMeta>;
-  readonly nextChapter: number;
-}
+type ChapterMeta = BookDetailPayload["chapters"][number];
 
 type ReviseMode = "spot-fix" | "polish" | "rewrite" | "rework" | "anti-detect";
 type ExportFormat = "txt" | "md" | "epub";
@@ -82,6 +62,30 @@ const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = 
   imported: { color: "text-blue-500 bg-blue-500/10", icon: <Download size={12} /> },
 };
 
+function summarizeStructuralGateMessages(messages: ReadonlyArray<{ readonly message: string }>): string {
+  return messages.slice(0, 2).map((item) => item.message).join(" · ");
+}
+
+function structuralGateBlockedLabel(language: "ko" | "zh" | "en", chapterNumber: number): string {
+  if (language === "ko") {
+    return `구조 게이트 차단: ${chapterNumber}화`;
+  }
+  if (language === "zh") {
+    return `结构门禁拦截：第${chapterNumber}章`;
+  }
+  return `Structural gate blocked Chapter ${chapterNumber}`;
+}
+
+function structuralGateNoteLabel(language: "ko" | "zh" | "en"): string {
+  if (language === "ko") {
+    return "구조 게이트";
+  }
+  if (language === "zh") {
+    return "结构门禁";
+  }
+  return "Structural gate";
+}
+
 export function BookDetail({
   bookId,
   nav,
@@ -96,7 +100,7 @@ export function BookDetail({
   sse: { messages: ReadonlyArray<SSEMessage> };
 }) {
   const c = useColors(theme);
-  const { data, loading, error, refetch } = useApi<BookData>(`/books/${bookId}`);
+  const { data, loading, error, refetch } = useApi<BookDetailPayload>(`/books/${bookId}`);
   const [writeRequestPending, setWriteRequestPending] = useState(false);
   const [draftRequestPending, setDraftRequestPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -366,6 +370,20 @@ export function BookDetail({
         {t("book.actionGuide")}
       </div>
 
+      {data.pendingStructuralGate ? (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="font-semibold">
+            {structuralGateBlockedLabel(bookLanguage, data.pendingStructuralGate.chapterNumber)}
+          </div>
+          <p className="mt-1">{data.pendingStructuralGate.summary}</p>
+          {data.pendingStructuralGate.criticalFindings.length > 0 ? (
+            <p className="mt-2 text-xs text-destructive/80">
+              {summarizeStructuralGateMessages(data.pendingStructuralGate.criticalFindings)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Tool Strip */}
       <div className="flex flex-wrap items-center gap-2 py-1">
           {reviewCount > 0 && (
@@ -529,12 +547,19 @@ export function BookDetail({
                 <tr key={ch.number} className={`group hover:bg-muted/30 transition-colors fade-in ${staggerClass}`}>
                   <td className="px-6 py-4 text-muted-foreground/60 font-mono text-xs">{ch.number.toString().padStart(2, '0')}</td>
                   <td className="px-6 py-4">
-                    <button
-                      onClick={() => nav.toChapter(bookId, ch.number)}
-                      className="font-serif text-lg font-medium transition-colors text-left hover:text-[color:var(--studio-state-text)]"
-                    >
-                      {localizeChapterTitle(ch.title, ch.number, data.book.language as "ko" | "zh" | "en" | undefined)}
-                    </button>
+                    <div>
+                      <button
+                        onClick={() => nav.toChapter(bookId, ch.number)}
+                        className="font-serif text-lg font-medium transition-colors text-left hover:text-[color:var(--studio-state-text)]"
+                      >
+                        {localizeChapterTitle(ch.title, ch.number, data.book.language as "ko" | "zh" | "en" | undefined)}
+                      </button>
+                      {ch.structuralGate?.softFindings.length ? (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                          {`${structuralGateNoteLabel(bookLanguage)}: ${summarizeStructuralGateMessages(ch.structuralGate.softFindings)}`}
+                        </p>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-muted-foreground font-medium tabular-nums text-xs">{(ch.wordCount ?? 0).toLocaleString()}</td>
                   <td className="px-6 py-4">

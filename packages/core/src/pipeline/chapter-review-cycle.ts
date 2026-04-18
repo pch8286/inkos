@@ -3,6 +3,9 @@ import type { ReviseOutput } from "../agents/reviser.js";
 import type { WriteChapterOutput } from "../agents/writer.js";
 import type { ContextPackage, RuleStack } from "../models/input-governance.js";
 import type { LengthSpec } from "../models/length-governance.js";
+import type { StructuralGateCriticalFinding, StructuralGateResult, StructuralGateSoftFinding } from "../models/structural-gate.js";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface ChapterReviewCycleUsage {
   readonly promptTokens: number;
@@ -25,6 +28,12 @@ export interface ChapterReviewCycleResult {
   readonly totalUsage: ChapterReviewCycleUsage;
   readonly postReviseCount: number;
   readonly normalizeApplied: boolean;
+  readonly structuralGate: {
+    readonly firstPass: StructuralGateResult;
+    readonly secondPass?: StructuralGateResult;
+    readonly reviserInvoked: boolean;
+    readonly finalBlockingStatus: "passed" | "blocked";
+  };
 }
 
 function isActionableStyleIssue(issue: AuditIssue): boolean {
@@ -42,11 +51,40 @@ function isActionableStyleIssue(issue: AuditIssue): boolean {
   ].some((needle) => text.includes(needle));
 }
 
+function toStructuralGateSuggestion(
+  finding: Pick<StructuralGateCriticalFinding | StructuralGateSoftFinding, "evidence" | "location">,
+): string {
+  const parts = [
+    finding.evidence ? `Evidence: ${finding.evidence}` : "",
+    finding.location ? `Location: ${finding.location}` : "",
+  ].filter(Boolean);
+
+  return parts.join(" ") || "Resolve the structural gate finding.";
+}
+
+function toStructuralGateCriticalIssue(finding: StructuralGateCriticalFinding): AuditIssue {
+  return {
+    severity: "critical",
+    category: `structural-gate:${finding.code}`,
+    description: finding.message,
+    suggestion: toStructuralGateSuggestion(finding),
+  };
+}
+
+function toStructuralGateSoftIssue(finding: StructuralGateSoftFinding): AuditIssue {
+  return {
+    severity: "warning",
+    category: `structural-gate:${finding.code}`,
+    description: finding.message,
+    suggestion: toStructuralGateSuggestion(finding),
+  };
+}
+
 export async function runChapterReviewCycle(params: {
   readonly book: Pick<{ genre: string }, "genre">;
   readonly bookDir: string;
   readonly chapterNumber: number;
-  readonly initialOutput: Pick<WriteChapterOutput, "content" | "wordCount" | "postWriteErrors">;
+  readonly initialOutput: Pick<WriteChapterOutput, "title" | "content" | "wordCount" | "postWriteErrors">;
   readonly reducedControlInput?: ChapterReviewCycleControlInput;
   readonly lengthSpec: LengthSpec;
   readonly initialUsage: ChapterReviewCycleUsage;
@@ -65,6 +103,21 @@ export async function runChapterReviewCycle(params: {
         lengthSpec?: LengthSpec;
       },
     ) => Promise<ReviseOutput>;
+  };
+  readonly structuralGate?: {
+    evaluateStructuralGate: (input: {
+      chapterNumber: number;
+      chapterTitle?: string;
+      chapterIntent?: string;
+      contextPackage?: ContextPackage;
+      ruleStack?: RuleStack;
+      storyBible: string;
+      volumeOutline: string;
+      bookRules: string;
+      currentState: string;
+      pendingHooks: string;
+      draftContent: string;
+    }) => Promise<StructuralGateResult>;
   };
   readonly auditor: {
     auditChapter: (
@@ -106,6 +159,9 @@ export async function runChapterReviewCycle(params: {
   let finalContent = params.initialOutput.content;
   let finalWordCount = params.initialOutput.wordCount;
   let revised = false;
+  const structuralGateSource = params.structuralGate
+    ? await loadStructuralGateSource(params.bookDir)
+    : undefined;
 
   if (params.initialOutput.postWriteErrors.length > 0) {
     params.logWarn({
@@ -147,6 +203,107 @@ export async function runChapterReviewCycle(params: {
   normalizeApplied = normalizeApplied || normalizedBeforeAudit.applied;
   params.assertChapterContentNotEmpty(finalContent, "draft generation");
 
+  const defaultGateResult: StructuralGateResult = {
+    passed: true,
+    summary: "structural gate not configured",
+    criticalFindings: [],
+    softFindings: [],
+  };
+  let firstGateResult = defaultGateResult;
+  if (params.structuralGate && structuralGateSource) {
+    params.logStage({ zh: "结构门禁校验", en: "running structural gate", ko: "구조 게이트 점검" });
+    firstGateResult = await params.structuralGate.evaluateStructuralGate({
+      chapterNumber: params.chapterNumber,
+      chapterTitle: params.initialOutput.title,
+      chapterIntent: params.reducedControlInput?.chapterIntent,
+      contextPackage: params.reducedControlInput?.contextPackage,
+      ruleStack: params.reducedControlInput?.ruleStack,
+      draftContent: finalContent,
+      ...structuralGateSource,
+    });
+  }
+
+  let secondGateResult: StructuralGateResult | undefined;
+  let structuralGateReviserInvoked = false;
+  let finalGateResult = firstGateResult;
+
+  if (firstGateResult.criticalFindings.length > 0) {
+    structuralGateReviserInvoked = true;
+    params.logStage({
+      zh: "结构闸门修复关键问题",
+      en: "repairing structural gate failures",
+      ko: "구조 게이트 치명 문제 수정",
+    });
+    const reviser = params.createReviser();
+    const reviseOutput = await reviser.reviseChapter(
+      params.bookDir,
+      finalContent,
+      params.chapterNumber,
+      firstGateResult.criticalFindings.map(toStructuralGateCriticalIssue),
+      "spot-fix",
+      params.book.genre,
+      {
+        ...params.reducedControlInput,
+        lengthSpec: params.lengthSpec,
+      },
+    );
+    totalUsage = params.addUsage(totalUsage, reviseOutput.tokenUsage);
+
+    if (reviseOutput.revisedContent.length > 0) {
+      const normalizedRevision = await params.normalizeDraftLengthIfNeeded(reviseOutput.revisedContent);
+      totalUsage = params.addUsage(totalUsage, normalizedRevision.tokenUsage);
+      finalContent = normalizedRevision.content;
+      finalWordCount = normalizedRevision.wordCount;
+      postReviseCount = normalizedRevision.wordCount;
+      normalizeApplied = normalizeApplied || normalizedRevision.applied;
+      revised = true;
+      params.assertChapterContentNotEmpty(finalContent, "structural revision");
+    }
+
+    secondGateResult = params.structuralGate && structuralGateSource
+      ? await params.structuralGate.evaluateStructuralGate({
+          chapterNumber: params.chapterNumber,
+          chapterTitle: params.initialOutput.title,
+          chapterIntent: params.reducedControlInput?.chapterIntent,
+          contextPackage: params.reducedControlInput?.contextPackage,
+          ruleStack: params.reducedControlInput?.ruleStack,
+          draftContent: finalContent,
+          ...structuralGateSource,
+        })
+      : defaultGateResult;
+    finalGateResult = secondGateResult;
+  }
+
+  const structuralGateSoftIssues = (
+    secondGateResult?.softFindings
+    ?? firstGateResult.softFindings
+  ).map(toStructuralGateSoftIssue);
+
+  const structuralGate = {
+    firstPass: firstGateResult,
+    secondPass: secondGateResult,
+    reviserInvoked: structuralGateReviserInvoked,
+    finalBlockingStatus: finalGateResult.criticalFindings.length > 0 ? "blocked" as const : "passed" as const,
+  };
+
+  if (structuralGate.finalBlockingStatus === "blocked") {
+    return {
+      finalContent,
+      finalWordCount,
+      preAuditNormalizedWordCount: normalizedBeforeAudit.wordCount,
+      revised,
+      auditResult: {
+        passed: false,
+        issues: structuralGateSoftIssues,
+        summary: finalGateResult.summary,
+      },
+      totalUsage,
+      postReviseCount,
+      normalizeApplied,
+      structuralGate,
+    };
+  }
+
   params.logStage({ zh: "审计草稿", en: "auditing draft", ko: "초안 검수" });
   const llmAudit = await params.auditor.auditChapter(
     params.bookDir,
@@ -161,7 +318,12 @@ export async function runChapterReviewCycle(params: {
   const hasBlockedWriteWords = sensitiveWriteResult.found.some((item) => item.severity === "block");
   let auditResult: AuditResult = {
     passed: hasBlockedWriteWords ? false : llmAudit.passed,
-    issues: [...llmAudit.issues, ...aiTellsResult.issues, ...sensitiveWriteResult.issues],
+    issues: [
+      ...structuralGateSoftIssues,
+      ...llmAudit.issues,
+      ...aiTellsResult.issues,
+      ...sensitiveWriteResult.issues,
+    ],
     summary: llmAudit.summary,
   };
 
@@ -217,11 +379,21 @@ export async function runChapterReviewCycle(params: {
       const reAITells = params.analyzeAITells(finalContent);
       const reSensitive = params.analyzeSensitiveWords(finalContent);
       const reHasBlocked = reSensitive.found.some((item) => item.severity === "block");
-      auditResult = params.restoreLostAuditIssues(auditResult, {
+      const previousNonStructuralIssues = auditResult.issues.filter(
+        (issue) => !issue.category.startsWith("structural-gate:"),
+      );
+      const restoredReAudit = params.restoreLostAuditIssues({
+        ...auditResult,
+        issues: previousNonStructuralIssues,
+      }, {
         passed: reHasBlocked ? false : reAudit.passed,
         issues: [...reAudit.issues, ...reAITells.issues, ...reSensitive.issues],
         summary: reAudit.summary,
       });
+      auditResult = {
+        ...restoredReAudit,
+        issues: [...structuralGateSoftIssues, ...restoredReAudit.issues],
+      };
     }
   }
 
@@ -234,5 +406,39 @@ export async function runChapterReviewCycle(params: {
     totalUsage,
     postReviseCount,
     normalizeApplied,
+    structuralGate,
   };
+}
+
+async function loadStructuralGateSource(bookDir: string): Promise<{
+  readonly storyBible: string;
+  readonly volumeOutline: string;
+  readonly bookRules: string;
+  readonly currentState: string;
+  readonly pendingHooks: string;
+}> {
+  const storyDir = join(bookDir, "story");
+  const [storyBible, volumeOutline, bookRules, currentState, pendingHooks] = await Promise.all([
+    readOptional(join(storyDir, "story_bible.md")),
+    readOptional(join(storyDir, "volume_outline.md")),
+    readOptional(join(storyDir, "book_rules.md")),
+    readOptional(join(storyDir, "current_state.md")),
+    readOptional(join(storyDir, "pending_hooks.md")),
+  ]);
+
+  return {
+    storyBible,
+    volumeOutline,
+    bookRules,
+    currentState,
+    pendingHooks,
+  };
+}
+
+async function readOptional(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf-8");
+  } catch {
+    return "";
+  }
 }

@@ -14,6 +14,7 @@ import {
   formatWriteNextComplete,
   formatWriteNextProgress,
   formatWriteNextResultLines,
+  formatWriteStructuralGateNoticeLines,
   resolveCliLanguage,
 } from "../localization.js";
 
@@ -90,6 +91,49 @@ describe("CLI localization", () => {
       "  분량: 1300자",
       "  감사: 통과",
       "  상태: approved",
+    ]);
+  });
+
+  it("formats structural gate notices for blocked and soft-finding writes", () => {
+    expect(formatWriteStructuralGateNoticeLines("en", {
+      summary: "missing structure",
+      criticalFindings: [{
+        code: "missing-foundation",
+        message: "Missing structural foundation.",
+        evidence: "No chapter engine.",
+        location: "opening",
+      }],
+      softFindings: [],
+    }, "blocked")).toEqual([
+      "  Structural gate failed closed: missing structure",
+      "  Critical findings (1):",
+      "    - [missing-foundation] Missing structural foundation.",
+      "      Evidence: No chapter engine.",
+      "      Location: opening",
+    ]);
+
+    expect(formatWriteStructuralGateNoticeLines("ko", {
+      summary: "soft only",
+      criticalFindings: [],
+      softFindings: [
+        { code: "clarity-gap", message: "장면 전환이 급하다." },
+        { code: "pace-drift", message: "장르 템포가 흔들린다." },
+      ],
+    }, "passed")).toEqual([
+      "  구조 게이트 참고: 소프트 이슈 2건 (clarity-gap, pace-drift)",
+    ]);
+
+    expect(formatWriteStructuralGateNoticeLines("zh", {
+      summary: "soft only",
+      criticalFindings: [],
+      softFindings: [
+        { code: "clarity-gap", message: "场景衔接过急。" },
+        { code: "pace-drift", message: "节奏漂移。" },
+        { code: "tone-slip", message: "口吻滑动。" },
+        { code: "focus-blur", message: "焦点模糊。" },
+      ],
+    }, "passed")).toEqual([
+      "  结构门禁提示：4 个软性问题（clarity-gap, pace-drift, tone-slip, 另有 1 个）",
     ]);
   });
 

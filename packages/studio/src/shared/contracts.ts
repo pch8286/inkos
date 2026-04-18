@@ -152,6 +152,23 @@ export interface BookSetupSessionListPayload {
 
 // --- Chapters ---
 
+export interface StructuralGateFindingPayload {
+  readonly severity: "critical" | "soft";
+  readonly code: string;
+  readonly message: string;
+  readonly evidence?: string;
+  readonly location?: string;
+}
+
+export interface StructuralGateSummaryPayload {
+  readonly chapterNumber: number;
+  readonly finalBlockingStatus: "passed" | "blocked";
+  readonly summary: string;
+  readonly reviserInvoked: boolean;
+  readonly criticalFindings: ReadonlyArray<StructuralGateFindingPayload>;
+  readonly softFindings: ReadonlyArray<StructuralGateFindingPayload>;
+}
+
 export interface ChapterSummary {
   readonly number: number;
   readonly title: string;
@@ -160,6 +177,7 @@ export interface ChapterSummary {
   readonly auditIssueCount: number;
   readonly updatedAt: string;
   readonly fileName: string | null;
+  readonly structuralGate?: StructuralGateSummaryPayload | null;
 }
 
 export interface ChapterDetail extends ChapterSummary {
@@ -171,6 +189,13 @@ export interface ChapterDetail extends ChapterSummary {
 
 export interface SaveChapterPayload {
   readonly content: string;
+}
+
+export interface BookDetailPayload {
+  readonly book: BookDetail;
+  readonly chapters: ReadonlyArray<ChapterSummary>;
+  readonly nextChapter: number;
+  readonly pendingStructuralGate?: StructuralGateSummaryPayload | null;
 }
 
 // --- Truth Files ---

@@ -13,6 +13,7 @@ import { WriterAgent, type WriteChapterOutput } from "../agents/writer.js";
 import { LengthNormalizerAgent } from "../agents/length-normalizer.js";
 import { ContinuityAuditor, type AuditIssue, type AuditResult } from "../agents/continuity.js";
 import { ReviserAgent, type ReviseOutput } from "../agents/reviser.js";
+import { StructuralGateAgent } from "../agents/structural-gate.js";
 import { ChapterAnalyzerAgent } from "../agents/chapter-analyzer.js";
 import { StateValidatorAgent } from "../agents/state-validator.js";
 import { FoundationReviewerAgent } from "../agents/foundation-reviewer.js";
@@ -47,7 +48,7 @@ const CRITICAL_ISSUE: AuditIssue = {
   suggestion: "Repair the contradiction",
 };
 
-function createAuditResult(overrides: Partial<AuditResult>): AuditResult {
+function createAuditResult(overrides: Partial<AuditResult> = {}): AuditResult {
   return {
     passed: true,
     issues: [],
@@ -75,6 +76,33 @@ function createWriterOutput(overrides: Partial<WriteChapterOutput> = {}): WriteC
     postWriteErrors: [],
     postWriteWarnings: [],
     tokenUsage: ZERO_USAGE,
+    ...overrides,
+  };
+}
+
+function createStructuralGateResult(overrides: Partial<{
+  passed: boolean;
+  summary: string;
+  criticalFindings: Array<{
+    severity: "critical";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+  softFindings: Array<{
+    severity: "soft";
+    code: string;
+    message: string;
+    evidence?: string;
+    location?: string;
+  }>;
+}> = {}) {
+  return {
+    passed: true,
+    summary: "clean",
+    criticalFindings: [],
+    softFindings: [],
     ...overrides,
   };
 }
@@ -206,6 +234,9 @@ describe("PipelineRunner", () => {
       dimensions: [],
       overallFeedback: "auto-pass for test",
     });
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate").mockResolvedValue(
+      createStructuralGateResult(),
+    );
     vi.spyOn(LengthNormalizerAgent.prototype, "normalizeChapter").mockImplementation(
       async ({ chapterContent, lengthSpec }) => ({
         normalizedContent: chapterContent,
@@ -2418,6 +2449,332 @@ describe("PipelineRunner", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("blocks chapter persistence when the structural gate fails closed", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+    const chaptersDir = join(state.bookDir(bookId), "chapters");
+
+    await Promise.all([
+      writeFile(join(storyDir, "current_state.md"), "stable state", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "stable hooks", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "stable bible", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "stable outline", "utf-8"),
+      writeFile(join(storyDir, "book_rules.md"), "stable rules", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        content: "Draft blocked by gate.",
+        wordCount: "Draft blocked by gate.".length,
+      }),
+    );
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate")
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "missing structure",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-foundation",
+          message: "Missing structural foundation.",
+          evidence: "No chapter engine.",
+          location: "opening",
+        }],
+      }))
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "still missing structure",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-foundation",
+          message: "Still missing structural foundation.",
+          evidence: "No chapter engine.",
+          location: "opening",
+        }],
+      }));
+    const auditChapter = vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(
+      createAuditResult(),
+    );
+    const reviseChapter = vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: "Still structurally broken.",
+        wordCount: "Still structurally broken.".length,
+      }),
+    );
+
+    await expect(runner.writeNextChapter(bookId)).rejects.toThrow(/structural gate/i);
+    const gateArtifact = JSON.parse(await readFile(
+      join(storyDir, "runtime", "chapter-0001.structural-gate.json"),
+      "utf-8",
+    ));
+    await expect(readdir(chaptersDir)).resolves.toEqual([]);
+    await expect(state.loadChapterIndex(bookId)).resolves.toEqual([]);
+    await expect(readFile(join(storyDir, "current_state.md"), "utf-8")).resolves.toBe("stable state");
+    expect(gateArtifact.finalBlockingStatus).toBe("blocked");
+    expect(gateArtifact.secondPass.summary).toBe("still missing structure");
+    expect(auditChapter).not.toHaveBeenCalled();
+    expect(reviseChapter).toHaveBeenCalledTimes(1);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("triggers one structural spot-fix pass with only critical gate findings", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+
+    await Promise.all([
+      writeFile(join(storyDir, "current_state.md"), "stable state", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "stable hooks", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "stable bible", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "stable outline", "utf-8"),
+      writeFile(join(storyDir, "book_rules.md"), "stable rules", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        content: "Gate needs revision.",
+        wordCount: "Gate needs revision.".length,
+      }),
+    );
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate")
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "needs spot fix",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-payoff",
+          message: "Missing payoff beat.",
+          evidence: "The promised confrontation never arrives.",
+          location: "ending",
+        }],
+        softFindings: [{
+          severity: "soft",
+          code: "clarity-gap",
+          message: "Scene geography is vague.",
+          evidence: "Bridge position is unclear.",
+          location: "middle",
+        }],
+      }))
+      .mockResolvedValueOnce(createStructuralGateResult());
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(createAuditResult());
+    const reviseChapter = vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: "Gate fixed revision.",
+        wordCount: "Gate fixed revision.".length,
+      }),
+    );
+    vi.spyOn(ChapterAnalyzerAgent.prototype, "analyzeChapter").mockResolvedValue(
+      createAnalyzedOutput({
+        content: "Gate fixed revision.",
+        wordCount: "Gate fixed revision.".length,
+      }),
+    );
+
+    await runner.writeNextChapter(bookId);
+
+    expect(reviseChapter).toHaveBeenCalledTimes(1);
+    expect(reviseChapter.mock.calls[0]?.[4]).toBe("spot-fix");
+    expect(reviseChapter.mock.calls[0]?.[3]).toEqual([
+      {
+        severity: "critical",
+        category: "structural-gate:missing-payoff",
+        description: "Missing payoff beat.",
+        suggestion: "Evidence: The promised confrontation never arrives. Location: ending",
+      },
+    ]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("allows save when structural re-gate passes after spot-fix", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+    const chaptersDir = join(state.bookDir(bookId), "chapters");
+
+    await Promise.all([
+      writeFile(join(storyDir, "current_state.md"), "stable state", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "stable hooks", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "stable bible", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "stable outline", "utf-8"),
+      writeFile(join(storyDir, "book_rules.md"), "stable rules", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        content: "Gate revise then save.",
+        wordCount: "Gate revise then save.".length,
+      }),
+    );
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate")
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "needs repair",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-turn",
+          message: "The chapter lacks a turn.",
+          evidence: "Conflict remains static.",
+          location: "midpoint",
+        }],
+      }))
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: true,
+        summary: "recovered",
+        softFindings: [{
+          severity: "soft",
+          code: "clarity-gap",
+          message: "Bridge transition could be clearer.",
+          evidence: "The move between rooms is abrupt.",
+          location: "scene break",
+        }],
+      }));
+    vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: "Gate passed revision.",
+        wordCount: "Gate passed revision.".length,
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(createAuditResult());
+    vi.spyOn(ChapterAnalyzerAgent.prototype, "analyzeChapter").mockResolvedValue(
+      createAnalyzedOutput({
+        content: "Gate passed revision.",
+        wordCount: "Gate passed revision.".length,
+      }),
+    );
+
+    const result = await runner.writeNextChapter(bookId);
+    const chapterFiles = await readdir(chaptersDir);
+    const gateArtifact = JSON.parse(await readFile(
+      join(storyDir, "runtime", "chapter-0001.structural-gate.json"),
+      "utf-8",
+    ));
+
+    expect(result.status).toBe("ready-for-review");
+    expect(chapterFiles.some((file) => file.endsWith(".md"))).toBe(true);
+    expect(gateArtifact.finalBlockingStatus).toBe("passed");
+    expect(gateArtifact.reviserInvoked).toBe(true);
+    expect(gateArtifact.secondPass.summary).toBe("recovered");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps blocking save when structural re-gate still fails after spot-fix", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+
+    await Promise.all([
+      writeFile(join(storyDir, "current_state.md"), "stable state", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "stable hooks", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "stable bible", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "stable outline", "utf-8"),
+      writeFile(join(storyDir, "book_rules.md"), "stable rules", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        content: "Still blocked draft.",
+        wordCount: "Still blocked draft.".length,
+      }),
+    );
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate")
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "first fail",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-pressure",
+          message: "Pressure is missing.",
+          evidence: "No active threat.",
+          location: "opening",
+        }],
+      }))
+      .mockResolvedValueOnce(createStructuralGateResult({
+        passed: false,
+        summary: "second fail",
+        criticalFindings: [{
+          severity: "critical",
+          code: "missing-pressure",
+          message: "Pressure is still missing.",
+          evidence: "No active threat.",
+          location: "opening",
+        }],
+      }));
+    vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: "Still blocked revision.",
+        wordCount: "Still blocked revision.".length,
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(createAuditResult());
+
+    await expect(runner.writeNextChapter(bookId)).rejects.toThrow(/structural gate/i);
+
+    const gateArtifact = JSON.parse(await readFile(
+      join(storyDir, "runtime", "chapter-0001.structural-gate.json"),
+      "utf-8",
+    ));
+    expect(gateArtifact.finalBlockingStatus).toBe("blocked");
+    expect(gateArtifact.secondPass.summary).toBe("second fail");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("does not block save when structural gate reports only soft findings", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const storyDir = join(state.bookDir(bookId), "story");
+
+    await Promise.all([
+      writeFile(join(storyDir, "current_state.md"), "stable state", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "stable hooks", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "stable bible", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "stable outline", "utf-8"),
+      writeFile(join(storyDir, "book_rules.md"), "stable rules", "utf-8"),
+    ]);
+
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        content: "Soft findings only.",
+        wordCount: "Soft findings only.".length,
+      }),
+    );
+    const gateSpy = vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate").mockResolvedValue(
+      createStructuralGateResult({
+        passed: true,
+        summary: "soft only",
+        softFindings: [{
+          severity: "soft",
+          code: "clarity-gap",
+          message: "The scene transition is abrupt.",
+          evidence: "The jump between beats is hard to track.",
+          location: "scene break",
+        }],
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter").mockResolvedValue(createAuditResult());
+    const reviseChapter = vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput(),
+    );
+    vi.spyOn(ChapterAnalyzerAgent.prototype, "analyzeChapter").mockResolvedValue(
+      createAnalyzedOutput({
+        content: "Soft findings only.",
+        wordCount: "Soft findings only.".length,
+      }),
+    );
+
+    const result = await runner.writeNextChapter(bookId);
+
+    expect(result.status).toBe("ready-for-review");
+    expect(gateSpy).toHaveBeenCalledTimes(1);
+    expect(reviseChapter).not.toHaveBeenCalled();
+    expect(result.auditResult.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        severity: "warning",
+        category: "structural-gate:clarity-gap",
+      }),
+    ]));
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   it("retries settlement after state contradictions without rewriting the chapter body", async () => {
     const { root, runner, state, bookId } = await createRunnerFixture({
       inputGovernanceMode: "legacy",
@@ -2674,6 +3031,9 @@ describe("PipelineRunner", () => {
 
   it("still persists the chapter when the state validator appends markdown after a valid JSON verdict", async () => {
     vi.restoreAllMocks();
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate").mockResolvedValue(
+      createStructuralGateResult(),
+    );
     vi.spyOn(LengthNormalizerAgent.prototype, "normalizeChapter").mockImplementation(
       async ({ chapterContent, lengthSpec }) => ({
         normalizedContent: chapterContent,
