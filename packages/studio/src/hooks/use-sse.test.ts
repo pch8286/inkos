@@ -14,6 +14,8 @@ describe("STUDIO_SSE_EVENTS", () => {
       "write:complete",
       "write:error",
       "draft:start",
+      "draft:cancel-requested",
+      "draft:cancelled",
       "draft:complete",
       "draft:error",
       "daemon:started",

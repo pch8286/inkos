@@ -365,7 +365,7 @@ export class StateManager {
             const content = await readFile(join(snapshotDir, f), "utf-8");
             await writeFile(join(storyDir, f), content, "utf-8");
           } catch {
-            // Optional file missing — skip
+            await rm(join(storyDir, f), { force: true });
           }
         }),
       );
@@ -377,6 +377,7 @@ export class StateManager {
         const stateFiles = await readdir(snapshotStateDir);
         if (stateFiles.length > 0) {
           restoredStructuredState = true;
+          await rm(stateDir, { recursive: true, force: true });
           await mkdir(stateDir, { recursive: true });
           await Promise.all(
             stateFiles.map(async (fileName) => {

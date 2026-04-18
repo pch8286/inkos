@@ -46,6 +46,7 @@ function translateChapterStatus(status: string, t: TFunction): string {
   const map: Record<string, () => string> = {
     "ready-for-review": () => t("chapter.readyForReview"),
     "approved": () => t("chapter.approved"),
+    "rejected": () => t("chapter.rejected"),
     "drafted": () => t("chapter.drafted"),
     "needs-revision": () => t("chapter.needsRevision"),
     "imported": () => t("chapter.imported"),
@@ -57,6 +58,7 @@ function translateChapterStatus(status: string, t: TFunction): string {
 const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
   "ready-for-review": { color: "text-amber-500 bg-amber-500/10", icon: <Eye size={12} /> },
   approved: { color: "text-emerald-500 bg-emerald-500/10", icon: <Check size={12} /> },
+  rejected: { color: "text-destructive bg-destructive/10", icon: <RotateCcw size={12} /> },
   drafted: { color: "text-muted-foreground bg-muted/20", icon: <FileText size={12} /> },
   "needs-revision": { color: "text-destructive bg-destructive/10", icon: <RotateCcw size={12} /> },
   imported: { color: "text-blue-500 bg-blue-500/10", icon: <Download size={12} /> },
@@ -103,8 +105,12 @@ export function BookDetail({
   const { data, loading, error, refetch } = useApi<BookDetailPayload>(`/books/${bookId}`);
   const [writeRequestPending, setWriteRequestPending] = useState(false);
   const [draftRequestPending, setDraftRequestPending] = useState(false);
+  const [draftCancelSubmitting, setDraftCancelSubmitting] = useState(false);
+  const [draftCancelRequested, setDraftCancelRequested] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [chapterDeleteTarget, setChapterDeleteTarget] = useState<ChapterMeta | null>(null);
+  const [deletingChapterNumber, setDeletingChapterNumber] = useState<number | null>(null);
   const [rewritingChapters, setRewritingChapters] = useState<ReadonlyArray<number>>([]);
   const [revisingChapters, setRevisingChapters] = useState<ReadonlyArray<number>>([]);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -118,6 +124,7 @@ export function BookDetail({
   const activity = useMemo(() => deriveBookActivity(sse.messages, bookId), [bookId, sse.messages]);
   const writing = writeRequestPending || activity.writing;
   const drafting = draftRequestPending || activity.drafting;
+  const draftCancelling = draftCancelSubmitting || draftCancelRequested || activity.draftCancelling;
 
   useEffect(() => {
     const recent = sse.messages.at(-1);
@@ -133,12 +140,22 @@ export function BookDetail({
 
     if (recent.event === "draft:start") {
       setDraftRequestPending(false);
+      setDraftCancelSubmitting(false);
+      setDraftCancelRequested(false);
+      return;
+    }
+
+    if (recent.event === "draft:cancel-requested") {
+      setDraftCancelSubmitting(false);
+      setDraftCancelRequested(true);
       return;
     }
 
     if (shouldRefetchBookView(recent, bookId)) {
       setWriteRequestPending(false);
       setDraftRequestPending(false);
+      setDraftCancelSubmitting(false);
+      setDraftCancelRequested(false);
       refetch();
     }
   }, [bookId, refetch, sse.messages]);
@@ -160,6 +177,21 @@ export function BookDetail({
     } catch (e) {
       setDraftRequestPending(false);
       alert(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleCancelDraft = async () => {
+    setDraftCancelSubmitting(true);
+    try {
+      await fetchJson(`/books/${bookId}/draft`, {
+        method: "DELETE",
+      });
+      setDraftCancelRequested(true);
+    } catch (e) {
+      setDraftCancelRequested(false);
+      alert(e instanceof Error ? e.message : "Cancel failed");
+    } finally {
+      setDraftCancelSubmitting(false);
     }
   };
 
@@ -189,6 +221,24 @@ export function BookDetail({
       alert(e instanceof Error ? e.message : "Rewrite failed");
     } finally {
       setRewritingChapters((prev) => prev.filter((n) => n !== chapterNum));
+    }
+  };
+
+  const handleDeleteChapter = async () => {
+    if (!chapterDeleteTarget) return;
+
+    const targetNumber = chapterDeleteTarget.number;
+    setChapterDeleteTarget(null);
+    setDeletingChapterNumber(targetNumber);
+    try {
+      await fetchJson(`/books/${bookId}/chapters/${targetNumber}`, {
+        method: "DELETE",
+      });
+      refetch();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeletingChapterNumber(null);
     }
   };
 
@@ -259,6 +309,12 @@ export function BookDetail({
   const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
   const reviewCount = chapters.filter((ch) => ch.status === "ready-for-review").length;
   const bookLanguage = resolveStudioLanguage(book.language);
+  const chapterDeleteCount = chapterDeleteTarget
+    ? chapters.filter((chapter) => chapter.number >= chapterDeleteTarget.number).length
+    : 0;
+  const chapterDeleteLabel = chapterDeleteTarget
+    ? localizeChapterTitle(chapterDeleteTarget.title, chapterDeleteTarget.number, data.book.language as "ko" | "zh" | "en" | undefined)
+    : "";
   const availablePlatforms = platformOptionsForLanguage(bookLanguage);
   const availablePlatformValues = availablePlatforms.map((option) => option.value);
   const platformMismatch = !availablePlatformValues.includes(book.platform);
@@ -269,6 +325,17 @@ export function BookDetail({
   const currentStatus = settingsStatus ?? (book.status as BookStatus);
   const currentPlatform = settingsPlatform ?? fallbackPlatform;
   const currentTitle = settingsTitle ?? book.title;
+  const liveStatusLabel = writing
+    ? t("dash.writing")
+    : draftCancelling
+      ? t("book.cancellingDraft")
+      : t("book.drafting");
+  const liveProgressLabel = activity.liveDetail
+    ? `${liveStatusLabel} ${activity.liveDetail}`
+    : liveStatusLabel;
+  const liveElapsedSeconds = activity.elapsedMs !== null
+    ? Math.max(0, Math.round(activity.elapsedMs / 100) / 10)
+    : null;
 
   const exportHref = `/api/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
 
@@ -328,16 +395,26 @@ export function BookDetail({
             {writing ? t("dash.writing") : t("book.writeNext")}
           </button>
           <button
-            onClick={handleDraft}
-            disabled={writing || drafting}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-secondary text-foreground rounded-xl hover:bg-secondary/80 transition-all border border-border/50 disabled:opacity-50"
+            onClick={drafting ? handleCancelDraft : handleDraft}
+            disabled={writing || draftCancelling}
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl transition-all border disabled:opacity-50 ${
+              drafting
+                ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-white border-destructive/20"
+                : "bg-secondary text-foreground hover:bg-secondary/80 border-border/50"
+            }`}
           >
-            {drafting ? <div className="w-4 h-4 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" /> : <Wand2 size={16} />}
-            {drafting ? t("book.drafting") : t("book.draftOnly")}
+            {drafting
+              ? (draftCancelling
+                  ? <div className="w-4 h-4 border-2 border-destructive/20 border-t-destructive rounded-full animate-spin" />
+                  : <X size={16} />)
+              : <Wand2 size={16} />}
+            {drafting
+              ? (draftCancelling ? t("book.cancellingDraft") : t("book.cancelDraft"))
+              : t("book.draftOnly")}
           </button>
           <button
             onClick={() => setConfirmDeleteOpen(true)}
-            disabled={deleting}
+            disabled={deleting || writing || drafting}
             className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-destructive/10 text-destructive rounded-xl hover:bg-destructive hover:text-white transition-all border border-destructive/20 disabled:opacity-50"
           >
             {deleting ? <div className="w-4 h-4 border-2 border-destructive/20 border-t-destructive rounded-full animate-spin" /> : <Trash2 size={16} />}
@@ -358,10 +435,44 @@ export function BookDetail({
             <span>
               {t("book.pipelineFailed")}: {activity.lastError}
             </span>
-          ) : writing ? (
-            <span>{t("book.pipelineWriting")}</span>
           ) : (
-            <span>{t("book.pipelineDrafting")}</span>
+            <div className="space-y-3" role="status" aria-live="polite">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="studio-cockpit-live-status-badge">LIVE</span>
+                    <span className="studio-cockpit-live-status-stage">{liveStatusLabel}</span>
+                  </div>
+                  {activity.liveDetail ? (
+                    <p className="studio-cockpit-live-status-detail">{activity.liveDetail}</p>
+                  ) : null}
+                </div>
+
+                {(liveElapsedSeconds !== null || activity.totalChars !== null) ? (
+                  <div className="flex flex-wrap gap-2 text-xs font-semibold text-muted-foreground">
+                    {liveElapsedSeconds !== null ? (
+                      <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1">
+                        {t("radar.progressElapsed")}: {liveElapsedSeconds}s
+                      </span>
+                    ) : null}
+                    {activity.totalChars !== null ? (
+                      <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1">
+                        {t("radar.progressChars")}: {activity.totalChars.toLocaleString()} {t("truth.chars")}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div
+                className="studio-cockpit-live-progress"
+                data-progress-mode="indeterminate"
+                role="progressbar"
+                aria-label={liveProgressLabel}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              />
+            </div>
           )}
         </div>
       )}
@@ -626,6 +737,16 @@ export function BookDetail({
                         <option value="rework">{t("book.rework")}</option>
                         <option value="anti-detect">{t("book.antiDetect")}</option>
                       </select>
+                      <button
+                        onClick={() => setChapterDeleteTarget(ch)}
+                        disabled={deletingChapterNumber !== null || writing || drafting}
+                        className="p-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all shadow-sm disabled:opacity-50"
+                        title={t("book.deleteChapter")}
+                      >
+                        {deletingChapterNumber === ch.number
+                          ? <div className="w-3.5 h-3.5 border-2 border-destructive/20 border-t-destructive rounded-full animate-spin" />
+                          : <Trash2 size={14} />}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -656,6 +777,16 @@ export function BookDetail({
         variant="danger"
         onConfirm={handleDeleteBook}
         onCancel={() => setConfirmDeleteOpen(false)}
+      />
+      <ConfirmDialog
+        open={chapterDeleteTarget !== null}
+        title={t("book.deleteChapter")}
+        message={`${chapterDeleteLabel}\n\n${chapterDeleteCount > 1 ? t("book.confirmDeleteChapterCascade") : t("book.confirmDeleteChapter")}\n\n${t("book.deleteChapterStateWarning")}`}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+        variant="danger"
+        onConfirm={handleDeleteChapter}
+        onCancel={() => setChapterDeleteTarget(null)}
       />
     </div>
   );

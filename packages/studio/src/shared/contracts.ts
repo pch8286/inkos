@@ -184,12 +184,24 @@ export interface ChapterSummary {
 export interface ChapterDetail extends ChapterSummary {
   readonly auditIssues: ReadonlyArray<string>;
   readonly reviewNote?: string;
+  readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
   readonly content: string;
   readonly readerSettings?: ReaderSettings;
 }
 
 export interface SaveChapterPayload {
   readonly content: string;
+  readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+}
+
+export interface ChapterInlineReviewThreadPayload {
+  readonly id: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly decision: BookSetupReviewDecision;
+  readonly note: string;
+  readonly quote: string;
+  readonly createdAt: string;
 }
 
 export interface BookDetailPayload {

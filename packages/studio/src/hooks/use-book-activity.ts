@@ -1,11 +1,12 @@
 import type { SSEMessage } from "./use-sse";
 
 const START_EVENTS = new Set(["write:start", "draft:start"]);
-const TERMINAL_EVENTS = new Set(["write:complete", "write:error", "draft:complete", "draft:error"]);
+const TERMINAL_EVENTS = new Set(["write:complete", "write:error", "draft:complete", "draft:error", "draft:cancelled"]);
 const BOOK_REFRESH_EVENTS = new Set([
   "book:updated",
   "write:complete",
   "write:error",
+  "draft:cancelled",
   "draft:complete",
   "draft:error",
   "rewrite:complete",
@@ -23,6 +24,7 @@ const BOOK_COLLECTION_REFRESH_EVENTS = new Set([
   "book:error",
   "write:complete",
   "write:error",
+  "draft:cancelled",
   "draft:complete",
   "draft:error",
   "rewrite:complete",
@@ -49,12 +51,29 @@ const DAEMON_STATUS_REFRESH_EVENTS = new Set([
 export interface BookActivity {
   readonly writing: boolean;
   readonly drafting: boolean;
+  readonly draftCancelling: boolean;
   readonly lastError: string | null;
+  readonly liveDetail: string | null;
+  readonly elapsedMs: number | null;
+  readonly totalChars: number | null;
 }
 
 function getBookId(message: SSEMessage): string | null {
   const data = message.data as { bookId?: unknown } | null;
   return typeof data?.bookId === "string" ? data.bookId : null;
+}
+
+function getLogMessage(message: SSEMessage): string | null {
+  const data = message.data as { message?: unknown } | null;
+  if (typeof data?.message !== "string") {
+    return null;
+  }
+  const firstLine = data.message.split("\n")[0]?.trim();
+  return firstLine ? firstLine : null;
+}
+
+function getProgressValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function deriveActiveBookIds(messages: ReadonlyArray<SSEMessage>): ReadonlySet<string> {
@@ -80,10 +99,21 @@ export function deriveActiveBookIds(messages: ReadonlyArray<SSEMessage>): Readon
 export function deriveBookActivity(messages: ReadonlyArray<SSEMessage>, bookId: string): BookActivity {
   let writing = false;
   let drafting = false;
+  let draftCancelling = false;
   let lastError: string | null = null;
+  let latestStartIndex = -1;
+  let lastStartedBookId: string | null = null;
 
-  for (const message of messages) {
-    if (getBookId(message) !== bookId) continue;
+  for (const [index, message] of messages.entries()) {
+    const messageBookId = getBookId(message);
+    if ((message.event === "write:start" || message.event === "draft:start") && messageBookId) {
+      lastStartedBookId = messageBookId;
+      if (messageBookId === bookId) {
+        latestStartIndex = index;
+      }
+    }
+
+    if (messageBookId !== bookId) continue;
 
     const data = message.data as { error?: unknown } | null;
 
@@ -102,14 +132,27 @@ export function deriveBookActivity(messages: ReadonlyArray<SSEMessage>, bookId: 
         break;
       case "draft:start":
         drafting = true;
+        draftCancelling = false;
+        lastError = null;
+        break;
+      case "draft:cancel-requested":
+        drafting = true;
+        draftCancelling = true;
+        lastError = null;
+        break;
+      case "draft:cancelled":
+        drafting = false;
+        draftCancelling = false;
         lastError = null;
         break;
       case "draft:complete":
         drafting = false;
+        draftCancelling = false;
         lastError = null;
         break;
       case "draft:error":
         drafting = false;
+        draftCancelling = false;
         lastError = typeof data?.error === "string" ? data.error : "Unknown error";
         break;
       default:
@@ -117,7 +160,28 @@ export function deriveBookActivity(messages: ReadonlyArray<SSEMessage>, bookId: 
     }
   }
 
-  return { writing, drafting, lastError };
+  let liveDetail: string | null = null;
+  let elapsedMs: number | null = null;
+  let totalChars: number | null = null;
+
+  // llm:progress/log SSE payloads are global, so only surface them when this
+  // book owns the most recent active pipeline in the current session.
+  const ownsLatestPipeline = latestStartIndex >= 0 && lastStartedBookId === bookId && (writing || drafting);
+  if (ownsLatestPipeline) {
+    for (const message of messages.slice(latestStartIndex + 1)) {
+      if (message.event === "log") {
+        liveDetail = getLogMessage(message) ?? liveDetail;
+        continue;
+      }
+      if (message.event === "llm:progress") {
+        const data = message.data as { elapsedMs?: unknown; totalChars?: unknown } | null;
+        elapsedMs = getProgressValue(data?.elapsedMs) ?? elapsedMs;
+        totalChars = getProgressValue(data?.totalChars) ?? totalChars;
+      }
+    }
+  }
+
+  return { writing, drafting, draftCancelling, lastError, liveDetail, elapsedMs, totalChars };
 }
 
 export function shouldRefetchBookView(message: SSEMessage, bookId: string): boolean {

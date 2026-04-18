@@ -24,6 +24,7 @@ describe("deriveBookActivity", () => {
     expect(deriveBookActivity(messages, "alpha")).toMatchObject({
       writing: true,
       drafting: false,
+      draftCancelling: false,
       lastError: null,
     });
   });
@@ -57,6 +58,52 @@ describe("deriveBookActivity", () => {
     expect(deriveBookActivity(messages, "alpha")).toMatchObject({
       writing: false,
       drafting: true,
+      draftCancelling: false,
+    });
+  });
+
+  it("marks draft cancellation as in-flight until the cancellation finishes", () => {
+    const messages: ReadonlyArray<SSEMessage> = [
+      msg("draft:start", { bookId: "alpha" }, 1),
+      msg("draft:cancel-requested", { bookId: "alpha" }, 2),
+    ];
+
+    expect(deriveBookActivity(messages, "alpha")).toMatchObject({
+      writing: false,
+      drafting: true,
+      draftCancelling: true,
+      lastError: null,
+    });
+  });
+
+  it("surfaces live progress details for the latest active pipeline", () => {
+    const messages: ReadonlyArray<SSEMessage> = [
+      msg("draft:start", { bookId: "alpha" }, 1),
+      msg("log", { message: "Preparing chapter context" }, 2),
+      msg("llm:progress", { elapsedMs: 3400, totalChars: 1200 }, 3),
+    ];
+
+    expect(deriveBookActivity(messages, "alpha")).toMatchObject({
+      drafting: true,
+      liveDetail: "Preparing chapter context",
+      elapsedMs: 3400,
+      totalChars: 1200,
+    });
+  });
+
+  it("does not attach global progress from another book's newer run", () => {
+    const messages: ReadonlyArray<SSEMessage> = [
+      msg("draft:start", { bookId: "alpha" }, 1),
+      msg("write:start", { bookId: "beta" }, 2),
+      msg("log", { message: "Writing beta" }, 3),
+      msg("llm:progress", { elapsedMs: 1200, totalChars: 700 }, 4),
+    ];
+
+    expect(deriveBookActivity(messages, "alpha")).toMatchObject({
+      drafting: true,
+      liveDetail: null,
+      elapsedMs: null,
+      totalChars: null,
     });
   });
 });
@@ -68,7 +115,7 @@ describe("deriveActiveBookIds", () => {
       msg("draft:start", { bookId: "beta" }, 2),
       msg("write:complete", { bookId: "alpha", chapterNumber: 2 }, 3),
       msg("write:start", { bookId: "gamma" }, 4),
-      msg("draft:error", { bookId: "beta", error: "quota" }, 5),
+      msg("draft:cancelled", { bookId: "beta" }, 5),
     ];
 
     expect([...deriveActiveBookIds(messages)].sort()).toEqual(["gamma"]);
@@ -79,6 +126,7 @@ describe("shouldRefetchBookView", () => {
   it("refreshes the book detail view after terminal background jobs for that book", () => {
     expect(shouldRefetchBookView(msg("book:updated", { bookId: "alpha", title: "Renamed" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("write:complete", { bookId: "alpha" }, 1), "alpha")).toBe(true);
+    expect(shouldRefetchBookView(msg("draft:cancelled", { bookId: "alpha" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("draft:error", { bookId: "alpha", error: "quota" }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("rewrite:complete", { bookId: "alpha", chapterNumber: 3 }, 1), "alpha")).toBe(true);
     expect(shouldRefetchBookView(msg("revise:error", { bookId: "alpha", error: "bad" }, 1), "alpha")).toBe(true);
@@ -94,6 +142,7 @@ describe("shouldRefetchBookCollections", () => {
     expect(shouldRefetchBookCollections(msg("book:updated", { bookId: "alpha", title: "Renamed" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("book:deleted", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("write:complete", { bookId: "alpha" }, 1))).toBe(true);
+    expect(shouldRefetchBookCollections(msg("draft:cancelled", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("draft:error", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("rewrite:complete", { bookId: "alpha" }, 1))).toBe(true);
     expect(shouldRefetchBookCollections(msg("audit:start", { bookId: "alpha" }, 1))).toBe(false);

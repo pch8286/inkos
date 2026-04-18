@@ -1244,6 +1244,41 @@ describe("StateManager", () => {
       expect(index).toHaveLength(0);
     });
 
+    it("removes optional story files that were absent in the restored snapshot", async () => {
+      const bookDir = manager.bookDir(bookId);
+      const storyDir = join(bookDir, "story");
+      const chaptersDir = join(bookDir, "chapters");
+
+      await mkdir(storyDir, { recursive: true });
+      await mkdir(chaptersDir, { recursive: true });
+
+      await writeFile(join(storyDir, "current_state.md"), "# State\n\n- Initial state.\n", "utf-8");
+      await writeFile(join(storyDir, "pending_hooks.md"), "# Hooks\n\n", "utf-8");
+      await manager.snapshotState(bookId, 0);
+
+      await writeFile(join(storyDir, "current_state.md"), "# State\n\n- After chapter 1.\n", "utf-8");
+      await writeFile(join(storyDir, "pending_hooks.md"), "# Hooks\n\n- hook-1\n", "utf-8");
+      await writeFile(join(storyDir, "chapter_summaries.md"), "# Summaries\n\n| 1 | Title 1 |\n", "utf-8");
+      await writeFile(join(chaptersDir, "0001_Title_One.md"), "# Chapter 1\n\nContent 1.", "utf-8");
+      await manager.snapshotState(bookId, 1);
+      await manager.saveChapterIndex(bookId, [
+        {
+          number: 1,
+          title: "Title One",
+          status: "drafted",
+          wordCount: 100,
+          createdAt: "2026-03-31T00:00:00Z",
+          updatedAt: "2026-03-31T00:00:00Z",
+          auditIssues: [],
+          lengthWarnings: [],
+        },
+      ]);
+
+      await manager.rollbackToChapter(bookId, 0);
+
+      await expect(stat(join(storyDir, "chapter_summaries.md"))).rejects.toThrow();
+    });
+
     it("throws when the target snapshot does not exist", async () => {
       await setupRollbackBook();
 

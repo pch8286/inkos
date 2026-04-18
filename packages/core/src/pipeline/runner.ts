@@ -116,12 +116,41 @@ export interface PlanChapterResult {
   readonly intentPath: string;
   readonly goal: string;
   readonly conflicts: ReadonlyArray<string>;
+  readonly needsUserAlignment: boolean;
+  readonly alignmentSummary?: string;
 }
 
 export interface ComposeChapterResult extends PlanChapterResult {
   readonly contextPath: string;
   readonly ruleStackPath: string;
   readonly tracePath: string;
+}
+
+function summarizeAlignmentNeed(
+  conflicts: ReadonlyArray<{
+    readonly type: string;
+    readonly resolution: string;
+    readonly detail?: string;
+  }>,
+): string | undefined {
+  if (conflicts.length === 0) {
+    return undefined;
+  }
+
+  return conflicts
+    .map((conflict) => {
+      switch (conflict.type) {
+        case "outline_vs_request":
+          return "User guidance conflicts with the matched outline, so confirm which direction should win before drafting.";
+        case "outline_vs_current_focus":
+          return conflict.detail
+            ? `current_focus contains an explicit local override that diverges from the matched outline: ${conflict.detail}`
+            : "current_focus contains an explicit local override that diverges from the matched outline.";
+        default:
+          return `${conflict.type}: ${conflict.resolution}`;
+      }
+    })
+    .join(" ");
 }
 
 
@@ -792,6 +821,8 @@ export class PipelineRunner {
       intentPath: relativeToBookDir(bookDir, plan.runtimePath),
       goal: plan.intent.goal,
       conflicts: plan.intent.conflicts.map((conflict) => `${conflict.type}: ${conflict.resolution}`),
+      needsUserAlignment: plan.intent.conflicts.length > 0,
+      alignmentSummary: summarizeAlignmentNeed(plan.intent.conflicts),
     };
   }
 
@@ -816,6 +847,8 @@ export class PipelineRunner {
       intentPath: relativeToBookDir(bookDir, plan.runtimePath),
       goal: plan.intent.goal,
       conflicts: plan.intent.conflicts.map((conflict) => `${conflict.type}: ${conflict.resolution}`),
+      needsUserAlignment: plan.intent.conflicts.length > 0,
+      alignmentSummary: summarizeAlignmentNeed(plan.intent.conflicts),
       contextPath: relativeToBookDir(bookDir, composed.contextPath),
       ruleStackPath: relativeToBookDir(bookDir, composed.ruleStackPath),
       tracePath: relativeToBookDir(bookDir, composed.tracePath),

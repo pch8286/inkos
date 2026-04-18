@@ -231,19 +231,8 @@ export interface AgentLoopOptions {
   readonly maxTurns?: number;
 }
 
-export async function runAgentLoop(
-  config: PipelineConfig,
-  instruction: string,
-  options?: AgentLoopOptions,
-): Promise<string> {
-  const pipeline = new PipelineRunner(config);
-  const { StateManager } = await import("../state/manager.js");
-  const state = new StateManager(config.projectRoot);
-
-  const messages: AgentMessage[] = [
-    {
-      role: "system",
-      content: `You are the InkOS fiction-writing agent. The user is a novelist, and you manage the workflow from book creation to finished chapters.
+export function buildAgentSystemPrompt(): string {
+  return `You are the InkOS fiction-writing agent. The user is a novelist, and you manage the workflow from book creation to finished chapters.
 
 ## Tools
 
@@ -295,6 +284,9 @@ Seven long-term memory files provide the factual basis for writing and auditing:
 - If the user already gave a title or bookId, act directly instead of calling list_books first.
 - Briefly report progress after each major step.
 - If the user wants to pull focus back to a specific thread, prefer update_current_focus, then plan_chapter or compose_chapter, then decide whether to draft.
+- When the brief, spec, or chapter guidance is ambiguous enough that the draft direction could change, briefly align with the user first: restate your current understanding, name the ambiguity, and propose a default direction.
+- If plan_chapter or compose_chapter reports needsUserAlignment=true, briefly align with the user first and wait for confirmation or corrected guidance.
+- Do not call write_draft or write_full_pipeline while that ambiguity is unresolved.
 - Style imitation flow: reference text → import_style → future drafting uses the generated style guide.
 - Spinoff flow: create_book → import_canon → normal drafting.
 - Continuation flow from existing manuscript: import_chapters → write_draft.
@@ -306,7 +298,22 @@ Seven long-term memory files provide the factual basis for writing and auditing:
 - Never use write_truth_file to hack current_state.md progress and force the system to jump chapters.
 - Never use revise_chapter to create missing chapters or change chapter numbers.
 - If the user asks to fill chapter N or says chapter N is empty, inspect real state first with get_book_status and read_truth_files.
-- Do not call writing tools before you have confirmed the book state.`,
+- Do not call writing tools before you have confirmed the book state.`;
+}
+
+export async function runAgentLoop(
+  config: PipelineConfig,
+  instruction: string,
+  options?: AgentLoopOptions,
+): Promise<string> {
+  const pipeline = new PipelineRunner(config);
+  const { StateManager } = await import("../state/manager.js");
+  const state = new StateManager(config.projectRoot);
+
+  const messages: AgentMessage[] = [
+    {
+      role: "system",
+      content: buildAgentSystemPrompt(),
     },
     { role: "user", content: instruction },
   ];

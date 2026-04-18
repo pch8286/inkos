@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_TOOLS, executeAgentTool } from "../pipeline/agent.js";
+import { AGENT_TOOLS, buildAgentSystemPrompt, executeAgentTool } from "../pipeline/agent.js";
 import { PipelineRunner, StateManager, type PipelineConfig } from "../index.js";
 
 describe("agent pipeline tools", () => {
@@ -98,6 +98,8 @@ describe("agent pipeline tools", () => {
     ));
 
     expect(planResult.intentPath).toBe("story/runtime/chapter-0001.intent.md");
+    expect(planResult.needsUserAlignment).toBe(true);
+    expect(planResult.alignmentSummary).toContain("outline");
 
     const composeResult = JSON.parse(await executeAgentTool(
       pipeline,
@@ -110,6 +112,7 @@ describe("agent pipeline tools", () => {
     expect(composeResult.contextPath).toBe("story/runtime/chapter-0001.context.json");
     expect(composeResult.ruleStackPath).toBe("story/runtime/chapter-0001.rule-stack.yaml");
     expect(composeResult.tracePath).toBe("story/runtime/chapter-0001.trace.json");
+    expect(composeResult.needsUserAlignment).toBe(true);
   });
 
   it("updates author_intent.md and current_focus.md through dedicated tools", async () => {
@@ -159,6 +162,32 @@ describe("agent pipeline tools", () => {
       "## Goal",
       "Stay inside the mentor debt confrontation first and delay the guild chase by one chapter.",
     ].join("\n"));
+  });
+
+  it("does not request user alignment when the plan has no steering conflicts", async () => {
+    await Promise.all([
+      writeFile(join(state.bookDir(bookId), "story", "current_focus.md"), "# Current Focus\n\nTrack the merchant guild trail.\n", "utf-8"),
+      writeFile(join(state.bookDir(bookId), "story", "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nTrack the merchant guild trail.\n", "utf-8"),
+    ]);
+
+    const planResult = JSON.parse(await executeAgentTool(
+      pipeline,
+      state,
+      config,
+      "plan_chapter",
+      { bookId },
+    ));
+
+    expect(planResult.needsUserAlignment).toBe(false);
+    expect(planResult.alignmentSummary).toBeUndefined();
+  });
+
+  it("tells the agent loop to align with the user before drafting when plan output is ambiguous", () => {
+    const prompt = buildAgentSystemPrompt();
+
+    expect(prompt).toContain("If plan_chapter or compose_chapter reports needsUserAlignment=true");
+    expect(prompt).toContain("Do not call write_draft");
+    expect(prompt).toContain("briefly align with the user first");
   });
 
   it("blocks write_full_pipeline when runtime progress is ahead of the chapter index", async () => {

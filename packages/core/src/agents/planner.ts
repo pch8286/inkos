@@ -470,12 +470,22 @@ export class PlannerAgent extends BaseAgent {
     const hints = this.unique([
       ...this.extractPrioritySentences(
         currentFocus,
-        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반|빙의|왕좌|잠입)/i,
+        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반)/i,
         2,
       ),
       ...this.extractPrioritySentences(
         authorIntent,
-        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반|빙의|왕좌|잠입)/i,
+        /(opening|first chapter|chapter 1|chapter one|오프닝|첫 장면|첫 화|1화|초반)/i,
+        3,
+      ),
+      ...this.extractPrioritySentences(
+        currentFocus,
+        /(빙의|왕좌|잠입)/i,
+        2,
+      ),
+      ...this.extractPrioritySentences(
+        authorIntent,
+        /(빙의|왕좌|잠입)/i,
         3,
       ),
     ]).slice(0, 2);
@@ -600,6 +610,7 @@ export class PlannerAgent extends BaseAgent {
 
     return (
       /^\((describe|briefly describe|write)\b[\s\S]*\)$/i.test(normalized)
+      || /^\((?:앞으로|여기에|여기서|이번 화|이 장면|적는다|작성한다)[\s\S]*\)$/u.test(normalized)
       || /^（(?:在这里描述|描述|填写|写下)[\s\S]*）$/u.test(normalized)
     );
   }
@@ -717,6 +728,8 @@ export class PlannerAgent extends BaseAgent {
     const patterns = [
       new RegExp(`^(?:#+\\s*)?(?:[-*]\\s+)?(?:\\*\\*)?Chapter\\s*${chapterNumber}(?!\\d|\\s*[-~–—]\\s*\\d)(?:[:：-])?(?:\\*\\*)?\\s*(.*)$`, "i"),
       new RegExp(`^(?:#+\\s*)?(?:[-*]\\s+)?(?:\\*\\*)?第\\s*${chapterNumber}\\s*章(?!\\d|\\s*[-~–—]\\s*\\d)(?:[:：-])?(?:\\*\\*)?\\s*(.*)$`),
+      new RegExp(`^(?:#+\\s*)?(?:[-*]\\s+)?(?:\\*\\*)?(?:제\\s*)?${chapterNumber}\\s*화(?!\\d|\\s*[-~–—]\\s*\\d)(?:\\*\\*)?(?:[:：-])?\\s*(.*)$`),
+      new RegExp(`^(?:#+\\s*)?(?:[-*]\\s+)?(?:\\*\\*)?(?:제\\s*)?${chapterNumber}\\s*장(?!\\d|\\s*[-~–—]\\s*\\d)(?:\\*\\*)?(?:[:：-])?\\s*(.*)$`),
     ];
 
     return patterns
@@ -728,6 +741,8 @@ export class PlannerAgent extends BaseAgent {
     const patterns = [
       /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?Chapter\s*\d+(?!\s*[-~–—]\s*\d)(?:[:：-])?(?:\*\*)?\s*(.*)$/i,
       /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?第\s*\d+\s*章(?!\s*[-~–—]\s*\d)(?:[:：-])?(?:\*\*)?\s*(.*)$/i,
+      /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?(?:제\s*)?\d+\s*화(?!\s*[-~–—]\s*\d)(?:\*\*)?(?:[:：-])?\s*(.*)$/i,
+      /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?(?:제\s*)?\d+\s*장(?!\s*[-~–—]\s*\d)(?:\*\*)?(?:[:：-])?\s*(.*)$/i,
     ];
 
     return patterns
@@ -749,6 +764,8 @@ export class PlannerAgent extends BaseAgent {
     const patterns = [
       /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?Chapter\s*(\d+)\s*[-~–—]\s*(\d+)\b(?:[:：-])?(?:\*\*)?\s*(.*)$/i,
       /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?第\s*(\d+)\s*[-~–—]\s*(\d+)\s*章(?:[:：-])?(?:\*\*)?\s*(.*)$/i,
+      /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?(?:제\s*)?(\d+)\s*[-~–—]\s*(\d+)\s*화(?:\*\*)?(?:[:：-])?\s*(.*)$/i,
+      /^(?:#+\s*)?(?:[-*]\s+)?(?:\*\*)?(?:제\s*)?(\d+)\s*[-~–—]\s*(\d+)\s*장(?:\*\*)?(?:[:：-])?\s*(.*)$/i,
     ];
 
     return patterns

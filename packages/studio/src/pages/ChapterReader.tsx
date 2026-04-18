@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { fetchJson, useApi, postApi } from "../hooks/use-api";
+import { useEffect, useState } from "react";
+import { fetchJson, useApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { defaultLocalizedChapterTitle, localizeChapterTitle } from "../shared/chapter-title";
-import type { ReaderSettings } from "../shared/contracts";
+import type { ChapterInlineReviewThreadPayload, ReaderSettings } from "../shared/contracts";
 import {
   buildReaderSettingsDiff,
   normalizeReaderSettings,
@@ -13,6 +13,14 @@ import {
   type ReaderSettingField,
   type ReaderSettingsDiffItem,
 } from "../shared/reader-settings";
+import {
+  buildInlineReviewQuote,
+  deriveInlineReviewRangeFromSelection,
+  formatInlineReviewRange,
+  splitInlineReviewLines,
+  summarizeInlineReviewThreads,
+  type InlineReviewDecision,
+} from "../shared/inline-review";
 import {
   CheckCircle2,
   Clock,
@@ -32,6 +40,15 @@ import {
 interface ChapterReaderData {
   readonly chapterNumber: number;
   readonly filename: string;
+  readonly fileName?: string | null;
+  readonly title?: string;
+  readonly status?: string;
+  readonly wordCount?: number;
+  readonly auditIssueCount?: number;
+  readonly updatedAt?: string;
+  readonly auditIssues?: ReadonlyArray<string>;
+  readonly reviewNote?: string;
+  readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
   readonly content: string;
   readonly language?: "ko" | "zh" | "en";
   readonly readerSettings?: ReaderSettings;
@@ -53,6 +70,8 @@ const MIN_READER_FONT_SIZE = 12;
 const MAX_READER_FONT_SIZE = 28;
 const MIN_READER_LINE_HEIGHT = 1.3;
 const MAX_READER_LINE_HEIGHT = 2.2;
+const CHAPTER_INLINE_REVIEW_TARGET_ID = "chapter";
+const CHAPTER_INLINE_REVIEW_TARGET_LABEL = "Chapter Manuscript";
 
 function buildChapterReaderText(data: Pick<ChapterReaderData, "chapterNumber" | "content" | "language">): ChapterReaderText {
   const lines = data.content.split("\n");
@@ -75,6 +94,29 @@ function buildChapterReaderText(data: Pick<ChapterReaderData, "chapterNumber" | 
 
 function readerDeviceLabel(device: ReaderDeviceScope, t: TFunction): string {
   return device === "mobile" ? t("reader.mobile") : t("reader.desktop");
+}
+
+function inlineReviewDecisionLabel(decision: InlineReviewDecision, t: TFunction): string {
+  if (decision === "approve") return t("cockpit.inlineReviewApprove");
+  if (decision === "request-change") return t("cockpit.inlineReviewRequestChanges");
+  return t("cockpit.inlineReviewComment");
+}
+
+function inlineReviewSummaryLabel(
+  threads: ReadonlyArray<ChapterInlineReviewThreadPayload>,
+  t: TFunction,
+): string {
+  const summary = summarizeInlineReviewThreads(threads.map((thread) => ({
+    ...thread,
+    targetId: CHAPTER_INLINE_REVIEW_TARGET_ID,
+    targetLabel: CHAPTER_INLINE_REVIEW_TARGET_LABEL,
+    status: "open" as const,
+  })), CHAPTER_INLINE_REVIEW_TARGET_ID);
+  if (summary.status === "approved") return t("cockpit.inlineReviewSummaryApproved");
+  if (summary.status === "changes-requested") return t("cockpit.inlineReviewSummaryChangesRequested");
+  if (summary.status === "mixed") return t("cockpit.inlineReviewSummaryMixed");
+  if (summary.status === "commented") return t("cockpit.inlineReviewSummaryCommented");
+  return t("cockpit.inlineReviewSummaryIdle");
 }
 
 function readerFieldLabel(field: ReaderSettingField, t: TFunction): string {
@@ -374,6 +416,173 @@ function ReaderSettingsPanel({
   );
 }
 
+function ChapterInlineReviewPanel({
+  t,
+  content,
+  threads,
+  selectionRange,
+  decision,
+  note,
+  saving,
+  hasOpenRequestChanges,
+  hasUnsavedTextChanges,
+  onDecisionChange,
+  onNoteChange,
+  onAddThread,
+  onRemoveThread,
+  onClearSelection,
+}: {
+  readonly t: TFunction;
+  readonly content: string;
+  readonly threads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly selectionRange: { readonly startLine: number; readonly endLine: number } | null;
+  readonly decision: InlineReviewDecision;
+  readonly note: string;
+  readonly saving: boolean;
+  readonly hasOpenRequestChanges: boolean;
+  readonly hasUnsavedTextChanges: boolean;
+  readonly onDecisionChange: (decision: InlineReviewDecision) => void;
+  readonly onNoteChange: (value: string) => void;
+  readonly onAddThread: () => void;
+  readonly onRemoveThread: (threadId: string) => void;
+  readonly onClearSelection: () => void;
+}) {
+  const lines = splitInlineReviewLines(content);
+  const selectedLines = selectionRange
+    ? lines.slice(selectionRange.startLine - 1, selectionRange.endLine)
+    : [];
+  const summary = summarizeInlineReviewThreads(threads.map((thread) => ({
+    ...thread,
+    targetId: CHAPTER_INLINE_REVIEW_TARGET_ID,
+    targetLabel: CHAPTER_INLINE_REVIEW_TARGET_LABEL,
+    status: "open" as const,
+  })), CHAPTER_INLINE_REVIEW_TARGET_ID);
+
+  return (
+    <aside className="h-fit rounded-2xl border border-border/60 bg-card/95 p-5 shadow-sm xl:sticky xl:top-6">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-foreground">{t("reader.inlineReviewTitle")}</h2>
+          <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {inlineReviewSummaryLabel(threads, t)}
+          </span>
+        </div>
+        <p className="text-sm text-muted-foreground">{t("reader.inlineReviewPanelHint")}</p>
+        <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
+          <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1">
+            {`${t("cockpit.inlineReviewCount")}: ${summary.approvalCount}/${summary.requestChangeCount}/${summary.commentCount}`}
+          </span>
+          {hasOpenRequestChanges ? (
+            <span className="rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-1 text-destructive">
+              {t("reader.inlineReviewApprovalGate")}
+            </span>
+          ) : null}
+          {hasUnsavedTextChanges ? (
+            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-amber-700">
+              {t("reader.inlineReviewSaveGate")}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-border/50 bg-background/70 p-4">
+        {selectionRange ? (
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {t("cockpit.inlineReviewSelection")} {formatInlineReviewRange(selectionRange.startLine, selectionRange.endLine)}
+              </div>
+              <button
+                onClick={onClearSelection}
+                disabled={saving}
+                className="rounded-lg border border-border/50 bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-all hover:text-foreground disabled:opacity-50"
+              >
+                {t("cockpit.inlineReviewClear")}
+              </button>
+            </div>
+            <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-border/50 bg-card/80 px-3 py-2 text-xs leading-6 text-foreground/85">
+              {selectedLines.join("\n") || " "}
+            </pre>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["approve", "request-change", "comment"] as const).map((entry) => (
+                <button
+                  key={`chapter-inline-review-${entry}`}
+                  onClick={() => onDecisionChange(entry)}
+                  disabled={saving}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                    decision === entry
+                      ? "border-primary/40 bg-primary/12 text-foreground"
+                      : "border-border/50 bg-background/70 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {inlineReviewDecisionLabel(entry, t)}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+              placeholder={t("cockpit.inlineReviewPlaceholder")}
+              rows={3}
+              disabled={saving}
+              className="mt-3 w-full rounded-xl border border-border/60 bg-input/40 px-3 py-2 text-sm text-foreground outline-none transition-all focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20 disabled:opacity-50"
+            />
+            <button
+              onClick={onAddThread}
+              disabled={saving}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold shadow-sm disabled:opacity-50 studio-cta"
+            >
+              {saving ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border/30 border-t-ring" /> : <Save size={14} />}
+              {saving ? t("cockpit.inlineReviewSaving") : t("cockpit.inlineReviewAdd")}
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("reader.inlineReviewSelectionHint")}</p>
+        )}
+      </div>
+
+      <div className="mt-6 space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">{t("reader.inlineReviewNotes")}</h3>
+        {threads.length > 0 ? (
+          <div className="space-y-3">
+            {threads.map((thread) => (
+              <div key={thread.id} className="rounded-2xl border border-border/50 bg-background/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-border/50 bg-card/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      {inlineReviewDecisionLabel(thread.decision, t)}
+                    </span>
+                    <span className="text-xs font-semibold text-foreground">
+                      {formatInlineReviewRange(thread.startLine, thread.endLine)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => onRemoveThread(thread.id)}
+                    disabled={saving}
+                    className="rounded-lg border border-border/50 bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-all hover:text-foreground disabled:opacity-50"
+                  >
+                    {t("cockpit.inlineReviewRemove")}
+                  </button>
+                </div>
+                <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-border/50 bg-card/80 px-3 py-2 text-xs leading-6 text-foreground/82">
+                  {thread.quote || " "}
+                </pre>
+                {thread.note ? (
+                  <p className="mt-3 text-sm leading-6 text-foreground/86">{thread.note}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/60 bg-background/40 px-4 py-5 text-sm text-muted-foreground">
+            {t("cockpit.inlineReviewEmpty")}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 export function ChapterReader({
   bookId,
   chapterNumber,
@@ -399,6 +608,17 @@ export function ChapterReader({
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<"approve" | "reject" | null>(null);
+  const [reviewThreads, setReviewThreads] = useState<ReadonlyArray<ChapterInlineReviewThreadPayload>>([]);
+  const [reviewDecision, setReviewDecision] = useState<InlineReviewDecision>("comment");
+  const [reviewNoteDraft, setReviewNoteDraft] = useState("");
+  const [selectionRange, setSelectionRange] = useState<{ readonly startLine: number; readonly endLine: number } | null>(null);
+
+  useEffect(() => {
+    setReviewThreads(data?.reviewThreads ?? []);
+    setReviewDecision("comment");
+    setReviewNoteDraft("");
+    setSelectionRange(null);
+  }, [data?.reviewThreads, data?.content]);
 
   if (loading) {
     return (
@@ -419,17 +639,35 @@ export function ChapterReader({
 
   const savedReaderSettings = normalizeReaderSettings(data.readerSettings);
   const editorStyle = resolveReaderBodyStyle(viewMode, savedReaderSettings);
+  const reviewSummary = summarizeInlineReviewThreads(reviewThreads.map((thread) => ({
+    ...thread,
+    targetId: CHAPTER_INLINE_REVIEW_TARGET_ID,
+    targetLabel: CHAPTER_INLINE_REVIEW_TARGET_LABEL,
+    status: "open" as const,
+  })), CHAPTER_INLINE_REVIEW_TARGET_ID);
+  const hasOpenRequestChanges = reviewSummary.requestChangeCount > 0;
+  const hasUnsavedTextChanges = editing && editContent !== data.content;
+
+  const resetReviewComposer = () => {
+    setReviewDecision("comment");
+    setReviewNoteDraft("");
+    setSelectionRange(null);
+  };
 
   const handleStartEdit = () => {
     setShowReaderSettings(false);
     setDraftReaderSettings(null);
     setEditContent(data.content);
+    setReviewThreads(data.reviewThreads ?? []);
+    resetReviewComposer();
     setEditing(true);
   };
 
   const handleCancelEdit = () => {
     setEditing(false);
     setEditContent("");
+    setReviewThreads(data.reviewThreads ?? []);
+    resetReviewComposer();
   };
 
   const handleSave = async () => {
@@ -438,7 +676,7 @@ export function ChapterReader({
       await fetchJson(`/books/${bookId}/chapters/${chapterNumber}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: editContent }),
+        body: JSON.stringify({ content: editContent, reviewThreads }),
       });
       setEditing(false);
       refetch();
@@ -450,11 +688,23 @@ export function ChapterReader({
   };
 
   const handleApprove = async () => {
+    if (hasOpenRequestChanges) {
+      alert(t("reader.inlineReviewApprovalGate"));
+      return;
+    }
+    if (hasUnsavedTextChanges) {
+      alert(t("reader.inlineReviewSaveGate"));
+      return;
+    }
     await runChapterDecision({
       pendingDecision,
       nextDecision: "approve",
       request: async () => {
-        await postApi(`/books/${bookId}/chapters/${chapterNumber}/approve`);
+        await fetchJson(`/books/${bookId}/chapters/${chapterNumber}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewThreads }),
+        });
       },
       setPendingDecision,
       onSuccess: () => nav.toBook(bookId),
@@ -463,11 +713,19 @@ export function ChapterReader({
   };
 
   const handleReject = async () => {
+    if (hasUnsavedTextChanges) {
+      alert(t("reader.inlineReviewSaveGate"));
+      return;
+    }
     await runChapterDecision({
       pendingDecision,
       nextDecision: "reject",
       request: async () => {
-        await postApi(`/books/${bookId}/chapters/${chapterNumber}/reject`);
+        await fetchJson(`/books/${bookId}/chapters/${chapterNumber}/reject`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewThreads }),
+        });
       },
       setPendingDecision,
       onSuccess: () => nav.toBook(bookId),
@@ -534,6 +792,34 @@ export function ChapterReader({
     } finally {
       setSavingReaderSettings(false);
     }
+  };
+
+  const handleEditorSelection = (target: HTMLTextAreaElement) => {
+    setSelectionRange(
+      deriveInlineReviewRangeFromSelection(target.value, target.selectionStart ?? 0, target.selectionEnd ?? 0),
+    );
+  };
+
+  const handleAddReviewThread = () => {
+    if (!selectionRange) {
+      return;
+    }
+    const lines = splitInlineReviewLines(editContent);
+    const nextThread: ChapterInlineReviewThreadPayload = {
+      id: `chapter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      startLine: selectionRange.startLine,
+      endLine: selectionRange.endLine,
+      decision: reviewDecision,
+      note: reviewNoteDraft.trim(),
+      quote: buildInlineReviewQuote(lines, selectionRange.startLine, selectionRange.endLine),
+      createdAt: new Date().toISOString(),
+    };
+    setReviewThreads((current) => [nextThread, ...current]);
+    resetReviewComposer();
+  };
+
+  const handleRemoveReviewThread = (threadId: string) => {
+    setReviewThreads((current) => current.filter((thread) => thread.id !== threadId));
   };
 
   return (
@@ -613,8 +899,8 @@ export function ChapterReader({
                 onClick={handleCancelEdit}
                 className="flex items-center gap-2 rounded-xl border border-border/50 bg-secondary px-4 py-2 text-xs font-bold text-muted-foreground transition-all hover:text-foreground"
               >
-                <Eye size={14} />
-                {t("reader.preview")}
+                <XCircle size={14} />
+                {t("reader.exitEdit")}
               </button>
             </>
           ) : (
@@ -623,13 +909,13 @@ export function ChapterReader({
               className="flex items-center gap-2 rounded-xl border border-border/50 px-4 py-2 text-xs font-bold transition-all studio-chip"
             >
               <Pencil size={14} />
-              {t("reader.edit")}
+              {t("reader.editWithReview")}
             </button>
           )}
 
           <button
             onClick={handleApprove}
-            disabled={pendingDecision !== null}
+            disabled={pendingDecision !== null || hasOpenRequestChanges || hasUnsavedTextChanges}
             className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-600 shadow-sm transition-all hover:bg-emerald-500 hover:text-white disabled:opacity-50"
           >
             <CheckCircle2 size={14} />
@@ -637,7 +923,7 @@ export function ChapterReader({
           </button>
           <button
             onClick={handleReject}
-            disabled={pendingDecision !== null}
+            disabled={pendingDecision !== null || hasUnsavedTextChanges}
             className="flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-2 text-xs font-bold text-destructive shadow-sm transition-all hover:bg-destructive hover:text-white disabled:opacity-50"
           >
             <XCircle size={14} />
@@ -646,13 +932,41 @@ export function ChapterReader({
         </div>
       </div>
 
-      <div className={showReaderSettings && !editing ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]" : "space-y-6"}>
+      {!editing ? (
+        <div className="rounded-2xl border border-border/60 bg-secondary/35 px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">{t("reader.inlineReviewTitle")}</h2>
+              <p className="text-sm text-muted-foreground">{t("reader.inlineReviewEntryHint")}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
+              <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1">
+                {inlineReviewSummaryLabel(reviewThreads, t)}
+              </span>
+              <span className="rounded-full border border-border/50 bg-background/70 px-2.5 py-1">
+                {`${t("cockpit.inlineReviewCount")}: ${reviewSummary.approvalCount}/${reviewSummary.requestChangeCount}/${reviewSummary.commentCount}`}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={showReaderSettings && !editing
+        ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
+        : editing
+          ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
+          : "space-y-6"}
+      >
         <div className="min-w-0">
           {editing ? (
             <div className="paper-sheet mx-auto w-full max-w-4xl rounded-2xl p-8 shadow-2xl shadow-primary/5">
               <textarea
                 value={editContent}
-                onChange={(event) => setEditContent(event.target.value)}
+                onChange={(event) => {
+                  setEditContent(event.target.value);
+                  handleEditorSelection(event.target);
+                }}
+                onSelect={(event) => handleEditorSelection(event.currentTarget)}
                 className="min-h-[60vh] w-full resize-none rounded-xl border border-border/30 bg-transparent p-6 text-foreground/90 transition-all focus:border-[color:var(--studio-chip-border)] focus:outline-none focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
                 style={{
                   fontFamily: editorStyle.fontFamily,
@@ -672,6 +986,25 @@ export function ChapterReader({
             />
           )}
         </div>
+
+        {editing ? (
+          <ChapterInlineReviewPanel
+            t={t}
+            content={editContent}
+            threads={reviewThreads}
+            selectionRange={selectionRange}
+            decision={reviewDecision}
+            note={reviewNoteDraft}
+            saving={saving || pendingDecision !== null}
+            hasOpenRequestChanges={hasOpenRequestChanges}
+            hasUnsavedTextChanges={hasUnsavedTextChanges}
+            onDecisionChange={setReviewDecision}
+            onNoteChange={setReviewNoteDraft}
+            onAddThread={handleAddReviewThread}
+            onRemoveThread={handleRemoveReviewThread}
+            onClearSelection={resetReviewComposer}
+          />
+        ) : null}
 
         {showReaderSettings && !editing && draftReaderSettings ? (
           <ReaderSettingsPanel

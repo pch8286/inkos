@@ -49,9 +49,22 @@ const strings = {
   "book.noChapters": { zh: "暂无章节，点击「写下一章」开始", en: 'No chapters yet. Click "Write Next" to start.', ko: "아직 장이 없습니다. '다음 장 쓰기'를 눌러 시작하세요." },
   "book.approve": { zh: "通过", en: "Approve", ko: "승인" },
   "book.reject": { zh: "驳回", en: "Reject", ko: "반려" },
+  "book.deleteChapter": { zh: "删除章节", en: "Delete Chapter", ko: "화 삭제" },
+  "book.confirmDeleteChapter": { zh: "确认删除此章节？", en: "Delete this chapter?", ko: "이 화를 삭제할까요?" },
+  "book.confirmDeleteChapterCascade": { zh: "确认删除此章节及之后所有章节？", en: "Delete this chapter and all later chapters?", ko: "이 화와 이후 모든 화를 삭제할까요?" },
+  "book.deleteChapterStateWarning": { zh: "警告: 为了避免故事状态损坏，删除时会回滚并清理后续章节。", en: "Warning: to keep story state consistent, later chapters are rolled back and removed together.", ko: "경고: 스토리 상태가 꼬이지 않도록 이후 화들도 함께 롤백 삭제됩니다." },
   "book.words": { zh: "字", en: "words", ko: "자" },
 
   // Chapter Reader
+  "reader.editWithReview": { zh: "编辑 / 审阅", en: "Edit / Review", ko: "편집 / 리뷰" },
+  "reader.exitEdit": { zh: "退出编辑", en: "Exit Edit", ko: "편집 나가기" },
+  "reader.inlineReviewTitle": { zh: "行级审阅", en: "Line Review", ko: "라인 리뷰" },
+  "reader.inlineReviewEntryHint": { zh: "打开编辑后，直接拖选正文范围即可留下部分通过、修改请求或评论。", en: "Open editing, then drag across the manuscript to leave partial approvals, change requests, or comments.", ko: "편집을 열고 본문을 드래그하면 부분 승인, 수정 요청, 코멘트를 바로 남길 수 있습니다." },
+  "reader.inlineReviewPanelHint": { zh: "在编辑中选中文本范围后，这里的笔记会随保存或驳回一起保留。", en: "Select a range while editing. These notes are saved together when you save or reject the chapter.", ko: "편집 중 본문 범위를 선택하면 여기서 남긴 메모가 저장이나 반려와 함께 유지됩니다." },
+  "reader.inlineReviewSelectionHint": { zh: "先在左侧正文中拖选一段文本，再添加审阅笔记。", en: "Drag across the manuscript on the left, then add a review note here.", ko: "왼쪽 원고에서 범위를 드래그하면 여기서 리뷰 메모를 추가할 수 있습니다." },
+  "reader.inlineReviewNotes": { zh: "审阅笔记", en: "Review Notes", ko: "리뷰 메모" },
+  "reader.inlineReviewApprovalGate": { zh: "还有未解决的修改请求，暂时不能整章通过。", en: "This chapter still has open change requests, so whole-chapter approval stays blocked.", ko: "수정 요청 메모가 남아 있어서 장 전체 승인은 아직 막혀 있습니다." },
+  "reader.inlineReviewSaveGate": { zh: "正文还有未保存的编辑。先保存或退出编辑，再做批准或驳回。", en: "This manuscript has unsaved edits. Save or exit editing before approving or rejecting it.", ko: "원고 수정이 아직 저장되지 않았습니다. 승인이나 반려 전에 먼저 저장하거나 편집을 나가세요." },
   "reader.backToList": { zh: "返回列表", en: "Back to List", ko: "목록으로" },
   "reader.approve": { zh: "通过", en: "Approve", ko: "승인" },
   "reader.reject": { zh: "驳回", en: "Reject", ko: "반려" },
@@ -268,8 +281,11 @@ const strings = {
   "book.titleRequired": { zh: "书名不能为空", en: "Book title is required", ko: "책 제목은 비워둘 수 없습니다" },
   "book.status": { zh: "状态", en: "Status", ko: "상태" },
   "book.drafting": { zh: "草稿中...", en: "Drafting...", ko: "초안 생성 중..." },
+  "book.cancelDraft": { zh: "取消草稿", en: "Cancel Draft", ko: "초안 생성 취소" },
+  "book.cancellingDraft": { zh: "取消中...", en: "Cancelling...", ko: "취소 중..." },
   "book.pipelineWriting": { zh: "后台正在写作，本页会在完成后自动刷新。", en: "Background writing is running. This page will refresh automatically when it finishes.", ko: "백그라운드에서 집필 중입니다. 완료되면 이 페이지가 자동으로 새로고침됩니다." },
   "book.pipelineDrafting": { zh: "后台正在生成草稿，本页会在完成后自动刷新。", en: "Background drafting is running. This page will refresh automatically when it finishes.", ko: "백그라운드에서 초안을 생성 중입니다. 완료되면 이 페이지가 자동으로 새로고침됩니다." },
+  "book.pipelineDraftCancelling": { zh: "已请求取消草稿，完成清理后本页会自动刷新。", en: "Draft cancellation requested. This page will refresh after cleanup finishes.", ko: "초안 취소를 요청했습니다. 정리가 끝나면 이 페이지가 자동으로 새로고침됩니다." },
   "book.actionGuide": { zh: "写下一章会生成下一章并继续审核/修订；仅草稿只会生成下一章草稿，不会覆盖已有章节。", en: "Write Next creates the next chapter and continues through review/revision. Draft Only creates only the next draft and never overwrites an existing chapter.", ko: "다음 장 쓰기는 다음 화를 생성한 뒤 검토와 수정까지 이어집니다. 초안만은 마지막 화 다음 번호로 새 초안만 만들며, 기존 원고를 덮어쓰지 않습니다." },
   "book.pipelineFailed": { zh: "后台任务失败", en: "Background job failed", ko: "백그라운드 작업이 실패했습니다" },
   "book.save": { zh: "保存", en: "Save", ko: "저장" },
@@ -700,6 +716,7 @@ const strings = {
   "logs.activityTitle": { zh: "最近提醒", en: "Recent Alerts", ko: "최근 알림" },
   "logs.activityHint": { zh: "这里展示完整的最近 Studio 活动。顶栏铃铛只显示简要提醒。", en: "This shows the full recent Studio activity feed. The header bell only shows a compact summary.", ko: "여기서는 최근 Studio 활동 전체를 봅니다. 상단 알림 버튼은 요약만 보여줍니다." },
   "logs.fileLogTitle": { zh: "文件日志", en: "File Logs", ko: "파일 로그" },
+  "chapter.rejected": { zh: "驳回", en: "Rejected", ko: "반려" },
 } as const;
 
 export type StringKey = keyof typeof strings;

@@ -196,6 +196,86 @@ describe("ComposerAgent", () => {
     expect(authorIntentEntry?.excerpt).toContain("첫 착각극");
   });
 
+  it("skips placeholder focus text and table headers when composing governed context", async () => {
+    await Promise.all([
+      writeFile(
+        join(storyDir, "current_focus.md"),
+        [
+          "# 현재 포커스",
+          "",
+          "## 현재 중점",
+          "",
+          "(앞으로 1-3화에서 가장 우선해야 할 전개를 적는다.)",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "current_state.md"),
+        [
+          "# 현재 상태",
+          "",
+          "| 항목 | 값 |",
+          "| --- | --- |",
+          "| 현재 위치 | 흑요궁 알현실 왕좌 뒤 비밀 공간 |",
+          "| 현재 목표 | 왕좌 밑에 손을 넣은 궁정 내부자를 특정한다. |",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "volume_outline.md"),
+        [
+          "# 볼륨 아웃라인",
+          "",
+          "| 권 제목 | 화수 범위 | 핵심 갈등 | 주요 전환점 | 회수 목표 |",
+          "| --- | --- | --- | --- | --- |",
+          "| 1권 왕좌 위 첫날 | 1-20 | 빙의 직후 약함을 숨기고 첫 궁정 심판을 버텨야 한다 | 첫 심판에서 네렌을 살린다 | 왕좌 이미지 확립 |",
+          "",
+          "### 초반 3화 설계",
+          "- **1화**: 흑요궁 혈좌조회 한가운데서 시작한다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+    ]);
+
+    plan = {
+      ...plan,
+      intent: {
+        ...plan.intent,
+        chapter: 1,
+        goal: "흑요궁 혈좌조회 한가운데서 첫 심판을 연다.",
+        outlineNode: "흑요궁 혈좌조회 한가운데서 시작한다.",
+        conflicts: [],
+      },
+    };
+
+    const composer = new ComposerAgent({
+      client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await composer.composeChapter({
+      book,
+      bookDir,
+      chapterNumber: 1,
+      plan,
+    });
+
+    const currentFocusEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "story/current_focus.md");
+    const currentStateEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "story/current_state.md");
+    const volumeOutlineEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "story/volume_outline.md");
+
+    expect(currentFocusEntry?.excerpt).toBeUndefined();
+    expect(currentStateEntry?.excerpt).toContain("현재 위치");
+    expect(currentStateEntry?.excerpt).not.toBe("| 항목 | 값 |");
+    expect(volumeOutlineEntry?.excerpt).toContain("흑요궁 혈좌조회");
+    expect(volumeOutlineEntry?.excerpt).not.toBe("| 권 제목 | 화수 범위 | 핵심 갈등 | 주요 전환점 | 회수 목표 |");
+  });
+
   it("emits a rule stack with hard, soft, and diagnostic sections", async () => {
     const composer = new ComposerAgent({
       client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],

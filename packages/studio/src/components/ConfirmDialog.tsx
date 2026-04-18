@@ -64,7 +64,7 @@ export function ConfirmDialog({
 
         {/* Body */}
         <div className="px-6 py-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">{message}</p>
+          <p className={`text-sm leading-relaxed whitespace-pre-line ${isDanger ? "text-foreground" : "text-muted-foreground"}`}>{message}</p>
         </div>
 
         {/* Footer */}

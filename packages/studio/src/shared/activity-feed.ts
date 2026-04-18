@@ -86,7 +86,7 @@ export function buildActivityFeedEntries(
     .filter((message) => message.event !== "ping")
     .filter((message) => options.includeProgress || (message.event !== "llm:progress" && message.event !== "radar:progress"))
     .slice(-80)
-    .reverse()
+    .sort((left, right) => right.timestamp - left.timestamp)
     .map((message, index) => ({
       id: `${message.timestamp}-${message.event}-${index}`,
       event: message.event,

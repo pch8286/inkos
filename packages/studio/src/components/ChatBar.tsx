@@ -615,6 +615,14 @@ export function ChatPanel({
         timestamp: Date.now(),
       }]);
     }
+    if (recent.event === "draft:cancelled") {
+      setLoading(false);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "✗ Draft cancelled",
+        timestamp: Date.now(),
+      }]);
+    }
     if (recent.event === "log" && loading) {
       const msg = d.message as string;
       if (msg && (msg.includes("Phase") || msg.includes("streaming") || msg.includes("Writing") || msg.includes("Audit") || msg.includes("Revis"))) {

@@ -392,17 +392,28 @@ export class ComposerAgent extends BaseAgent {
       if (preferred && content.includes(preferred)) return preferred;
     }
 
-    return content
-      .split("\n")
-      .map((line) => line.trim())
-      .find((line) => line.length > 0 && !line.startsWith("#"));
+    const lines = content.split("\n").map((line) => line.trim());
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]!;
+      if (!this.isMeaningfulDigestLine(line)) {
+        continue;
+      }
+      if (this.isMarkdownTableHeaderRow(line, lines[index + 1])) {
+        continue;
+      }
+      if (this.isMarkdownTableRow(line)) {
+        return this.normalizeMarkdownTableRow(line);
+      }
+      return line;
+    }
+    return undefined;
   }
 
   private pickIntentDigest(content: string, preferredExcerpts: ReadonlyArray<string>): string | undefined {
     const units = content
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith("#"))
+      .filter((line) => this.isMeaningfulDigestLine(line))
       .flatMap((line) => line.split(/(?<=[.!?。！？])\s+|\s*;\s*|\s*；\s*/))
       .map((line) => line.replace(/^[-*+]\s*/, "").trim())
       .filter((line) => line.length > 0);
@@ -481,13 +492,54 @@ export class ComposerAgent extends BaseAgent {
   }
 
   private isStoryBibleDigestLine(line: string): boolean {
-    if (!line || line.startsWith("#")) {
+    if (!this.isMeaningfulDigestLine(line)) {
       return false;
     }
-    if (/^\|(?:\s*:?-+:?\s*\|)+$/.test(line)) {
+    if (this.isMarkdownTableRow(line)) {
       return false;
     }
     return true;
+  }
+
+  private isMeaningfulDigestLine(line: string): boolean {
+    if (!line || line.startsWith("#") || this.isTemplatePlaceholder(line)) {
+      return false;
+    }
+    if (this.isMarkdownTableSeparator(line)) {
+      return false;
+    }
+    return true;
+  }
+
+  private isTemplatePlaceholder(line: string): boolean {
+    const normalized = line.trim();
+    if (!normalized) return false;
+
+    return (
+      /^\((describe|briefly describe|write)\b[\s\S]*\)$/i.test(normalized)
+      || /^\((?:앞으로|여기에|여기서|이번 화|이 장면|적는다|작성한다)[\s\S]*\)$/u.test(normalized)
+      || /^（(?:在这里描述|描述|填写|写下)[\s\S]*）$/u.test(normalized)
+    );
+  }
+
+  private isMarkdownTableSeparator(line: string): boolean {
+    return /^\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(line);
+  }
+
+  private isMarkdownTableRow(line: string): boolean {
+    return /^\|.*\|$/.test(line);
+  }
+
+  private isMarkdownTableHeaderRow(line: string, nextLine?: string): boolean {
+    return this.isMarkdownTableRow(line) && this.isMarkdownTableSeparator(nextLine?.trim() ?? "");
+  }
+
+  private normalizeMarkdownTableRow(line: string): string {
+    return line
+      .split("|")
+      .map((cell) => cell.trim())
+      .filter(Boolean)
+      .join(" | ");
   }
 
   private toFactAnchor(predicate: string): string {

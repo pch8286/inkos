@@ -1274,6 +1274,76 @@ describe("PlannerAgent", () => {
     await expect(readFile(result.runtimePath, "utf-8")).resolves.toContain("## Narrative Engine");
   });
 
+  it("extracts chapter-one directives from markdown tables instead of falling back to header rows", async () => {
+    book = {
+      ...book,
+      genre: "other",
+      language: "ko",
+    };
+
+    await Promise.all([
+      writeFile(
+        join(storyDir, "author_intent.md"),
+        [
+          "# 작가 의도",
+          "",
+          "정치 판타지/착각물/다크 판타지/잠입 서사 성격이 강하다.",
+          "미래에 토벌당할 마왕의 몸에 빙의한 주인공은 세계 정복 자체보다 마왕이라는 역할을 끝까지 유지한 채 세계의 판을 물밑에서 주무르는 데 더 큰 흥미를 느낀다.",
+          "핵심 엔진은 주인공의 진지한 마왕 컨셉 행동이 주변에 의해 거대한 대계로 오해되고, 그 오해가 실제 정치적 성과를 낳는 구조다.",
+          "초반에는 빙의 직후 첫 착각극을 세우고, 이후 용사 파티 잠입으로 이어지는 구조를 바탕으로 설계한다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "current_focus.md"),
+        [
+          "# 현재 포커스",
+          "",
+          "## 현재 중점",
+          "",
+          "(앞으로 1-3화에서 가장 우선해야 할 전개를 적는다.)",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "volume_outline.md"),
+        [
+          "# 볼륨 아웃라인",
+          "",
+          "| 권 제목 | 화수 범위 | 핵심 갈등 | 주요 전환점 | 회수 목표 |",
+          "| --- | --- | --- | --- | --- |",
+          "| 1권 왕좌 위 첫날 | 1-20 | 빙의 직후 약함을 숨기고 첫 궁정 심판을 버텨야 한다 | 첫 심판에서 하급 기록관 네렌을 살리고 승전 귀족을 처형해 궁정을 얼린다; 브라카스와 첫 공개 충돌 | 왕좌 이미지 확립 |",
+          "",
+          "### 초반 3화 설계",
+          "- **1화**: 흑요궁 혈좌조회 한가운데서 시작한다. 카시르는 빙의 직후, 반역 혐의로 끌려온 하급 기록관 네렌과 전공을 내세운 귀족 장수 중 누구를 살리고 누구를 버릴지 즉시 판결해야 한다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+    ]);
+
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await planner.planChapter({
+      book,
+      bookDir,
+      chapterNumber: 1,
+    });
+
+    expect(result.intent.goal).toContain("흑요궁 혈좌조회");
+    expect(result.intent.goal).not.toContain("| 권 제목 |");
+    expect(result.intent.outlineNode).toContain("흑요궁 혈좌조회");
+    expect(result.intent.sceneDirective).toContain("빙의 직후");
+    expect(result.intent.sceneDirective).toContain("첫 착각극");
+  });
+
   it("builds stale debt agenda from broader active hooks than the retrieval subset", async () => {
     const stateDir = join(storyDir, "state");
     await mkdir(stateDir, { recursive: true });

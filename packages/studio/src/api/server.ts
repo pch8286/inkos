@@ -46,6 +46,7 @@ import type {
   BookSetupReviewThreadPayload,
   BookSetupReviewThreadsRequest,
   BookSetupSessionListPayload,
+  ChapterInlineReviewThreadPayload,
   ReaderSettings,
   TruthSaveRequest,
   TruthWriteScope,
@@ -147,6 +148,8 @@ const BOOK_SETUP_SESSION_LIMIT = 24;
 const BOOK_SETUP_SESSION_STORE_DIR = join(".inkos", "studio", "book-setup");
 const BOOK_SETUP_SESSION_STORE_KIND = "inkos-book-setup-session";
 const BOOK_SETUP_SESSION_STORE_VERSION = 1;
+const CHAPTER_INLINE_REVIEW_KIND = "chapter-inline-review";
+const CHAPTER_INLINE_REVIEW_VERSION = 1;
 type StudioLanguage = "ko" | "zh" | "en";
 type CliOAuthProvider = "gemini-cli" | "codex-cli";
 
@@ -154,6 +157,12 @@ interface StoredBookSetupSession {
   readonly kind: typeof BOOK_SETUP_SESSION_STORE_KIND;
   readonly version: typeof BOOK_SETUP_SESSION_STORE_VERSION;
   readonly session: BookSetupSessionRecord;
+}
+
+interface StoredChapterInlineReviewNote {
+  readonly kind: typeof CHAPTER_INLINE_REVIEW_KIND;
+  readonly version: typeof CHAPTER_INLINE_REVIEW_VERSION;
+  readonly threads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -289,99 +298,37 @@ function inferLegacyBookSetupFoundationPreviewDigest(
   }
   return undefined;
 }
-function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessionRecord {
+
+function isChapterInlineReviewThreadPayloadValue(value: unknown): value is ChapterInlineReviewThreadPayload {
   return isObjectRecord(value)
     && typeof value.id === "string"
-    && typeof value.revision === "number"
-    && Number.isInteger(value.revision)
-    && value.revision > 0
-    && isBookSetupSessionStatus(value.status)
-    && typeof value.bookId === "string"
-    && typeof value.title === "string"
-    && typeof value.genre === "string"
-    && isStudioLanguage(value.language)
-    && typeof value.platform === "string"
-    && typeof value.chapterWordCount === "number"
-    && typeof value.targetChapters === "number"
-    && typeof value.brief === "string"
-    && isBookSetupProposalPayloadValue(value.proposal)
-    && (value.previousProposal === undefined || isBookSetupProposalPayloadValue(value.previousProposal))
-    && Array.isArray(value.reviewThreads)
-    && value.reviewThreads.every((thread) => isBookSetupReviewThreadPayloadValue(thread))
-    && typeof value.externalContext === "string"
-    && typeof value.createdAt === "string"
-    && typeof value.updatedAt === "string"
-    && (value.foundationPreview === undefined || isBookSetupFoundationPreviewPayloadValue(value.foundationPreview))
-    && (value.exactProposal === undefined || isExactBookProposal(value.exactProposal));
+    && value.id.trim().length > 0
+    && typeof value.startLine === "number"
+    && Number.isInteger(value.startLine)
+    && value.startLine > 0
+    && typeof value.endLine === "number"
+    && Number.isInteger(value.endLine)
+    && value.endLine > 0
+    && value.startLine <= value.endLine
+    && isBookSetupReviewDecision(value.decision)
+    && typeof value.note === "string"
+    && typeof value.quote === "string"
+    && typeof value.createdAt === "string";
 }
 
-function normalizeBookSetupReviewThreads(value: unknown): ReadonlyArray<BookSetupReviewThreadPayload> {
+function normalizeChapterInlineReviewThreads(value: unknown): ReadonlyArray<ChapterInlineReviewThreadPayload> {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
-    .filter((thread): thread is BookSetupReviewThreadPayload => isBookSetupReviewThreadPayloadValue(thread))
+    .filter((thread): thread is ChapterInlineReviewThreadPayload => isChapterInlineReviewThreadPayloadValue(thread))
     .map((thread) => ({
       ...thread,
       id: thread.id.trim(),
-      targetId: thread.targetId.trim(),
-      targetLabel: thread.targetLabel.trim(),
       note: thread.note.trim(),
       quote: thread.quote.trim(),
-      resolvedAt: thread.status === "resolved"
-        ? (typeof thread.resolvedAt === "string" && thread.resolvedAt.trim().length > 0 ? thread.resolvedAt : thread.createdAt)
-        : null,
     }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-}
-
-function hasRequestChangesInReviewThreads(
-  threads: ReadonlyArray<BookSetupReviewThreadPayload>,
-  scope: "proposal" | "foundation",
-): boolean {
-  return threads.some((thread) => thread.status === "open"
-    && thread.decision === "request-change"
-    && (scope === "proposal" ? thread.targetId === "proposal" : thread.targetId.startsWith("foundation:")));
-}
-
-function didResolveFoundationReviewRequestChange(
-  previousThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
-  nextThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
-): boolean {
-  const previousOpenRequestIds = new Set(
-    previousThreads
-      .filter((thread) => thread.status === "open" && thread.decision === "request-change" && thread.targetId.startsWith("foundation:"))
-      .map((thread) => thread.id),
-  );
-  return nextThreads.some((thread) => previousOpenRequestIds.has(thread.id) && thread.status === "resolved");
-}
-
-function isStoredBookSetupSession(value: unknown): value is StoredBookSetupSession {
-  return isObjectRecord(value)
-    && value.kind === BOOK_SETUP_SESSION_STORE_KIND
-    && value.version === BOOK_SETUP_SESSION_STORE_VERSION
-    && isBookSetupSessionRecordValue(value.session);
-}
-
-function inferLegacyBookSetupSessionRevision(session: Record<string, unknown>): number {
-  if (typeof session.revision === "number" && Number.isInteger(session.revision) && session.revision > 0) {
-    return session.revision;
-  }
-  if (session.status === "creating") {
-    return 4;
-  }
-  if (session.foundationPreview && typeof session.foundationPreview === "object") {
-    return 3;
-  }
-  if (session.status === "approved") {
-    return 2;
-  }
-  return 1;
-}
-
-function normalizeReaderSettings(value: unknown): ReaderSettings | null {
-  const parsed = ReaderSettingsSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
 }
 
 function isStructuralGateFinding(value: unknown): value is {
@@ -485,6 +432,153 @@ async function loadStructuralGateSummary(
   } catch {
     return null;
   }
+}
+
+function serializeChapterInlineReviewNote(threads: ReadonlyArray<ChapterInlineReviewThreadPayload>): string | undefined {
+  if (threads.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify({
+    kind: CHAPTER_INLINE_REVIEW_KIND,
+    version: CHAPTER_INLINE_REVIEW_VERSION,
+    threads,
+  } satisfies StoredChapterInlineReviewNote);
+}
+
+function parseChapterInlineReviewNote(reviewNote?: string): {
+  readonly reviewNote?: string;
+  readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+} {
+  if (!reviewNote || reviewNote.trim().length === 0) {
+    return { reviewNote: undefined, reviewThreads: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(reviewNote) as {
+      kind?: unknown;
+      version?: unknown;
+      threads?: unknown;
+    };
+    if (parsed.kind !== CHAPTER_INLINE_REVIEW_KIND || parsed.version !== CHAPTER_INLINE_REVIEW_VERSION) {
+      return { reviewNote, reviewThreads: [] };
+    }
+
+    const reviewThreads = normalizeChapterInlineReviewThreads(parsed.threads);
+    return {
+      reviewNote: undefined,
+      reviewThreads,
+    };
+  } catch {
+    return { reviewNote, reviewThreads: [] };
+  }
+}
+
+function readChapterInlineReviewThreads(
+  body: { readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> } | null | undefined,
+): ReadonlyArray<ChapterInlineReviewThreadPayload> | undefined {
+  if (body?.reviewThreads === undefined) {
+    return undefined;
+  }
+  const reviewThreads = normalizeChapterInlineReviewThreads(body.reviewThreads);
+  if (reviewThreads.length !== body.reviewThreads.length) {
+    throw new ApiError(400, "CHAPTER_INVALID_REVIEW_THREADS", "Chapter review includes invalid line notes.");
+  }
+  return reviewThreads;
+}
+
+function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessionRecord {
+  return isObjectRecord(value)
+    && typeof value.id === "string"
+    && typeof value.revision === "number"
+    && Number.isInteger(value.revision)
+    && value.revision > 0
+    && isBookSetupSessionStatus(value.status)
+    && typeof value.bookId === "string"
+    && typeof value.title === "string"
+    && typeof value.genre === "string"
+    && isStudioLanguage(value.language)
+    && typeof value.platform === "string"
+    && typeof value.chapterWordCount === "number"
+    && typeof value.targetChapters === "number"
+    && typeof value.brief === "string"
+    && isBookSetupProposalPayloadValue(value.proposal)
+    && (value.previousProposal === undefined || isBookSetupProposalPayloadValue(value.previousProposal))
+    && Array.isArray(value.reviewThreads)
+    && value.reviewThreads.every((thread) => isBookSetupReviewThreadPayloadValue(thread))
+    && typeof value.externalContext === "string"
+    && typeof value.createdAt === "string"
+    && typeof value.updatedAt === "string"
+    && (value.foundationPreview === undefined || isBookSetupFoundationPreviewPayloadValue(value.foundationPreview))
+    && (value.exactProposal === undefined || isExactBookProposal(value.exactProposal));
+}
+
+function normalizeBookSetupReviewThreads(value: unknown): ReadonlyArray<BookSetupReviewThreadPayload> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((thread): thread is BookSetupReviewThreadPayload => isBookSetupReviewThreadPayloadValue(thread))
+    .map((thread) => ({
+      ...thread,
+      id: thread.id.trim(),
+      targetId: thread.targetId.trim(),
+      targetLabel: thread.targetLabel.trim(),
+      note: thread.note.trim(),
+      quote: thread.quote.trim(),
+      resolvedAt: thread.status === "resolved"
+        ? (typeof thread.resolvedAt === "string" && thread.resolvedAt.trim().length > 0 ? thread.resolvedAt : thread.createdAt)
+        : null,
+    }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+function hasRequestChangesInReviewThreads(
+  threads: ReadonlyArray<BookSetupReviewThreadPayload>,
+  scope: "proposal" | "foundation",
+): boolean {
+  return threads.some((thread) => thread.status === "open"
+    && thread.decision === "request-change"
+    && (scope === "proposal" ? thread.targetId === "proposal" : thread.targetId.startsWith("foundation:")));
+}
+
+function didResolveFoundationReviewRequestChange(
+  previousThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+  nextThreads: ReadonlyArray<BookSetupReviewThreadPayload>,
+): boolean {
+  const previousOpenRequestIds = new Set(
+    previousThreads
+      .filter((thread) => thread.status === "open" && thread.decision === "request-change" && thread.targetId.startsWith("foundation:"))
+      .map((thread) => thread.id),
+  );
+  return nextThreads.some((thread) => previousOpenRequestIds.has(thread.id) && thread.status === "resolved");
+}
+
+function isStoredBookSetupSession(value: unknown): value is StoredBookSetupSession {
+  return isObjectRecord(value)
+    && value.kind === BOOK_SETUP_SESSION_STORE_KIND
+    && value.version === BOOK_SETUP_SESSION_STORE_VERSION
+    && isBookSetupSessionRecordValue(value.session);
+}
+
+function inferLegacyBookSetupSessionRevision(session: Record<string, unknown>): number {
+  if (typeof session.revision === "number" && Number.isInteger(session.revision) && session.revision > 0) {
+    return session.revision;
+  }
+  if (session.status === "creating") {
+    return 4;
+  }
+  if (session.foundationPreview && typeof session.foundationPreview === "object") {
+    return 3;
+  }
+  if (session.status === "approved") {
+    return 2;
+  }
+  return 1;
+}
+
+function normalizeReaderSettings(value: unknown): ReaderSettings | null {
+  const parsed = ReaderSettingsSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord | null {
@@ -2492,6 +2586,10 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   let cachedConfig = initialConfig;
   let radarScanInFlight: Promise<void> | null = null;
   let recentActivity: Array<{ event: string; data: unknown; timestamp: number }> = [];
+  const activeDrafts = new Map<string, {
+    readonly baselineChapterNumber: number;
+    cancelRequested: boolean;
+  }>();
   let radarState: RadarStatusSummary = {
     status: "idle",
     mode: "market-trends",
@@ -2512,6 +2610,11 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const [latest] = await readRadarHistory(root, 1);
     if (!latest) return;
     radarState = radarStatusFromHistory(latest);
+  }
+
+  async function loadLatestChapterNumber(bookId: string): Promise<number> {
+    const chapterIndex = await state.loadChapterIndex(bookId).catch(() => []);
+    return chapterIndex.reduce((max, chapter) => Math.max(max, chapter.number), 0);
   }
 
   app.use("/*", cors());
@@ -2542,6 +2645,18 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     }
     await next();
   });
+
+  async function acquireDeleteGuard(bookId: string): Promise<() => Promise<void>> {
+    try {
+      return await state.acquireBookLock(bookId);
+    } catch {
+      throw new ApiError(
+        409,
+        "BOOK_BUSY",
+        `Book "${bookId}" is busy with a write/revise task. Wait for it to finish before deleting.`,
+      );
+    }
+  }
 
   // Logger sink that broadcasts to SSE
   const sseSink: LogSink = {
@@ -3409,9 +3524,21 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       if (!match) return c.json({ error: "Chapter not found" }, 404);
       const content = await readFile(join(chaptersDir, match), "utf-8");
       const book = await state.loadBookConfig(id);
+      const chapterIndex = await state.loadChapterIndex(id).catch(() => []);
+      const chapterMeta = chapterIndex.find((entry) => entry.number === num);
+      const parsedReview = parseChapterInlineReviewNote(chapterMeta?.reviewNote);
       return c.json({
         chapterNumber: num,
         filename: match,
+        title: chapterMeta?.title ?? match,
+        status: chapterMeta?.status ?? "drafted",
+        wordCount: chapterMeta?.wordCount ?? 0,
+        auditIssueCount: chapterMeta?.auditIssues.length ?? 0,
+        updatedAt: chapterMeta?.updatedAt ?? new Date().toISOString(),
+        fileName: match,
+        auditIssues: chapterMeta?.auditIssues ?? [],
+        reviewNote: parsedReview.reviewNote,
+        reviewThreads: parsedReview.reviewThreads,
         content,
         language: book.language ?? "ko",
         readerSettings: book.readerSettings,
@@ -3428,19 +3555,69 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const num = parseInt(c.req.param("num"), 10);
     const bookDir = state.bookDir(id);
     const chaptersDir = join(bookDir, "chapters");
-    const { content } = await c.req.json<{ content: string }>();
+    const body = await c.req.json<{ content: string; reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> }>();
+    const { content } = body;
 
     try {
       const files = await readdir(chaptersDir);
       const paddedNum = String(num).padStart(4, "0");
       const match = files.find((f) => f.startsWith(paddedNum) && f.endsWith(".md"));
       if (!match) return c.json({ error: "Chapter not found" }, 404);
+      const reviewThreads = readChapterInlineReviewThreads(body);
 
       const { writeFile: writeFileFs } = await import("node:fs/promises");
       await writeFileFs(join(chaptersDir, match), content, "utf-8");
+      if (reviewThreads !== undefined) {
+        const updatedAt = new Date().toISOString();
+        const index = await state.loadChapterIndex(id).catch(() => []);
+        const updated = index.map((chapter) => chapter.number === num
+          ? {
+            ...chapter,
+            updatedAt,
+            reviewNote: serializeChapterInlineReviewNote(reviewThreads),
+          }
+          : chapter);
+        if (updated.length > 0) {
+          await state.saveChapterIndex(id, updated);
+        }
+      }
       return c.json({ ok: true, chapterNumber: num });
     } catch (e) {
+      if (e instanceof ApiError) {
+        return c.json({ error: { code: e.code, message: e.message } }, e.status as 400);
+      }
       return c.json({ error: String(e) }, 500);
+    }
+  });
+
+  app.delete("/api/books/:id/chapters/:num", async (c) => {
+    const id = c.req.param("id");
+    const num = parseInt(c.req.param("num"), 10);
+    if (!Number.isInteger(num) || num < 1) {
+      return c.json({ error: "Invalid chapter number" }, 400);
+    }
+
+    const chapterIndex = await state.loadChapterIndex(id).catch(() => []);
+    const chapter = chapterIndex.find((entry) => entry.number === num);
+    if (!chapter) {
+      return c.json({ error: "Chapter not found" }, 404);
+    }
+
+    const releaseLock = await acquireDeleteGuard(id);
+    try {
+      const deletedChapterNumbers = [...await state.rollbackToChapter(id, num - 1)];
+      broadcast("chapter:deleted", {
+        bookId: id,
+        chapterNumber: num,
+        deletedChapterNumbers,
+      });
+      return c.json({ ok: true, bookId: id, chapterNumber: num, deletedChapterNumbers });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      const status = message.includes("Cannot restore snapshot") ? 409 : 500;
+      return c.json({ error: message }, status);
+    } finally {
+      await releaseLock();
     }
   });
 
@@ -3746,20 +3923,91 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   app.post("/api/books/:id/draft", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json<{ wordCount?: number; context?: string }>().catch(() => ({ wordCount: undefined, context: undefined }));
+    if (activeDrafts.has(id)) {
+      return c.json({ error: "Draft already in progress" }, 409);
+    }
+
+    const activeDraft = {
+      baselineChapterNumber: await loadLatestChapterNumber(id),
+      cancelRequested: false,
+    };
+    activeDrafts.set(id, activeDraft);
 
     broadcast("draft:start", { bookId: id });
 
-    const pipeline = new PipelineRunner(await buildPipelineConfig());
-    pipeline.writeDraft(id, body.context, body.wordCount).then(
-      (result) => {
-        broadcast("draft:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount });
-      },
-      (e: unknown) => {
-        broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
-      },
-    );
+    try {
+      const pipeline = new PipelineRunner(await buildPipelineConfig());
+      pipeline.writeDraft(id, body.context, body.wordCount).then(
+        async (result) => {
+          if (activeDrafts.get(id) !== activeDraft) {
+            return;
+          }
 
-    return c.json({ status: "drafting", bookId: id });
+          activeDrafts.delete(id);
+          if (activeDraft.cancelRequested) {
+            try {
+              const deletedChapterNumbers = [...await state.rollbackToChapter(id, activeDraft.baselineChapterNumber)];
+              broadcast("draft:cancelled", {
+                bookId: id,
+                chapterNumber: result.chapterNumber,
+                deletedChapterNumbers,
+              });
+            } catch (rollbackError) {
+              broadcast("draft:error", {
+                bookId: id,
+                error: rollbackError instanceof Error
+                  ? rollbackError.message
+                  : String(rollbackError),
+              });
+            }
+            return;
+          }
+
+          broadcast("draft:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount });
+        },
+        async (e: unknown) => {
+          if (activeDrafts.get(id) === activeDraft) {
+            activeDrafts.delete(id);
+          }
+
+          if (activeDraft.cancelRequested) {
+            try {
+              const deletedChapterNumbers = [...await state.rollbackToChapter(id, activeDraft.baselineChapterNumber)];
+              broadcast("draft:cancelled", {
+                bookId: id,
+                deletedChapterNumbers,
+              });
+            } catch {
+              // Keep cancellation semantics when the draft never produced a restorable snapshot.
+              broadcast("draft:cancelled", { bookId: id });
+            }
+            return;
+          }
+
+          broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
+        },
+      );
+      return c.json({ status: "drafting", bookId: id });
+    } catch (e) {
+      activeDrafts.delete(id);
+      broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  });
+
+  app.delete("/api/books/:id/draft", async (c) => {
+    const id = c.req.param("id");
+    const activeDraft = activeDrafts.get(id);
+    if (!activeDraft) {
+      return c.json({ error: "Draft is not running" }, 409);
+    }
+
+    if (!activeDraft.cancelRequested) {
+      activeDraft.cancelRequested = true;
+      broadcast("draft:cancel-requested", { bookId: id });
+    }
+
+    return c.json({ status: "cancelling", bookId: id });
   });
 
   app.post("/api/books/:id/chapters/:num/approve", async (c) => {
@@ -3767,13 +4015,26 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const num = parseInt(c.req.param("num"), 10);
 
     try {
+      const body = await c.req.json<{ reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> }>().catch(() => ({}));
+      const reviewThreads = readChapterInlineReviewThreads(body);
       const index = await state.loadChapterIndex(id);
+      const updatedAt = new Date().toISOString();
       const updated = index.map((ch) =>
-        ch.number === num ? { ...ch, status: "approved" as const } : ch,
+        ch.number === num
+          ? {
+            ...ch,
+            status: "approved" as const,
+            updatedAt,
+            reviewNote: reviewThreads === undefined ? undefined : serializeChapterInlineReviewNote(reviewThreads),
+          }
+          : ch,
       );
       await state.saveChapterIndex(id, updated);
       return c.json({ ok: true, chapterNumber: num, status: "approved" });
     } catch (e) {
+      if (e instanceof ApiError) {
+        return c.json({ error: { code: e.code, message: e.message } }, e.status as 400);
+      }
       return c.json({ error: String(e) }, 500);
     }
   });
@@ -3783,13 +4044,26 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const num = parseInt(c.req.param("num"), 10);
 
     try {
+      const body = await c.req.json<{ reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> }>().catch(() => ({}));
+      const reviewThreads = readChapterInlineReviewThreads(body);
       const index = await state.loadChapterIndex(id);
+      const updatedAt = new Date().toISOString();
       const updated = index.map((ch) =>
-        ch.number === num ? { ...ch, status: "rejected" as const } : ch,
+        ch.number === num
+          ? {
+            ...ch,
+            status: "rejected" as const,
+            updatedAt,
+            reviewNote: reviewThreads === undefined ? ch.reviewNote : serializeChapterInlineReviewNote(reviewThreads),
+          }
+          : ch,
       );
       await state.saveChapterIndex(id, updated);
       return c.json({ ok: true, chapterNumber: num, status: "rejected" });
     } catch (e) {
+      if (e instanceof ApiError) {
+        return c.json({ error: { code: e.code, message: e.message } }, e.status as 400);
+      }
       return c.json({ error: String(e) }, 500);
     }
   });
@@ -4463,6 +4737,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.delete("/api/books/:id", async (c) => {
     const id = c.req.param("id");
+    const releaseLock = await acquireDeleteGuard(id);
     const bookDir = state.bookDir(id);
     try {
       const { rm } = await import("node:fs/promises");
@@ -4471,6 +4746,8 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       return c.json({ ok: true, bookId: id });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
+    } finally {
+      await releaseLock();
     }
   });
 
@@ -4525,13 +4802,11 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   app.post("/api/books/:id/rewrite/:chapter", async (c) => {
     const id = c.req.param("id");
     const chapterNum = parseInt(c.req.param("chapter"), 10);
+    const rollbackTarget = Math.max(0, chapterNum - 1);
 
     broadcast("rewrite:start", { bookId: id, chapter: chapterNum });
     try {
-      const restored = await state.restoreState(id, chapterNum);
-      if (!restored) {
-        return c.json({ error: `Cannot restore state to chapter ${chapterNum}` }, 400);
-      }
+      await state.rollbackToChapter(id, rollbackTarget);
       const pipeline = new PipelineRunner(await buildPipelineConfig());
       pipeline.writeNextChapter(id).then(
         (result) => broadcast("rewrite:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount }),
