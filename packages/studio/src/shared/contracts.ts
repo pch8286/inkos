@@ -56,6 +56,7 @@ export interface BookDetail extends BookSummary {
   readonly createdAt: string;
   readonly chapterWordCount: number;
   readonly language: "ko" | "zh" | "en" | null;
+  readonly fanficMode?: string | null;
   readonly readerSettings?: ReaderSettings;
 }
 
