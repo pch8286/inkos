@@ -19,6 +19,13 @@ const ZERO_USAGE = {
   totalTokens: 0,
 } as const;
 
+const CLEAN_STRUCTURAL_GATE = {
+  passed: true,
+  summary: "clean",
+  criticalFindings: [],
+  softFindings: [],
+} as const;
+
 function createAuditResult(overrides?: Partial<AuditResult>): AuditResult {
   return {
     passed: true,
@@ -54,6 +61,7 @@ describe("runChapterReviewCycle", () => {
       bookDir: "/tmp/book",
       chapterNumber: 1,
       initialOutput: {
+        title: "Test Chapter",
         content: "raw draft",
         wordCount: 9,
         postWriteErrors: [{
@@ -67,6 +75,7 @@ describe("runChapterReviewCycle", () => {
       reducedControlInput: undefined,
       initialUsage: ZERO_USAGE,
       createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
       auditor: { auditChapter },
       normalizeDraftLengthIfNeeded,
       assertChapterContentNotEmpty: () => undefined,
@@ -142,6 +151,7 @@ describe("runChapterReviewCycle", () => {
       bookDir: "/tmp/book",
       chapterNumber: 1,
       initialOutput: {
+        title: "Test Chapter",
         content: "original draft",
         wordCount: 13,
         postWriteErrors: [],
@@ -150,6 +160,7 @@ describe("runChapterReviewCycle", () => {
       reducedControlInput: undefined,
       initialUsage: ZERO_USAGE,
       createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
       auditor: { auditChapter },
       normalizeDraftLengthIfNeeded,
       assertChapterContentNotEmpty: () => undefined,
@@ -213,6 +224,7 @@ describe("runChapterReviewCycle", () => {
       bookDir: "/tmp/book",
       chapterNumber: 1,
       initialOutput: {
+        title: "Test Chapter",
         content: "original draft",
         wordCount: 13,
         postWriteErrors: [],
@@ -221,6 +233,7 @@ describe("runChapterReviewCycle", () => {
       reducedControlInput: undefined,
       initialUsage: ZERO_USAGE,
       createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
       auditor: { auditChapter },
       normalizeDraftLengthIfNeeded,
       assertChapterContentNotEmpty: () => undefined,
@@ -264,6 +277,7 @@ describe("runChapterReviewCycle", () => {
       bookDir: "/tmp/book",
       chapterNumber: 1,
       initialOutput: {
+        title: "Test Chapter",
         content: "original draft",
         wordCount: 13,
         postWriteErrors: [],
@@ -272,6 +286,7 @@ describe("runChapterReviewCycle", () => {
       reducedControlInput: undefined,
       initialUsage: ZERO_USAGE,
       createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
       auditor: { auditChapter },
       normalizeDraftLengthIfNeeded: vi.fn().mockResolvedValue({
         content: "original draft",
@@ -295,5 +310,116 @@ describe("runChapterReviewCycle", () => {
     expect(reviseChapter).not.toHaveBeenCalled();
     expect(result.finalContent).toBe("original draft");
     expect(result.revised).toBe(false);
+  });
+
+  it("restores lost critical audit issues even when structural soft warnings exist", async () => {
+    const failingAudit = createAuditResult({
+      passed: false,
+      issues: [{
+        severity: "critical",
+        category: "continuity",
+        description: "critical continuity failure",
+        suggestion: "restore the missing causal link",
+      }],
+      summary: "critical continuity failure",
+    });
+    const auditChapter = vi.fn()
+      .mockResolvedValueOnce(failingAudit)
+      .mockResolvedValueOnce(createAuditResult({
+        passed: false,
+        issues: [],
+        summary: "re-audit lost the issue list",
+      }));
+    const reviseChapter = vi.fn().mockResolvedValue({
+      revisedContent: "revised draft",
+      wordCount: 13,
+      fixedIssues: ["attempted fix"],
+      updatedState: "",
+      updatedLedger: "",
+      updatedHooks: "",
+      tokenUsage: ZERO_USAGE,
+    });
+    const normalizeDraftLengthIfNeeded = vi.fn()
+      .mockResolvedValueOnce({
+        content: "original draft",
+        wordCount: 13,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "revised draft",
+        wordCount: 13,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      });
+
+    const result = await runChapterReviewCycle({
+      book: { genre: "modern-fantasy" },
+      bookDir: "/tmp/book",
+      chapterNumber: 1,
+      initialOutput: {
+        title: "Test Chapter",
+        content: "original draft",
+        wordCount: 13,
+        postWriteErrors: [],
+      },
+      lengthSpec: LENGTH_SPEC,
+      reducedControlInput: undefined,
+      initialUsage: ZERO_USAGE,
+      createReviser: () => ({ reviseChapter }),
+      structuralGate: {
+        evaluateStructuralGate: vi.fn().mockResolvedValue({
+          passed: true,
+          summary: "soft warning only",
+          criticalFindings: [],
+          softFindings: [{
+            severity: "soft" as const,
+            code: "clarity-gap",
+            message: "Scene geography is still vague.",
+            evidence: "The doorway position is unclear.",
+            location: "scene break",
+          }],
+        }),
+      },
+      auditor: { auditChapter },
+      normalizeDraftLengthIfNeeded,
+      assertChapterContentNotEmpty: () => undefined,
+      addUsage: (left, right) => ({
+        promptTokens: left.promptTokens + (right?.promptTokens ?? 0),
+        completionTokens: left.completionTokens + (right?.completionTokens ?? 0),
+        totalTokens: left.totalTokens + (right?.totalTokens ?? 0),
+      }),
+      restoreLostAuditIssues: (_previous, next) => {
+        if (next.passed || next.issues.length > 0) {
+          return next;
+        }
+
+        return {
+          ...next,
+          issues: failingAudit.issues,
+          summary: next.summary || failingAudit.summary,
+        };
+      },
+      analyzeAITells: () => ({ issues: [] as AuditIssue[] }),
+      analyzeSensitiveWords: () => ({ found: [] as Array<{ severity: "warn" | "block" }>, issues: [] as AuditIssue[] }),
+      logWarn: () => undefined,
+      logStage: () => undefined,
+    });
+
+    expect(result.auditResult.passed).toBe(false);
+    expect(result.auditResult.issues).toEqual([
+      {
+        severity: "warning",
+        category: "structural-gate:clarity-gap",
+        description: "Scene geography is still vague.",
+        suggestion: "Evidence: The doorway position is unclear. Location: scene break",
+      },
+      {
+        severity: "critical",
+        category: "continuity",
+        description: "critical continuity failure",
+        suggestion: "restore the missing causal link",
+      },
+    ]);
   });
 });

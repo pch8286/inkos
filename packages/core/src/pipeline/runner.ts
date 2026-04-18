@@ -14,6 +14,7 @@ import { LengthNormalizerAgent } from "../agents/length-normalizer.js";
 import { ChapterAnalyzerAgent } from "../agents/chapter-analyzer.js";
 import { ContinuityAuditor } from "../agents/continuity.js";
 import { ReviserAgent, DEFAULT_REVISE_MODE, type ReviseMode } from "../agents/reviser.js";
+import { StructuralGateAgent } from "../agents/structural-gate.js";
 import { StateValidatorAgent, type ValidationResult, type ValidationWarning } from "../agents/state-validator.js";
 import { RadarAgent, type RadarMode } from "../agents/radar.js";
 import type { RadarSource } from "../agents/radar-source.js";
@@ -178,6 +179,16 @@ export interface ImportChaptersResult {
   readonly importedCount: number;
   readonly totalWords: number;
   readonly nextChapter: number;
+}
+
+class StructuralGateFailureError extends Error {
+  readonly chapterNumber: number;
+
+  constructor(chapterNumber: number, summary: string) {
+    super(`Structural gate failed closed for chapter ${chapterNumber}: ${summary}`);
+    this.name = "StructuralGateFailureError";
+    this.chapterNumber = chapterNumber;
+  }
 }
 
 export class PipelineRunner {
@@ -1188,6 +1199,25 @@ export class PipelineRunner {
     };
   }
 
+  private async persistStructuralGateRuntimeArtifact(
+    bookDir: string,
+    chapterNumber: number,
+    structuralGate: {
+      readonly firstPass: unknown;
+      readonly secondPass?: unknown;
+      readonly reviserInvoked: boolean;
+      readonly finalBlockingStatus: "passed" | "blocked";
+    },
+  ): Promise<void> {
+    const runtimeDir = join(bookDir, "story", "runtime");
+    await mkdir(runtimeDir, { recursive: true });
+    await writeFile(
+      join(runtimeDir, `chapter-${String(chapterNumber).padStart(4, "0")}.structural-gate.json`),
+      JSON.stringify(structuralGate, null, 2),
+      "utf-8",
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Full pipeline (convenience — runs draft + audit + revise in one shot)
   // ---------------------------------------------------------------------------
@@ -1255,6 +1285,7 @@ export class PipelineRunner {
     // Token usage accumulator
     let totalUsage: TokenUsageSummary = output.tokenUsage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     const auditor = new ContinuityAuditor(this.agentCtxFor("auditor", bookId));
+    const structuralGate = new StructuralGateAgent(this.agentCtxFor("structural-gate", bookId));
     const reviewResult = await runChapterReviewCycle({
       book: { genre: book.genre },
       bookDir,
@@ -1264,6 +1295,7 @@ export class PipelineRunner {
       lengthSpec,
       initialUsage: totalUsage,
       createReviser: () => new ReviserAgent(this.agentCtxFor("reviser", bookId)),
+      structuralGate,
       auditor,
       normalizeDraftLengthIfNeeded: (chapterContent) => this.normalizeDraftLengthIfNeeded({
         bookId,
@@ -1288,6 +1320,13 @@ export class PipelineRunner {
     let auditResult = reviewResult.auditResult;
     const postReviseCount = reviewResult.postReviseCount;
     const normalizeApplied = reviewResult.normalizeApplied;
+    await this.persistStructuralGateRuntimeArtifact(bookDir, chapterNumber, reviewResult.structuralGate);
+    if (reviewResult.structuralGate.finalBlockingStatus === "blocked") {
+      throw new StructuralGateFailureError(
+        chapterNumber,
+        reviewResult.structuralGate.secondPass?.summary ?? reviewResult.structuralGate.firstPass.summary,
+      );
+    }
 
     // 4. Save the final chapter and truth files from a single persistence source
     this.logStage(stageLanguage, { zh: "落盘最终章节", en: "persisting final chapter", ko: "최종 장 저장" });
