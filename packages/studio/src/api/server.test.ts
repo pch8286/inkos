@@ -10,6 +10,7 @@ const applyBookProposalMock = vi.fn();
 const runRadarMock = vi.fn();
 const writeNextChapterMock = vi.fn();
 const writeDraftMock = vi.fn();
+const reviseDraftMock = vi.fn();
 const rollbackToChapterMock = vi.fn();
 const createLLMClientMock = vi.fn(() => ({}));
 const chatCompletionMock = vi.fn();
@@ -171,6 +172,7 @@ vi.mock("@actalk/inkos-core", () => {
     runRadar = runRadarMock;
     writeNextChapter = writeNextChapterMock;
     writeDraft = writeDraftMock;
+    reviseDraft = reviseDraftMock;
   }
 
   class MockScheduler {
@@ -498,6 +500,14 @@ describe("createStudioServer daemon lifecycle", () => {
       title: "Drafted chapter",
       wordCount: 1200,
       filePath: join(root, "books", "draft-book", "chapters", "0001_Drafted_chapter.md"),
+    });
+    reviseDraftMock.mockReset();
+    reviseDraftMock.mockResolvedValue({
+      chapterNumber: 1,
+      wordCount: 1200,
+      fixedIssues: [],
+      applied: true,
+      status: "ready-for-review",
     });
     rollbackToChapterMock.mockReset();
     rollbackToChapterMock.mockResolvedValue(undefined);
@@ -4143,7 +4153,7 @@ describe("createStudioServer daemon lifecycle", () => {
     });
   });
 
-  it("persists chapter inline review threads when saving and rejecting a chapter", async () => {
+  it("requires the structured rejection workflow even when inline review threads exist", async () => {
     await mkdir(join(root, "books", "chapter-inline-review-save-book", "chapters"), { recursive: true });
     await writeFile(join(root, "books", "chapter-inline-review-save-book", "book.json"), JSON.stringify({
       id: "chapter-inline-review-save-book",
@@ -4201,7 +4211,12 @@ describe("createStudioServer daemon lifecycle", () => {
       headers: jsonHeaders(),
       body: JSON.stringify({ reviewThreads }),
     });
-    expect(rejectResponse.status).toBe(200);
+    expect(rejectResponse.status).toBe(400);
+    await expect(rejectResponse.json()).resolves.toMatchObject({
+      error: {
+        code: "CHAPTER_REJECTION_NOTE_REQUIRED",
+      },
+    });
 
     const savedIndex = JSON.parse(
       await readFile(join(root, "books", "chapter-inline-review-save-book", "chapters", "index.json"), "utf-8"),
@@ -4212,7 +4227,7 @@ describe("createStudioServer daemon lifecycle", () => {
       threads?: Array<{ id: string; note: string }>;
     };
 
-    expect(savedIndex[0]?.status).toBe("rejected");
+    expect(savedIndex[0]?.status).toBe("ready-for-review");
     expect(parsedReviewNote).toMatchObject({
       kind: "chapter-inline-review",
       version: 1,
@@ -4222,6 +4237,383 @@ describe("createStudioServer daemon lifecycle", () => {
           note: "문장 톤을 다시 맞춰주세요.",
         },
       ],
+    });
+  });
+
+  it("rejects chapter rejection requests without a required editor note", async () => {
+    await mkdir(join(root, "books", "chapter-rejection-validation-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-rejection-validation-book", "book.json"), JSON.stringify({
+      id: "chapter-rejection-validation-book",
+      title: "Chapter Rejection Validation Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-validation-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-validation-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-rejection-validation-book/chapters/1/reject", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        instructions: ["targeted-fix"],
+        executionMode: "save-only",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "CHAPTER_REJECTION_NOTE_REQUIRED",
+      },
+    });
+  });
+
+  it("rejects conflicting chapter rejection instruction combinations", async () => {
+    await mkdir(join(root, "books", "chapter-rejection-conflict-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-rejection-conflict-book", "book.json"), JSON.stringify({
+      id: "chapter-rejection-conflict-book",
+      title: "Chapter Rejection Conflict Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-conflict-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-conflict-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-rejection-conflict-book/chapters/1/reject", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        editorNote: "전면 재작성인데 일부 수정도 같이 체크했습니다.",
+        instructions: ["full-rewrite", "polish"],
+        executionMode: "save-only",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "CHAPTER_REJECTION_INSTRUCTIONS_CONFLICT",
+      },
+    });
+  });
+
+  it("persists structured rejection state for save-only chapter rejection requests", async () => {
+    await mkdir(join(root, "books", "chapter-rejection-run-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-rejection-run-book", "book.json"), JSON.stringify({
+      id: "chapter-rejection-run-book",
+      title: "Chapter Rejection Run Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-run-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-run-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-rejection-run-book/chapters/1/reject", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        editorNote: "흐름을 갈아엎고 다시 써와 주세요.",
+        instructions: ["full-rewrite"],
+        executionMode: "save-only",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      chapterNumber: 1,
+      status: "rejected",
+      runStatus: "idle",
+      derivedMode: "rewrite",
+    });
+
+    const savedIndex = JSON.parse(
+      await readFile(join(root, "books", "chapter-rejection-run-book", "chapters", "index.json"), "utf-8"),
+    ) as Array<{ status: string; reviewNote?: string }>;
+    const parsedReviewNote = JSON.parse(savedIndex[0]?.reviewNote ?? "{}") as {
+      kind?: string;
+      rejection?: {
+        editorNote?: string;
+        instructions?: Array<string>;
+        executionMode?: string;
+        lastRunStatus?: string;
+        derivedMode?: string;
+      };
+    };
+
+    expect(savedIndex[0]?.status).toBe("rejected");
+    expect(parsedReviewNote).toMatchObject({
+      kind: "chapter-review-state",
+      rejection: {
+        editorNote: "흐름을 갈아엎고 다시 써와 주세요.",
+        instructions: ["full-rewrite"],
+        executionMode: "save-only",
+        lastRunStatus: "idle",
+        derivedMode: "rewrite",
+      },
+    });
+  });
+
+  it("starts an immediate rewrite for full-rewrite rejection requests", async () => {
+    await mkdir(join(root, "books", "chapter-rejection-run-now-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-rejection-run-now-book", "book.json"), JSON.stringify({
+      id: "chapter-rejection-run-now-book",
+      title: "Chapter Rejection Run Now Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-run-now-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-run-now-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    writeNextChapterMock.mockImplementationOnce(async (bookId: string) => {
+      await writeFile(join(root, "books", bookId, "chapters", "0001-inline.md"), "# 1장\n\n새 본문.", "utf-8");
+      await writeFile(join(root, "books", bookId, "chapters", "index.json"), JSON.stringify([
+        {
+          number: 1,
+          title: "1장",
+          status: "ready-for-review",
+          wordCount: 1350,
+          createdAt: "2026-04-17T00:00:00.000Z",
+          updatedAt: "2026-04-17T00:00:00.000Z",
+          auditIssues: [],
+          lengthWarnings: [],
+        },
+      ], null, 2), "utf-8");
+      return {
+        chapterNumber: 1,
+        title: "1장",
+        wordCount: 1350,
+        status: "ready-for-review",
+      };
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-rejection-run-now-book/chapters/1/reject", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        editorNote: "흐름을 갈아엎고 다시 써와 주세요.",
+        instructions: ["full-rewrite"],
+        executionMode: "start-now",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      chapterNumber: 1,
+      status: "rejected",
+      runStatus: "running",
+      derivedMode: "rewrite",
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(rollbackToChapterMock).toHaveBeenCalledWith("chapter-rejection-run-now-book", 0);
+      expect(writeNextChapterMock).toHaveBeenCalledWith("chapter-rejection-run-now-book");
+    });
+
+    await vi.waitFor(async () => {
+      const savedIndex = JSON.parse(
+        await readFile(join(root, "books", "chapter-rejection-run-now-book", "chapters", "index.json"), "utf-8"),
+      ) as Array<{ status: string; reviewNote?: string }>;
+      expect(savedIndex[0]?.status).toBe("ready-for-review");
+      expect(savedIndex[0]?.reviewNote).toBeUndefined();
+    });
+  });
+
+  it("restores the rejected chapter when an immediate full rewrite fails after rollback", async () => {
+    await mkdir(join(root, "books", "chapter-rejection-rewrite-failure-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-rejection-rewrite-failure-book", "book.json"), JSON.stringify({
+      id: "chapter-rejection-rewrite-failure-book",
+      title: "Chapter Rejection Rewrite Failure Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-rewrite-failure-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-rejection-rewrite-failure-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    rollbackToChapterMock.mockImplementationOnce(async (bookId: string, chapterNumber: number) => {
+      expect(bookId).toBe("chapter-rejection-rewrite-failure-book");
+      expect(chapterNumber).toBe(0);
+      await writeFile(join(root, "books", bookId, "chapters", "index.json"), JSON.stringify([], null, 2), "utf-8");
+      await rm(join(root, "books", bookId, "chapters", "0001-inline.md"), { force: true });
+    });
+    writeNextChapterMock.mockRejectedValueOnce(new Error("rewrite exploded"));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-rejection-rewrite-failure-book/chapters/1/reject", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        editorNote: "처음부터 다시 써와 주세요.",
+        instructions: ["full-rewrite"],
+        executionMode: "start-now",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.waitFor(async () => {
+      const savedIndex = JSON.parse(
+        await readFile(join(root, "books", "chapter-rejection-rewrite-failure-book", "chapters", "index.json"), "utf-8"),
+      ) as Array<{ status: string; reviewNote?: string }>;
+      const parsedReviewNote = JSON.parse(savedIndex[0]?.reviewNote ?? "{}") as {
+        rejection?: {
+          lastRunStatus?: string;
+          failureMessage?: string;
+        };
+      };
+
+      expect(savedIndex[0]?.status).toBe("rejected");
+      expect(parsedReviewNote.rejection).toMatchObject({
+        lastRunStatus: "failed",
+        failureMessage: "rewrite exploded",
+      });
+      await expect(readFile(join(root, "books", "chapter-rejection-rewrite-failure-book", "chapters", "0001-inline.md"), "utf-8"))
+        .resolves.toContain("기존 본문.");
+    });
+  });
+
+  it("returns legacy plain-text review notes without crashing chapter detail responses", async () => {
+    await mkdir(join(root, "books", "chapter-legacy-review-note-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "chapter-legacy-review-note-book", "book.json"), JSON.stringify({
+      id: "chapter-legacy-review-note-book",
+      title: "Chapter Legacy Review Note Book",
+      genre: "modern-fantasy",
+      platform: "munpia",
+      status: "active",
+      targetChapters: 40,
+      chapterWordCount: 2400,
+      language: "ko",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-17T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "chapter-legacy-review-note-book", "chapters", "0001-inline.md"), "# 1장\n\n기존 본문.", "utf-8");
+    await writeFile(join(root, "books", "chapter-legacy-review-note-book", "chapters", "index.json"), JSON.stringify([
+      {
+        number: 1,
+        title: "1장",
+        status: "ready-for-review",
+        wordCount: 1200,
+        createdAt: "2026-04-17T00:00:00.000Z",
+        updatedAt: "2026-04-17T00:00:00.000Z",
+        reviewNote: "legacy plain text note",
+        auditIssues: [],
+        lengthWarnings: [],
+      },
+    ], null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/chapter-legacy-review-note-book/chapters/1");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      chapterNumber: 1,
+      reviewNote: "legacy plain text note",
+      reviewThreads: [],
+      rejection: null,
     });
   });
 

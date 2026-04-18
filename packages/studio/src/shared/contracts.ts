@@ -179,6 +179,7 @@ export interface ChapterSummary {
   readonly updatedAt: string;
   readonly fileName: string | null;
   readonly structuralGate?: StructuralGateSummaryPayload | null;
+  readonly rejection?: ChapterRejectionPayload | null;
 }
 
 export interface ChapterDetail extends ChapterSummary {
@@ -187,6 +188,31 @@ export interface ChapterDetail extends ChapterSummary {
   readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
   readonly content: string;
   readonly readerSettings?: ReaderSettings;
+}
+
+export type ChapterRejectionInstruction =
+  | "polish"
+  | "targeted-fix"
+  | "tone-adjust"
+  | "restructure"
+  | "heavy-rewrite"
+  | "full-rewrite";
+
+export type ChapterRejectionExecutionMode = "save-only" | "start-now";
+export type ChapterRejectionRunStatus = "idle" | "running" | "completed" | "failed";
+export type ChapterRejectionDerivedMode = "spot-fix" | "polish" | "anti-detect" | "rework" | "rewrite";
+
+export interface ChapterRejectionPayload {
+  readonly editorNote: string;
+  readonly instructions: ReadonlyArray<ChapterRejectionInstruction>;
+  readonly executionMode: ChapterRejectionExecutionMode;
+  readonly requestedAt: string;
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+  readonly failedAt?: string;
+  readonly failureMessage?: string;
+  readonly lastRunStatus: ChapterRejectionRunStatus;
+  readonly derivedMode: ChapterRejectionDerivedMode;
 }
 
 export interface SaveChapterPayload {
@@ -202,6 +228,13 @@ export interface ChapterInlineReviewThreadPayload {
   readonly note: string;
   readonly quote: string;
   readonly createdAt: string;
+}
+
+export interface RejectChapterRequest {
+  readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly editorNote: string;
+  readonly instructions: ReadonlyArray<ChapterRejectionInstruction>;
+  readonly executionMode: ChapterRejectionExecutionMode;
 }
 
 export interface BookDetailPayload {

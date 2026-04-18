@@ -54,6 +54,14 @@ const sampleData: BookDetailPayload = {
       auditIssueCount: 1,
       updatedAt: "2026-04-18T00:00:00.000Z",
       fileName: "0001_gate.md",
+      rejection: {
+        editorNote: "장면 호흡을 다듬고 톤을 정리해 주세요.",
+        instructions: ["polish", "tone-adjust"],
+        executionMode: "save-only",
+        requestedAt: "2026-04-18T00:00:00.000Z",
+        lastRunStatus: "idle",
+        derivedMode: "spot-fix",
+      },
       structuralGate: {
         chapterNumber: 1,
         finalBlockingStatus: "passed",
@@ -122,5 +130,64 @@ describe("BookDetail", () => {
     expect(html).toContain("still missing foundation");
     expect(html).toContain("Opening contract is still missing.");
     expect(html).toContain("구조 게이트: Scene geography is vague.");
+    expect(html).toContain("반려됨 · 재작업 대기");
+    expect(html).toContain("부분 윤문 + 톤/문체 조정");
+  });
+
+  it("renders a live rework banner when revise activity is running for a rejected chapter", () => {
+    useApiMock.mockReturnValue({
+      data: sampleData,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: {
+          messages: [
+            { event: "revise:start", data: { bookId: "gate-book", chapter: 1 }, timestamp: 1 },
+            { event: "log", data: { message: "Applying targeted fixes" }, timestamp: 2 },
+            { event: "llm:progress", data: { elapsedMs: 1800, totalChars: 640 }, timestamp: 3 },
+          ],
+        },
+      }),
+    );
+
+    expect(html).toContain("재작업 진행 중");
+    expect(html).toContain("1화");
+    expect(html).toContain("부분 윤문 + 톤/문체 조정");
+    expect(html).toContain("Applying targeted fixes");
+  });
+
+  it("disables top-level mutating actions while rework is running", () => {
+    useApiMock.mockReturnValue({
+      data: sampleData,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: {
+          messages: [
+            { event: "rewrite:start", data: { bookId: "gate-book", chapter: 1 }, timestamp: 1 },
+          ],
+        },
+      }),
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.writeNext/s);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.draftOnly/s);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.deleteBook/s);
   });
 });

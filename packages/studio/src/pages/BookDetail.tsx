@@ -9,7 +9,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
 import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "../shared/book-create-form";
-import type { BookDetailPayload } from "../shared/contracts";
+import type { BookDetailPayload, ChapterRejectionExecutionMode, ChapterRejectionInstruction } from "../shared/contracts";
 import {
   ChevronLeft,
   Zap,
@@ -35,6 +35,7 @@ type ChapterMeta = BookDetailPayload["chapters"][number];
 type ReviseMode = "spot-fix" | "polish" | "rewrite" | "rework" | "anti-detect";
 type ExportFormat = "txt" | "md" | "epub";
 type BookStatus = "active" | "paused" | "outlining" | "completed" | "dropped";
+type RejectionInstruction = ChapterRejectionInstruction;
 
 interface Nav {
   toDashboard: () => void;
@@ -88,6 +89,93 @@ function structuralGateNoteLabel(language: "ko" | "zh" | "en"): string {
   return "Structural gate";
 }
 
+const STRONG_REJECTION_INSTRUCTIONS = new Set<RejectionInstruction>(["restructure", "heavy-rewrite", "full-rewrite"]);
+
+function rejectionInstructionLabel(language: "ko" | "zh" | "en", instruction: RejectionInstruction): string {
+  const ko: Record<RejectionInstruction, string> = {
+    polish: "부분 윤문",
+    "targeted-fix": "지적한 부분만 수정",
+    "tone-adjust": "톤/문체 조정",
+    restructure: "구성 재정리",
+    "heavy-rewrite": "거의 다시 쓰기",
+    "full-rewrite": "처음부터 다시 쓰기",
+  };
+  const en: Record<RejectionInstruction, string> = {
+    polish: "Polish",
+    "targeted-fix": "Targeted Fixes",
+    "tone-adjust": "Tone Adjustment",
+    restructure: "Restructure",
+    "heavy-rewrite": "Heavy Rewrite",
+    "full-rewrite": "Full Rewrite",
+  };
+  const zh: Record<RejectionInstruction, string> = {
+    polish: "局部润色",
+    "targeted-fix": "只改指出的问题",
+    "tone-adjust": "语气/文风调整",
+    restructure: "结构重整",
+    "heavy-rewrite": "大幅重写",
+    "full-rewrite": "整章重写",
+  };
+
+  if (language === "en") return en[instruction];
+  if (language === "zh") return zh[instruction];
+  return ko[instruction];
+}
+
+function summarizeRejectionInstructions(
+  language: "ko" | "zh" | "en",
+  instructions: ReadonlyArray<RejectionInstruction>,
+): string {
+  return instructions.map((instruction) => rejectionInstructionLabel(language, instruction)).join(" + ");
+}
+
+function rejectionWorkflowLabel(
+  language: "ko" | "zh" | "en",
+  runStatus: "idle" | "running" | "completed" | "failed",
+): string {
+  if (language === "en") {
+    if (runStatus === "running") return "Rejected · Rework Running";
+    if (runStatus === "failed") return "Rejected · Rework Failed";
+    if (runStatus === "completed") return "Rejected · Rework Applied";
+    return "Rejected · Rework Queued";
+  }
+  if (language === "zh") {
+    if (runStatus === "running") return "已驳回 · 返工进行中";
+    if (runStatus === "failed") return "已驳回 · 返工失败";
+    if (runStatus === "completed") return "已驳回 · 已应用返工";
+    return "已驳回 · 等待返工";
+  }
+  if (runStatus === "running") return "반려됨 · 재작업 진행 중";
+  if (runStatus === "failed") return "반려됨 · 재작업 실패";
+  if (runStatus === "completed") return "반려됨 · 재작업 반영됨";
+  return "반려됨 · 재작업 대기";
+}
+
+function reworkBannerLabel(language: "ko" | "zh" | "en", chapterNumber: number): string {
+  if (language === "en") {
+    return `Rework Running · Chapter ${chapterNumber}`;
+  }
+  if (language === "zh") {
+    return `返工进行中 · 第${chapterNumber}章`;
+  }
+  return `재작업 진행 중 · ${chapterNumber}화`;
+}
+
+function toggleRejectionInstruction(
+  current: ReadonlyArray<RejectionInstruction>,
+  instruction: RejectionInstruction,
+): ReadonlyArray<RejectionInstruction> {
+  if (current.includes(instruction)) {
+    return current.filter((item) => item !== instruction);
+  }
+
+  if (instruction === "full-rewrite" || STRONG_REJECTION_INSTRUCTIONS.has(instruction)) {
+    return [instruction];
+  }
+
+  return [...current.filter((item) => !STRONG_REJECTION_INSTRUCTIONS.has(item)), instruction];
+}
+
 export function BookDetail({
   bookId,
   nav,
@@ -113,6 +201,12 @@ export function BookDetail({
   const [deletingChapterNumber, setDeletingChapterNumber] = useState<number | null>(null);
   const [rewritingChapters, setRewritingChapters] = useState<ReadonlyArray<number>>([]);
   const [revisingChapters, setRevisingChapters] = useState<ReadonlyArray<number>>([]);
+  const [rejectTarget, setRejectTarget] = useState<ChapterMeta | null>(null);
+  const [rejectEditorNote, setRejectEditorNote] = useState("");
+  const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<RejectionInstruction>>([]);
+  const [rejectSubmittingMode, setRejectSubmittingMode] = useState<ChapterRejectionExecutionMode | null>(null);
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [startingReworkChapters, setStartingReworkChapters] = useState<ReadonlyArray<number>>([]);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsTitle, setSettingsTitle] = useState<string | null>(null);
   const [settingsWordCount, setSettingsWordCount] = useState<number | null>(null);
@@ -258,6 +352,77 @@ export function BookDetail({
     }
   };
 
+  const openRejectDialog = (chapter: ChapterMeta) => {
+    setRejectTarget(chapter);
+    setRejectEditorNote(chapter.rejection?.editorNote ?? "");
+    setRejectInstructions(chapter.rejection?.instructions ?? []);
+    setRejectSubmittingMode(null);
+    setRejectError(null);
+  };
+
+  const closeRejectDialog = () => {
+    setRejectTarget(null);
+    setRejectEditorNote("");
+    setRejectInstructions([]);
+    setRejectError(null);
+  };
+
+  const handleSubmitReject = async (executionMode: ChapterRejectionExecutionMode) => {
+    if (!rejectTarget) return;
+
+    const editorNote = rejectEditorNote.trim();
+    if (!editorNote) {
+      setRejectError(bookLanguage === "ko" ? "의견서를 입력해야 반려할 수 있습니다." : "Editor note is required.");
+      return;
+    }
+    if (rejectInstructions.length === 0) {
+      setRejectError(bookLanguage === "ko" ? "최소 한 개의 수정 지시를 선택하세요." : "Choose at least one rework instruction.");
+      return;
+    }
+
+    setRejectSubmittingMode(executionMode);
+    setRejectError(null);
+    try {
+      await fetchJson(`/books/${bookId}/chapters/${rejectTarget.number}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editorNote,
+          instructions: rejectInstructions,
+          executionMode,
+        }),
+      });
+      closeRejectDialog();
+      refetch();
+    } catch (error) {
+      setRejectError(error instanceof Error ? error.message : "Reject failed");
+    } finally {
+      setRejectSubmittingMode(null);
+    }
+  };
+
+  const handleStartQueuedRework = async (chapter: ChapterMeta) => {
+    if (!chapter.rejection) return;
+
+    setStartingReworkChapters((prev) => [...prev, chapter.number]);
+    try {
+      await fetchJson(`/books/${bookId}/chapters/${chapter.number}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editorNote: chapter.rejection.editorNote,
+          instructions: chapter.rejection.instructions,
+          executionMode: "start-now",
+        }),
+      });
+      refetch();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Rework start failed");
+    } finally {
+      setStartingReworkChapters((prev) => prev.filter((item) => item !== chapter.number));
+    }
+  };
+
   const handleSaveSettings = async () => {
     if (!data) return;
     const normalizedTitle = settingsTitle === null ? null : settingsTitle.trim();
@@ -325,17 +490,33 @@ export function BookDetail({
   const currentStatus = settingsStatus ?? (book.status as BookStatus);
   const currentPlatform = settingsPlatform ?? fallbackPlatform;
   const currentTitle = settingsTitle ?? book.title;
+  const activeReworkChapter = activity.activeChapterNumber !== null
+    ? chapters.find((chapter) => chapter.number === activity.activeChapterNumber) ?? null
+    : null;
+  const reworkRunning = activity.revising || activity.rewriting;
+  const mutationBusy = writing || drafting || reworkRunning;
+  const liveInstructionSummary = activeReworkChapter?.rejection
+    ? summarizeRejectionInstructions(bookLanguage, activeReworkChapter.rejection.instructions)
+    : null;
   const liveStatusLabel = writing
     ? t("dash.writing")
     : draftCancelling
       ? t("book.cancellingDraft")
-      : t("book.drafting");
+      : drafting
+        ? t("book.drafting")
+        : reworkRunning && activity.activeChapterNumber !== null
+          ? reworkBannerLabel(bookLanguage, activity.activeChapterNumber)
+          : t("book.drafting");
   const liveProgressLabel = activity.liveDetail
     ? `${liveStatusLabel} ${activity.liveDetail}`
     : liveStatusLabel;
   const liveElapsedSeconds = activity.elapsedMs !== null
     ? Math.max(0, Math.round(activity.elapsedMs / 100) / 10)
     : null;
+  const reworkRunningNumbers = new Set<number>([
+    ...startingReworkChapters,
+    ...(activity.activeChapterNumber !== null && reworkRunning ? [activity.activeChapterNumber] : []),
+  ]);
 
   const exportHref = `/api/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
 
@@ -388,7 +569,7 @@ export function BookDetail({
         <div className="flex flex-wrap gap-2">
           <button
             onClick={handleWriteNext}
-            disabled={writing || drafting}
+            disabled={mutationBusy}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl disabled:opacity-50 ${c.btnPrimary}`}
           >
             {writing ? <div className="w-4 h-4 border-2 border-border/30 border-t-ring rounded-full animate-spin" /> : <Zap size={16} />}
@@ -396,7 +577,7 @@ export function BookDetail({
           </button>
           <button
             onClick={drafting ? handleCancelDraft : handleDraft}
-            disabled={writing || draftCancelling}
+            disabled={writing || draftCancelling || reworkRunning}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl transition-all border disabled:opacity-50 ${
               drafting
                 ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-white border-destructive/20"
@@ -414,7 +595,7 @@ export function BookDetail({
           </button>
           <button
             onClick={() => setConfirmDeleteOpen(true)}
-            disabled={deleting || writing || drafting}
+            disabled={deleting || mutationBusy}
             className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-destructive/10 text-destructive rounded-xl hover:bg-destructive hover:text-white transition-all border border-destructive/20 disabled:opacity-50"
           >
             {deleting ? <div className="w-4 h-4 border-2 border-destructive/20 border-t-destructive rounded-full animate-spin" /> : <Trash2 size={16} />}
@@ -423,7 +604,7 @@ export function BookDetail({
         </div>
       </div>
 
-      {(writing || drafting || activity.lastError) && (
+      {(writing || drafting || reworkRunning || activity.lastError) && (
         <div
           className={`rounded-2xl border px-4 py-3 text-sm ${
             activity.lastError
@@ -445,6 +626,11 @@ export function BookDetail({
                   </div>
                   {activity.liveDetail ? (
                     <p className="studio-cockpit-live-status-detail">{activity.liveDetail}</p>
+                  ) : null}
+                  {liveInstructionSummary ? (
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {liveInstructionSummary}
+                    </p>
                   ) : null}
                 </div>
 
@@ -654,6 +840,14 @@ export function BookDetail({
             <tbody className="divide-y divide-border/30">
               {chapters.map((ch, index) => {
                 const staggerClass = `stagger-${Math.min(index + 1, 5)}`;
+                const isQueuedRework = ch.status === "rejected" && ch.rejection?.lastRunStatus === "idle";
+                const isRunningRework = reworkRunningNumbers.has(ch.number);
+                const reworkLabel = ch.rejection
+                  ? rejectionWorkflowLabel(bookLanguage, isRunningRework ? "running" : ch.rejection.lastRunStatus)
+                  : null;
+                const reworkSummary = ch.rejection
+                  ? summarizeRejectionInstructions(bookLanguage, ch.rejection.instructions)
+                  : null;
                 return (
                 <tr key={ch.number} className={`group hover:bg-muted/30 transition-colors fade-in ${staggerClass}`}>
                   <td className="px-6 py-4 text-muted-foreground/60 font-mono text-xs">{ch.number.toString().padStart(2, '0')}</td>
@@ -668,6 +862,16 @@ export function BookDetail({
                       {ch.structuralGate?.softFindings.length ? (
                         <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                           {`${structuralGateNoteLabel(bookLanguage)}: ${summarizeStructuralGateMessages(ch.structuralGate.softFindings)}`}
+                        </p>
+                      ) : null}
+                      {reworkLabel ? (
+                        <p className={`mt-1 text-xs font-semibold ${isRunningRework ? "text-[color:var(--studio-state-text)]" : "text-muted-foreground"}`}>
+                          {reworkLabel}
+                        </p>
+                      ) : null}
+                      {reworkSummary ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {reworkSummary}
                         </p>
                       ) : null}
                     </div>
@@ -685,34 +889,60 @@ export function BookDetail({
                         <>
                           <button
                             onClick={async () => { await postApi(`/books/${bookId}/chapters/${ch.number}/approve`); refetch(); }}
-                            className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+                            disabled={mutationBusy}
+                            className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all shadow-sm disabled:opacity-50"
                             title={t("book.approve")}
                           >
                             <Check size={14} />
                           </button>
                           <button
-                            onClick={async () => { await postApi(`/books/${bookId}/chapters/${ch.number}/reject`); refetch(); }}
-                            className="p-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all shadow-sm"
+                            onClick={() => openRejectDialog(ch)}
+                            disabled={mutationBusy}
+                            className="p-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all shadow-sm disabled:opacity-50"
                             title={t("book.reject")}
                           >
                             <X size={14} />
                           </button>
                         </>
                       )}
+                      {ch.rejection ? (
+                        <>
+                          <button
+                            onClick={() => openRejectDialog(ch)}
+                            className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm"
+                            title={bookLanguage === "ko" ? "반려 지시 보기" : "View rework brief"}
+                          >
+                            <Search size={14} />
+                          </button>
+                          {isQueuedRework ? (
+                            <button
+                              onClick={() => handleStartQueuedRework(ch)}
+                              disabled={mutationBusy || startingReworkChapters.includes(ch.number)}
+                              className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm disabled:opacity-50"
+                              title={bookLanguage === "ko" ? "저장된 지시로 재작업 시작" : "Start rework"}
+                            >
+                              {startingReworkChapters.includes(ch.number)
+                                ? <div className="w-3.5 h-3.5 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
+                                : <Wand2 size={14} />}
+                            </button>
+                          ) : null}
+                        </>
+                      ) : null}
                       <button
                         onClick={async () => {
                           const auditResult = await fetchJson<{ passed?: boolean; issues?: unknown[] }>(`/books/${bookId}/audit/${ch.number}`, { method: "POST" });
                           alert(auditResult.passed ? "Audit passed" : `Audit failed: ${auditResult.issues?.length ?? 0} issues`);
                           refetch();
                         }}
-                        className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm"
+                        disabled={mutationBusy}
+                        className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm disabled:opacity-50"
                         title={t("book.audit")}
                       >
                         <ShieldCheck size={14} />
                       </button>
                       <button
                         onClick={() => handleRewrite(ch.number)}
-                        disabled={rewritingChapters.includes(ch.number)}
+                        disabled={mutationBusy || rewritingChapters.includes(ch.number)}
                         className="p-2 rounded-lg studio-icon-btn transition-all shadow-sm disabled:opacity-50"
                         title={t("book.rewrite")}
                       >
@@ -721,7 +951,7 @@ export function BookDetail({
                           : <RotateCcw size={14} />}
                       </button>
                       <select
-                        disabled={revisingChapters.includes(ch.number)}
+                        disabled={mutationBusy || revisingChapters.includes(ch.number)}
                         value=""
                         onChange={(e) => {
                           const mode = e.target.value as ReviseMode;
@@ -739,7 +969,7 @@ export function BookDetail({
                       </select>
                       <button
                         onClick={() => setChapterDeleteTarget(ch)}
-                        disabled={deletingChapterNumber !== null || writing || drafting}
+                        disabled={deletingChapterNumber !== null || mutationBusy}
                         className="p-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all shadow-sm disabled:opacity-50"
                         title={t("book.deleteChapter")}
                       >
@@ -788,6 +1018,113 @@ export function BookDetail({
         onConfirm={handleDeleteChapter}
         onCancel={() => setChapterDeleteTarget(null)}
       />
+      {rejectTarget ? (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in">
+          <div className="w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl shadow-primary/10">
+            <div className="border-b border-border/50 px-6 py-5">
+              <h3 className="text-lg font-semibold">
+                {bookLanguage === "ko" ? "반려 및 재작업 지시" : "Reject and queue rework"}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {localizeChapterTitle(rejectTarget.title, rejectTarget.number, data.book.language as "ko" | "zh" | "en" | undefined)}
+              </p>
+            </div>
+            <div className="space-y-5 px-6 py-5">
+              <section className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  {bookLanguage === "ko" ? "의견서" : "Editor Note"}
+                </label>
+                <textarea
+                  value={rejectEditorNote}
+                  onChange={(e) => setRejectEditorNote(e.target.value)}
+                  rows={5}
+                  className="w-full rounded-xl border border-border/50 bg-secondary/20 px-3 py-3 text-sm outline-none focus:border-[color:var(--studio-state-text)]"
+                  placeholder={bookLanguage === "ko" ? "왜 반려하는지, 무엇을 고쳐야 하는지 구체적으로 적어 주세요." : "Explain what must change before this chapter comes back."}
+                />
+              </section>
+              <section className="space-y-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    {bookLanguage === "ko" ? "수정 지시" : "Rework Instructions"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {bookLanguage === "ko" ? "강한 재작성 항목을 고르면 다른 옵션은 자동으로 해제됩니다." : "Strong rewrite options replace other selections automatically."}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    "polish",
+                    "targeted-fix",
+                    "tone-adjust",
+                    "restructure",
+                    "heavy-rewrite",
+                    "full-rewrite",
+                  ] as const).map((instruction) => {
+                    const selected = rejectInstructions.includes(instruction);
+                    return (
+                      <label
+                        key={instruction}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm transition-all ${
+                          selected
+                            ? "border-[color:var(--studio-state-text)] bg-secondary/60"
+                            : "border-border/50 bg-secondary/20"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => setRejectInstructions((current) => toggleRejectionInstruction(current, instruction))}
+                        />
+                        <span>{rejectionInstructionLabel(bookLanguage, instruction)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+              <section className="rounded-xl border border-border/50 bg-secondary/20 px-4 py-3 text-sm">
+                <p className="font-semibold text-foreground">
+                  {bookLanguage === "ko" ? "요약" : "Summary"}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {rejectInstructions.length > 0
+                    ? summarizeRejectionInstructions(bookLanguage, rejectInstructions)
+                    : (bookLanguage === "ko" ? "수정 지시를 선택해 주세요." : "Choose at least one instruction.")}
+                </p>
+              </section>
+              {rejectError ? (
+                <p className="text-sm text-destructive">{rejectError}</p>
+              ) : null}
+            </div>
+            <div className="flex flex-col-reverse gap-2 border-t border-border/50 bg-muted/30 px-6 py-4 sm:flex-row sm:justify-end">
+              <button
+                onClick={closeRejectDialog}
+                disabled={rejectSubmittingMode !== null}
+                className="rounded-xl border border-border/50 bg-secondary px-4 py-2.5 text-sm font-medium text-foreground disabled:opacity-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={() => void handleSubmitReject("save-only")}
+                disabled={rejectSubmittingMode !== null}
+                className="rounded-xl border border-border/50 bg-background px-4 py-2.5 text-sm font-semibold text-foreground disabled:opacity-50"
+              >
+                {rejectSubmittingMode === "save-only"
+                  ? (bookLanguage === "ko" ? "저장 중..." : "Saving...")
+                  : (bookLanguage === "ko" ? "지시만 저장" : "Save Only")}
+              </button>
+              <button
+                onClick={() => void handleSubmitReject("start-now")}
+                disabled={rejectSubmittingMode !== null}
+                className="rounded-xl bg-destructive px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {rejectSubmittingMode === "start-now"
+                  ? (bookLanguage === "ko" ? "시작 중..." : "Starting...")
+                  : (bookLanguage === "ko" ? "즉시 시작" : "Start Now")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

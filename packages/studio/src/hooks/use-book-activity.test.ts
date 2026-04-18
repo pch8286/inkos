@@ -106,6 +106,33 @@ describe("deriveBookActivity", () => {
       totalChars: null,
     });
   });
+
+  it("tracks revise and rewrite runs as live background work for a chapter", () => {
+    const revisingMessages: ReadonlyArray<SSEMessage> = [
+      msg("revise:start", { bookId: "alpha", chapter: 3 }, 1),
+      msg("log", { message: "Applying targeted fixes" }, 2),
+      msg("llm:progress", { elapsedMs: 2200, totalChars: 900 }, 3),
+    ];
+    const rewriteMessages: ReadonlyArray<SSEMessage> = [
+      msg("rewrite:start", { bookId: "alpha", chapter: 4 }, 1),
+      msg("rewrite:complete", { bookId: "alpha", chapterNumber: 4 }, 2),
+    ];
+
+    expect(deriveBookActivity(revisingMessages, "alpha")).toMatchObject({
+      revising: true,
+      rewriting: false,
+      activeOperation: "revise",
+      activeChapterNumber: 3,
+      liveDetail: "Applying targeted fixes",
+      elapsedMs: 2200,
+      totalChars: 900,
+    });
+    expect(deriveBookActivity(rewriteMessages, "alpha")).toMatchObject({
+      rewriting: false,
+      activeOperation: null,
+      activeChapterNumber: null,
+    });
+  });
 });
 
 describe("deriveActiveBookIds", () => {

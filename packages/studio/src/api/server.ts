@@ -47,7 +47,12 @@ import type {
   BookSetupReviewThreadsRequest,
   BookSetupSessionListPayload,
   ChapterInlineReviewThreadPayload,
+  ChapterRejectionDerivedMode,
+  ChapterRejectionExecutionMode,
+  ChapterRejectionInstruction,
+  ChapterRejectionPayload,
   ReaderSettings,
+  RejectChapterRequest,
   TruthSaveRequest,
   TruthWriteScope,
 } from "../shared/contracts.js";
@@ -150,6 +155,8 @@ const BOOK_SETUP_SESSION_STORE_KIND = "inkos-book-setup-session";
 const BOOK_SETUP_SESSION_STORE_VERSION = 1;
 const CHAPTER_INLINE_REVIEW_KIND = "chapter-inline-review";
 const CHAPTER_INLINE_REVIEW_VERSION = 1;
+const CHAPTER_REVIEW_STATE_KIND = "chapter-review-state";
+const CHAPTER_REVIEW_STATE_VERSION = 1;
 type StudioLanguage = "ko" | "zh" | "en";
 type CliOAuthProvider = "gemini-cli" | "codex-cli";
 
@@ -163,6 +170,13 @@ interface StoredChapterInlineReviewNote {
   readonly kind: typeof CHAPTER_INLINE_REVIEW_KIND;
   readonly version: typeof CHAPTER_INLINE_REVIEW_VERSION;
   readonly threads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+}
+
+interface StoredChapterReviewState {
+  readonly kind: typeof CHAPTER_REVIEW_STATE_KIND;
+  readonly version: typeof CHAPTER_REVIEW_STATE_VERSION;
+  readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly rejection?: ChapterRejectionPayload;
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -445,12 +459,90 @@ function serializeChapterInlineReviewNote(threads: ReadonlyArray<ChapterInlineRe
   } satisfies StoredChapterInlineReviewNote);
 }
 
-function parseChapterInlineReviewNote(reviewNote?: string): {
+const CHAPTER_REJECTION_INSTRUCTION_VALUES: ReadonlySet<ChapterRejectionInstruction> = new Set([
+  "polish",
+  "targeted-fix",
+  "tone-adjust",
+  "restructure",
+  "heavy-rewrite",
+  "full-rewrite",
+]);
+
+function isChapterRejectionInstruction(value: unknown): value is ChapterRejectionInstruction {
+  return typeof value === "string" && CHAPTER_REJECTION_INSTRUCTION_VALUES.has(value as ChapterRejectionInstruction);
+}
+
+function normalizeChapterRejectionInstructions(value: unknown): ReadonlyArray<ChapterRejectionInstruction> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<ChapterRejectionInstruction>();
+  const normalized: ChapterRejectionInstruction[] = [];
+  for (const instruction of value) {
+    if (!isChapterRejectionInstruction(instruction) || seen.has(instruction)) {
+      continue;
+    }
+    seen.add(instruction);
+    normalized.push(instruction);
+  }
+  return normalized;
+}
+
+function isChapterRejectionExecutionMode(value: unknown): value is ChapterRejectionExecutionMode {
+  return value === "save-only" || value === "start-now";
+}
+
+function isChapterRejectionDerivedMode(value: unknown): value is ChapterRejectionDerivedMode {
+  return value === "spot-fix"
+    || value === "polish"
+    || value === "anti-detect"
+    || value === "rework"
+    || value === "rewrite";
+}
+
+function isChapterRejectionPayloadValue(value: unknown): value is ChapterRejectionPayload {
+  return isObjectRecord(value)
+    && typeof value.editorNote === "string"
+    && value.editorNote.trim().length > 0
+    && Array.isArray(value.instructions)
+    && value.instructions.every(isChapterRejectionInstruction)
+    && isChapterRejectionExecutionMode(value.executionMode)
+    && typeof value.requestedAt === "string"
+    && isChapterRejectionDerivedMode(value.derivedMode)
+    && (value.startedAt === undefined || typeof value.startedAt === "string")
+    && (value.completedAt === undefined || typeof value.completedAt === "string")
+    && (value.failedAt === undefined || typeof value.failedAt === "string")
+    && (value.failureMessage === undefined || typeof value.failureMessage === "string")
+    && (value.lastRunStatus === "idle"
+      || value.lastRunStatus === "running"
+      || value.lastRunStatus === "completed"
+      || value.lastRunStatus === "failed");
+}
+
+function serializeChapterReviewState(params: {
+  readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly rejection?: ChapterRejectionPayload;
+}): string | undefined {
+  if (!params.rejection) {
+    return serializeChapterInlineReviewNote(params.reviewThreads);
+  }
+
+  return JSON.stringify({
+    kind: CHAPTER_REVIEW_STATE_KIND,
+    version: CHAPTER_REVIEW_STATE_VERSION,
+    reviewThreads: params.reviewThreads,
+    rejection: params.rejection,
+  } satisfies StoredChapterReviewState);
+}
+
+function parseChapterReviewState(reviewNote?: string): {
   readonly reviewNote?: string;
   readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly rejection?: ChapterRejectionPayload;
 } {
   if (!reviewNote || reviewNote.trim().length === 0) {
-    return { reviewNote: undefined, reviewThreads: [] };
+    return { reviewNote: undefined, reviewThreads: [], rejection: undefined };
   }
 
   try {
@@ -458,18 +550,29 @@ function parseChapterInlineReviewNote(reviewNote?: string): {
       kind?: unknown;
       version?: unknown;
       threads?: unknown;
+      reviewThreads?: unknown;
+      rejection?: unknown;
     };
-    if (parsed.kind !== CHAPTER_INLINE_REVIEW_KIND || parsed.version !== CHAPTER_INLINE_REVIEW_VERSION) {
-      return { reviewNote, reviewThreads: [] };
+    if (parsed.kind === CHAPTER_INLINE_REVIEW_KIND && parsed.version === CHAPTER_INLINE_REVIEW_VERSION) {
+      const reviewThreads = normalizeChapterInlineReviewThreads(parsed.threads);
+      return {
+        reviewNote: undefined,
+        reviewThreads,
+        rejection: undefined,
+      };
     }
 
-    const reviewThreads = normalizeChapterInlineReviewThreads(parsed.threads);
-    return {
-      reviewNote: undefined,
-      reviewThreads,
-    };
+    if (parsed.kind === CHAPTER_REVIEW_STATE_KIND && parsed.version === CHAPTER_REVIEW_STATE_VERSION) {
+      return {
+        reviewNote: undefined,
+        reviewThreads: normalizeChapterInlineReviewThreads(parsed.reviewThreads),
+        rejection: isChapterRejectionPayloadValue(parsed.rejection) ? parsed.rejection : undefined,
+      };
+    }
+
+    return { reviewNote, reviewThreads: [], rejection: undefined };
   } catch {
-    return { reviewNote, reviewThreads: [] };
+    return { reviewNote, reviewThreads: [], rejection: undefined };
   }
 }
 
@@ -484,6 +587,90 @@ function readChapterInlineReviewThreads(
     throw new ApiError(400, "CHAPTER_INVALID_REVIEW_THREADS", "Chapter review includes invalid line notes.");
   }
   return reviewThreads;
+}
+
+function deriveChapterRejectionMode(
+  instructions: ReadonlyArray<ChapterRejectionInstruction>,
+): ChapterRejectionDerivedMode {
+  if (instructions.includes("full-rewrite")) {
+    return "rewrite";
+  }
+  if (instructions.includes("heavy-rewrite") || instructions.includes("restructure")) {
+    return "rework";
+  }
+  if (instructions.length === 1 && instructions[0] === "polish") {
+    return "polish";
+  }
+  if (instructions.length === 1 && instructions[0] === "tone-adjust") {
+    return "anti-detect";
+  }
+  return "spot-fix";
+}
+
+function assertValidChapterRejectionInstructions(instructions: ReadonlyArray<ChapterRejectionInstruction>): void {
+  if (instructions.length === 0) {
+    throw new ApiError(400, "CHAPTER_REJECTION_INSTRUCTIONS_REQUIRED", "Choose at least one rework instruction.");
+  }
+
+  const strongInstructions = instructions.filter((instruction) =>
+    instruction === "restructure" || instruction === "heavy-rewrite" || instruction === "full-rewrite");
+  const hasGentleInstruction = instructions.some((instruction) =>
+    instruction === "polish" || instruction === "targeted-fix" || instruction === "tone-adjust");
+
+  if (instructions.includes("full-rewrite") && instructions.length > 1) {
+    throw new ApiError(
+      400,
+      "CHAPTER_REJECTION_INSTRUCTIONS_CONFLICT",
+      "Full rewrite must be selected on its own.",
+    );
+  }
+
+  if (strongInstructions.length > 1 || (strongInstructions.length > 0 && hasGentleInstruction)) {
+    throw new ApiError(
+      400,
+      "CHAPTER_REJECTION_INSTRUCTIONS_CONFLICT",
+      "Strong rewrite instructions cannot be combined with other rework options.",
+    );
+  }
+}
+
+function readRejectChapterRequest(
+  body: RejectChapterRequest | null | undefined,
+  requestedAt: string,
+): {
+  readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly rejection?: ChapterRejectionPayload;
+} {
+  const reviewThreads = readChapterInlineReviewThreads(body);
+  const editorNote = typeof body?.editorNote === "string" ? body.editorNote.trim() : "";
+  if (editorNote.length === 0) {
+    throw new ApiError(400, "CHAPTER_REJECTION_NOTE_REQUIRED", "Add an editor note before rejecting.");
+  }
+
+  const instructions = normalizeChapterRejectionInstructions(body?.instructions);
+  if (!Array.isArray(body?.instructions) || instructions.length !== new Set(body.instructions).size) {
+    throw new ApiError(400, "CHAPTER_REJECTION_INSTRUCTIONS_INVALID", "Chapter rejection instructions are invalid.");
+  }
+  assertValidChapterRejectionInstructions(instructions);
+
+  const executionMode = body?.executionMode ?? "save-only";
+  if (!isChapterRejectionExecutionMode(executionMode)) {
+    throw new ApiError(400, "CHAPTER_REJECTION_EXECUTION_MODE_INVALID", "Unknown chapter rejection execution mode.");
+  }
+
+  const derivedMode = deriveChapterRejectionMode(instructions);
+  return {
+    reviewThreads,
+    rejection: {
+      editorNote,
+      instructions,
+      executionMode,
+      requestedAt,
+      startedAt: executionMode === "start-now" ? requestedAt : undefined,
+      lastRunStatus: executionMode === "start-now" ? "running" : "idle",
+      derivedMode,
+    },
+  };
 }
 
 function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessionRecord {
@@ -2617,6 +2804,279 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     return chapterIndex.reduce((max, chapter) => Math.max(max, chapter.number), 0);
   }
 
+  async function saveChapterReviewState(params: {
+    readonly bookId: string;
+    readonly chapterNumber: number;
+    readonly status?: string;
+    readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+    readonly rejection?: ChapterRejectionPayload | null;
+    readonly updatedAt?: string;
+  }): Promise<void> {
+    const index = await state.loadChapterIndex(params.bookId);
+    const updatedAt = params.updatedAt ?? new Date().toISOString();
+    let found = false;
+    const updated = index.map((chapter) => {
+      if (chapter.number !== params.chapterNumber) {
+        return chapter;
+      }
+
+      found = true;
+      const parsedReview = parseChapterReviewState(chapter.reviewNote);
+      const nextReviewThreads = params.reviewThreads ?? parsedReview.reviewThreads;
+      const nextRejection = params.rejection === undefined
+        ? parsedReview.rejection
+        : params.rejection ?? undefined;
+      return {
+        ...chapter,
+        status: params.status ?? chapter.status,
+        updatedAt,
+        reviewNote: serializeChapterReviewState({
+          reviewThreads: nextReviewThreads,
+          rejection: nextRejection,
+        }),
+      };
+    });
+
+    if (!found) {
+      throw new ApiError(404, "CHAPTER_NOT_FOUND", `Chapter ${params.chapterNumber} not found.`);
+    }
+
+    await state.saveChapterIndex(params.bookId, updated);
+  }
+
+  async function updateChapterRejectionRunResult(params: {
+    readonly bookId: string;
+    readonly chapterNumber: number;
+    readonly status: "completed" | "failed";
+    readonly failureMessage?: string;
+  }): Promise<void> {
+    const index = await state.loadChapterIndex(params.bookId).catch(() => []);
+    if (!index.some((chapter) => chapter.number === params.chapterNumber)) {
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const chapter = index.find((entry) => entry.number === params.chapterNumber);
+    await saveChapterReviewState({
+      bookId: params.bookId,
+      chapterNumber: params.chapterNumber,
+      updatedAt,
+      status: params.status === "completed" && chapter?.status === "rejected"
+        ? "ready-for-review"
+        : undefined,
+      rejection: (() => {
+        const parsedReview = parseChapterReviewState(chapter?.reviewNote);
+        if (!parsedReview.rejection) {
+          return null;
+        }
+        return {
+          ...parsedReview.rejection,
+          lastRunStatus: params.status,
+          completedAt: params.status === "completed" ? updatedAt : parsedReview.rejection.completedAt,
+          failedAt: params.status === "failed" ? updatedAt : undefined,
+          failureMessage: params.status === "failed" ? params.failureMessage : undefined,
+        };
+      })(),
+    }).catch(() => undefined);
+  }
+
+  async function finalizeChapterRejectionSuccess(params: {
+    readonly bookId: string;
+    readonly chapterNumber: number;
+    readonly clearRejection?: boolean;
+  }): Promise<void> {
+    const index = await state.loadChapterIndex(params.bookId).catch(() => []);
+    const chapter = index.find((entry) => entry.number === params.chapterNumber);
+    if (!chapter) {
+      return;
+    }
+
+    const parsedReview = parseChapterReviewState(chapter.reviewNote);
+    if (!parsedReview.rejection) {
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    await saveChapterReviewState({
+      bookId: params.bookId,
+      chapterNumber: params.chapterNumber,
+      updatedAt,
+      status: chapter.status === "rejected" ? "ready-for-review" : undefined,
+      rejection: params.clearRejection
+        ? null
+        : {
+            ...parsedReview.rejection,
+            lastRunStatus: "completed",
+            completedAt: updatedAt,
+            failedAt: undefined,
+            failureMessage: undefined,
+          },
+    }).catch(() => undefined);
+  }
+
+  async function snapshotRejectedChapter(params: {
+    readonly bookId: string;
+    readonly chapterNumber: number;
+  }): Promise<null | {
+    readonly chapter: Record<string, unknown> & { number: number; reviewNote?: string };
+    readonly fileName: string | null;
+    readonly content: string | null;
+    readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+    readonly rejection: ChapterRejectionPayload | undefined;
+  }> {
+    const index = await state.loadChapterIndex(params.bookId).catch(() => []);
+    const chapter = index.find((entry) => entry.number === params.chapterNumber) as (Record<string, unknown> & {
+      number: number;
+      reviewNote?: string;
+    }) | undefined;
+    if (!chapter) {
+      return null;
+    }
+
+    const parsedReview = parseChapterReviewState(chapter.reviewNote);
+    const chaptersDir = join(state.bookDir(params.bookId), "chapters");
+    const paddedNum = String(params.chapterNumber).padStart(4, "0");
+    const files = await readdir(chaptersDir).catch(() => []);
+    const fileName = files.find((file) => file.startsWith(paddedNum) && file.endsWith(".md")) ?? null;
+    const content = fileName
+      ? await readFile(join(chaptersDir, fileName), "utf-8").catch(() => null)
+      : null;
+
+    return {
+      chapter,
+      fileName,
+      content,
+      reviewThreads: parsedReview.reviewThreads,
+      rejection: parsedReview.rejection,
+    };
+  }
+
+  async function restoreFailedRewriteSnapshot(params: {
+    readonly bookId: string;
+    readonly snapshot: NonNullable<Awaited<ReturnType<typeof snapshotRejectedChapter>>>;
+    readonly failureMessage: string;
+  }): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    const rejection = params.snapshot.rejection
+      ? {
+          ...params.snapshot.rejection,
+          lastRunStatus: "failed" as const,
+          failedAt: updatedAt,
+          failureMessage: params.failureMessage,
+        }
+      : undefined;
+    const restoredChapter = {
+      ...params.snapshot.chapter,
+      status: "rejected",
+      updatedAt,
+      reviewNote: serializeChapterReviewState({
+        reviewThreads: params.snapshot.reviewThreads,
+        rejection,
+      }),
+    };
+
+    const currentIndex = await state.loadChapterIndex(params.bookId).catch(() => []);
+    const nextIndex = [
+      ...currentIndex.filter((entry) => entry.number !== restoredChapter.number),
+      restoredChapter,
+    ].sort((left, right) => left.number - right.number);
+    await state.saveChapterIndex(params.bookId, nextIndex);
+
+    if (params.snapshot.fileName && params.snapshot.content !== null) {
+      const chaptersDir = join(state.bookDir(params.bookId), "chapters");
+      await mkdir(chaptersDir, { recursive: true });
+      await writeFile(join(chaptersDir, params.snapshot.fileName), params.snapshot.content, "utf-8");
+    }
+  }
+
+  function runImmediateChapterRejection(params: {
+    readonly bookId: string;
+    readonly chapterNumber: number;
+    readonly derivedMode: ChapterRejectionDerivedMode;
+  }): void {
+    if (params.derivedMode === "rewrite") {
+      broadcast("rewrite:start", { bookId: params.bookId, chapter: params.chapterNumber });
+      let rewriteSnapshot: Awaited<ReturnType<typeof snapshotRejectedChapter>> = null;
+      void (async () => {
+        rewriteSnapshot = await snapshotRejectedChapter({
+          bookId: params.bookId,
+          chapterNumber: params.chapterNumber,
+        });
+        const pipelineConfigPromise = buildPipelineConfig();
+        await state.rollbackToChapter(params.bookId, Math.max(0, params.chapterNumber - 1));
+        const pipeline = new PipelineRunner(await pipelineConfigPromise);
+        return await pipeline.writeNextChapter(params.bookId);
+      })()
+        .then(async (result) => {
+          await finalizeChapterRejectionSuccess({
+            bookId: params.bookId,
+            chapterNumber: result.chapterNumber,
+            clearRejection: true,
+          });
+          broadcast("rewrite:complete", {
+            bookId: params.bookId,
+            chapterNumber: result.chapterNumber,
+            title: result.title,
+            wordCount: result.wordCount,
+          });
+        })
+        .catch(async (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          if (rewriteSnapshot?.rejection) {
+            await restoreFailedRewriteSnapshot({
+              bookId: params.bookId,
+              snapshot: rewriteSnapshot,
+              failureMessage: message,
+            });
+          } else {
+            await updateChapterRejectionRunResult({
+              bookId: params.bookId,
+              chapterNumber: params.chapterNumber,
+              status: "failed",
+              failureMessage: message,
+            });
+          }
+          broadcast("rewrite:error", { bookId: params.bookId, error: message });
+        });
+      return;
+    }
+
+    broadcast("revise:start", { bookId: params.bookId, chapter: params.chapterNumber });
+    void (async () => {
+      const pipeline = new PipelineRunner(await buildPipelineConfig());
+      return await pipeline.reviseDraft(
+        params.bookId,
+        params.chapterNumber,
+        params.derivedMode as "spot-fix" | "polish" | "anti-detect" | "rework",
+      );
+    })().then(
+      async (result) => {
+        await updateChapterRejectionRunResult({
+          bookId: params.bookId,
+          chapterNumber: params.chapterNumber,
+          status: result.applied ? "completed" : "failed",
+          failureMessage: result.applied ? undefined : result.skippedReason,
+        });
+        broadcast("revise:complete", {
+          bookId: params.bookId,
+          chapter: params.chapterNumber,
+          status: result.status,
+          applied: result.applied,
+        });
+      },
+      async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await updateChapterRejectionRunResult({
+          bookId: params.bookId,
+          chapterNumber: params.chapterNumber,
+          status: "failed",
+          failureMessage: message,
+        });
+        broadcast("revise:error", { bookId: params.bookId, error: message });
+      },
+    );
+  }
+
   app.use("/*", cors());
 
   // Structured error handler — ApiError returns typed JSON, others return 500
@@ -2740,12 +3200,16 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       const chapters = await state.loadChapterIndex(id);
       const nextChapter = await state.getNextChapterNumber(id);
       const enrichedChapters = await Promise.all(
-        chapters.map(async (chapter) => ({
-          ...chapter,
-          structuralGate: typeof (chapter as { number?: unknown }).number === "number"
-            ? await loadStructuralGateSummary(bookDir, (chapter as { number: number }).number)
-            : null,
-        })),
+        chapters.map(async (chapter) => {
+          const parsedReview = parseChapterReviewState((chapter as { reviewNote?: string }).reviewNote);
+          return {
+            ...chapter,
+            structuralGate: typeof (chapter as { number?: unknown }).number === "number"
+              ? await loadStructuralGateSummary(bookDir, (chapter as { number: number }).number)
+              : null,
+            rejection: parsedReview.rejection ?? null,
+          };
+        }),
       );
       const pendingStructuralGate = await loadStructuralGateSummary(bookDir, nextChapter);
       return c.json({
@@ -3526,7 +3990,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       const book = await state.loadBookConfig(id);
       const chapterIndex = await state.loadChapterIndex(id).catch(() => []);
       const chapterMeta = chapterIndex.find((entry) => entry.number === num);
-      const parsedReview = parseChapterInlineReviewNote(chapterMeta?.reviewNote);
+      const parsedReview = parseChapterReviewState(chapterMeta?.reviewNote);
       return c.json({
         chapterNumber: num,
         filename: match,
@@ -3539,6 +4003,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         auditIssues: chapterMeta?.auditIssues ?? [],
         reviewNote: parsedReview.reviewNote,
         reviewThreads: parsedReview.reviewThreads,
+        rejection: parsedReview.rejection ?? null,
         content,
         language: book.language ?? "ko",
         readerSettings: book.readerSettings,
@@ -3569,17 +4034,12 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       await writeFileFs(join(chaptersDir, match), content, "utf-8");
       if (reviewThreads !== undefined) {
         const updatedAt = new Date().toISOString();
-        const index = await state.loadChapterIndex(id).catch(() => []);
-        const updated = index.map((chapter) => chapter.number === num
-          ? {
-            ...chapter,
-            updatedAt,
-            reviewNote: serializeChapterInlineReviewNote(reviewThreads),
-          }
-          : chapter);
-        if (updated.length > 0) {
-          await state.saveChapterIndex(id, updated);
-        }
+        await saveChapterReviewState({
+          bookId: id,
+          chapterNumber: num,
+          reviewThreads,
+          updatedAt,
+        });
       }
       return c.json({ ok: true, chapterNumber: num });
     } catch (e) {
@@ -4017,19 +4477,15 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     try {
       const body = await c.req.json<{ reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> }>().catch(() => ({}));
       const reviewThreads = readChapterInlineReviewThreads(body);
-      const index = await state.loadChapterIndex(id);
       const updatedAt = new Date().toISOString();
-      const updated = index.map((ch) =>
-        ch.number === num
-          ? {
-            ...ch,
-            status: "approved" as const,
-            updatedAt,
-            reviewNote: reviewThreads === undefined ? undefined : serializeChapterInlineReviewNote(reviewThreads),
-          }
-          : ch,
-      );
-      await state.saveChapterIndex(id, updated);
+      await saveChapterReviewState({
+        bookId: id,
+        chapterNumber: num,
+        status: "approved",
+        reviewThreads: reviewThreads ?? [],
+        rejection: null,
+        updatedAt,
+      });
       return c.json({ ok: true, chapterNumber: num, status: "approved" });
     } catch (e) {
       if (e instanceof ApiError) {
@@ -4044,22 +4500,33 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const num = parseInt(c.req.param("num"), 10);
 
     try {
-      const body = await c.req.json<{ reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload> }>().catch(() => ({}));
-      const reviewThreads = readChapterInlineReviewThreads(body);
-      const index = await state.loadChapterIndex(id);
+      const body = await c.req.json<RejectChapterRequest>().catch(() => ({}));
       const updatedAt = new Date().toISOString();
-      const updated = index.map((ch) =>
-        ch.number === num
-          ? {
-            ...ch,
-            status: "rejected" as const,
-            updatedAt,
-            reviewNote: reviewThreads === undefined ? ch.reviewNote : serializeChapterInlineReviewNote(reviewThreads),
-          }
-          : ch,
-      );
-      await state.saveChapterIndex(id, updated);
-      return c.json({ ok: true, chapterNumber: num, status: "rejected" });
+      const parsedRequest = readRejectChapterRequest(body, updatedAt);
+      await saveChapterReviewState({
+        bookId: id,
+        chapterNumber: num,
+        status: "rejected",
+        reviewThreads: parsedRequest.reviewThreads,
+        rejection: parsedRequest.rejection,
+        updatedAt,
+      });
+
+      if (parsedRequest.rejection?.executionMode === "start-now") {
+        runImmediateChapterRejection({
+          bookId: id,
+          chapterNumber: num,
+          derivedMode: parsedRequest.rejection.derivedMode,
+        });
+      }
+
+      return c.json({
+        ok: true,
+        chapterNumber: num,
+        status: "rejected",
+        runStatus: parsedRequest.rejection?.lastRunStatus ?? "idle",
+        derivedMode: parsedRequest.rejection?.derivedMode,
+      });
     } catch (e) {
       if (e instanceof ApiError) {
         return c.json({ error: { code: e.code, message: e.message } }, e.status as 400);
