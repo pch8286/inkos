@@ -191,6 +191,9 @@ export function ChapterRejectDialog({
     return null;
   }
 
+  const saveOnlySubmitting = submittingMode === "save-only";
+  const startNowSubmitting = submittingMode === "start-now";
+
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl shadow-primary/10">
@@ -262,15 +265,25 @@ export function ChapterRejectDialog({
           <button
             onClick={() => onSubmit("save-only")}
             disabled={submittingMode !== null}
-            className="rounded-xl border border-border/50 bg-background px-4 py-2.5 text-sm font-semibold text-foreground disabled:opacity-50"
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-background px-4 py-2.5 text-sm font-semibold text-foreground ${
+              saveOnlySubmitting ? "disabled:opacity-100" : "disabled:opacity-50"
+            }`}
           >
+            {saveOnlySubmitting ? (
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border/30 border-t-foreground" />
+            ) : null}
             {saveOnlyLabel(language, submittingMode)}
           </button>
           <button
             onClick={() => onSubmit("start-now")}
             disabled={submittingMode !== null}
-            className="rounded-xl bg-destructive px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+            className={`inline-flex items-center justify-center gap-2 rounded-xl bg-destructive px-4 py-2.5 text-sm font-bold text-white ${
+              startNowSubmitting ? "disabled:opacity-100" : "disabled:opacity-50"
+            }`}
           >
+            {startNowSubmitting ? (
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : null}
             {startNowLabel(language, submittingMode)}
           </button>
         </div>

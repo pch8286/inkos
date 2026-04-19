@@ -49,4 +49,25 @@ describe("ChapterRejectDialog", () => {
     expect(html).toContain("부분 윤문 + 톤/문체 조정");
     expect(html).toContain("즉시 시작");
   });
+
+  it("shows an explicit loading indicator for the active rejection action", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChapterRejectDialog, {
+        open: true,
+        language: "ko",
+        chapterLabel: "1화",
+        editorNote: "장면 호흡을 다듬어 주세요.",
+        instructions: ["polish", "tone-adjust"],
+        submittingMode: "start-now",
+        error: null,
+        onClose: vi.fn(),
+        onEditorNoteChange: vi.fn(),
+        onToggleInstruction: vi.fn(),
+        onSubmit: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("시작 중...");
+    expect(html).toContain("animate-spin");
+  });
 });
