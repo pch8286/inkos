@@ -58,6 +58,10 @@ const COLLECTIVE_SHOCK_PATTERNS = [
 ];
 
 const KOREAN_DIRECT_EXCHANGE_VERBS = ["말", "묻", "답", "웃", "소리", "속삭", "쏘아붙", "내뱉"];
+const KOREAN_DEPENDENT_CLAUSE_MARKERS = /(?:면서|며|다가|지만|는데|더니|고서|자마자|자|고)/g;
+const KOREAN_VISUAL_LOAD_MARKERS = /(?:과|와|및|그리고)/g;
+const CHINESE_DEPENDENT_CLAUSE_MARKERS = /(?:然后|接着|随后|同时|而且|并且|却|才|再|又)/g;
+const ENGLISH_DEPENDENT_CLAUSE_MARKERS = /\b(?:as|while|when|after|before|because|although|though|which|that)\b/gi;
 
 // --- Validator ---
 
@@ -68,9 +72,10 @@ export function validatePostWrite(
   languageOverride?: WritingLanguage,
 ): ReadonlyArray<PostWriteViolation> {
   const violations: PostWriteViolation[] = [];
+  const resolvedLanguage = languageOverride ?? genreProfile.language;
 
   // Skip Chinese-specific rules for English content
-  const isEnglish = (languageOverride ?? genreProfile.language) === "en";
+  const isEnglish = resolvedLanguage === "en";
   if (isEnglish) {
     // For English, only run book-specific prohibitions and paragraph length check
     return validatePostWriteEnglish(content, genreProfile, bookRules);
@@ -256,9 +261,10 @@ export function validatePostWrite(
     });
   }
 
-  violations.push(...detectParagraphShapeWarnings(content, "zh"));
+  violations.push(...detectParagraphShapeWarnings(content, resolvedLanguage));
+  violations.push(...detectMobileReadabilityWarnings(content, resolvedLanguage));
 
-  const dialoguePressureViolation = detectDialoguePressureWarning(content, languageOverride ?? genreProfile.language);
+  const dialoguePressureViolation = detectDialoguePressureWarning(content, resolvedLanguage);
   if (dialoguePressureViolation) {
     violations.push(dialoguePressureViolation);
   }
@@ -455,6 +461,7 @@ function validatePostWriteEnglish(
   }
 
   violations.push(...detectParagraphShapeWarnings(content, "en"));
+  violations.push(...detectMobileReadabilityWarnings(content, "en"));
 
   // 2.5. Multi-character scene with almost no direct exchange
   const quotedLines = content.match(/"[^"]+"/g) ?? [];
@@ -503,6 +510,203 @@ function validatePostWriteEnglish(
   }
 
   return violations;
+}
+
+function detectMobileReadabilityWarnings(
+  content: string,
+  language: WritingLanguage,
+): ReadonlyArray<PostWriteViolation> {
+  const violations: PostWriteViolation[] = [];
+  const sentences = extractNarrativeSentences(content);
+  if (sentences.length === 0) return violations;
+
+  const denseSentence = sentences.find((sentence) => isDenseSentence(sentence, language));
+  if (denseSentence) {
+    violations.push(localizeReadabilityViolation(
+      language,
+      "dense",
+      summarizeSentenceSample(denseSentence),
+    ));
+  }
+
+  const chainedClauseSentence = sentences.find((sentence) => hasChainedDependentClauses(sentence, language));
+  if (chainedClauseSentence) {
+    violations.push(localizeReadabilityViolation(
+      language,
+      "chained",
+      summarizeSentenceSample(chainedClauseSentence),
+    ));
+  }
+
+  const delayedAnchorSample = detectDelayedSceneAnchor(sentences, language);
+  if (delayedAnchorSample) {
+    violations.push(localizeReadabilityViolation(language, "anchor", delayedAnchorSample));
+  }
+
+  return violations;
+}
+
+function localizeReadabilityViolation(
+  language: WritingLanguage,
+  kind: "dense" | "chained" | "anchor",
+  sample: string,
+): PostWriteViolation {
+  if (language === "en") {
+    if (kind === "dense") {
+      return {
+        rule: "Sentence density",
+        severity: "warning",
+        description: `One sentence carries too many visual or action units to parse comfortably on a phone: "${sample}"`,
+        suggestion: "Let the first sentence establish the main shape or action, then move detail or reaction into the next sentence.",
+      };
+    }
+
+    if (kind === "chained") {
+      return {
+        rule: "Dependent clause chain",
+        severity: "warning",
+        description: `A sentence stacks too many linked subordinate beats in one breath: "${sample}"`,
+        suggestion: "Split the chain into two readable beats so the reader can land one action before the next clause arrives.",
+      };
+    }
+
+    return {
+      rule: "Scene anchor delay",
+      severity: "warning",
+      description: `Detail arrives before the reader gets a stable scene anchor: "${sample}"`,
+      suggestion: "Set the room, distance, or overall shape first, then narrow into the striking detail.",
+    };
+  }
+
+  if (language === "ko") {
+    if (kind === "dense") {
+      return {
+        rule: "문장 과밀",
+        severity: "warning",
+        description: `형상, 세부, 반응이 한 문장에 겹쳐 모바일에서 한 번에 잡히기 어렵습니다: "${sample}"`,
+        suggestion: "첫 문장에 큰 형상이나 핵심 행동을 세우고, 세부나 반응은 다음 문장으로 넘겨 두 호흡으로 나누세요.",
+      };
+    }
+
+    if (kind === "chained") {
+      return {
+        rule: "연속 종속절",
+        severity: "warning",
+        description: `연결 절이 한 호흡에 연달아 붙어 독자가 중간 비트를 놓치기 쉽습니다: "${sample}"`,
+        suggestion: "앞비트와 뒷비트를 나눠, 독자가 첫 동작을 잡은 뒤 다음 절로 넘어가게 정리하세요.",
+      };
+    }
+
+    return {
+      rule: "세부 선행",
+      severity: "warning",
+      description: `세부 이미지가 먼저 나오고 공간 앵커가 뒤늦게 잡힙니다: "${sample}"`,
+      suggestion: "첫 문장에서 공간 윤곽이나 전체 배치를 세운 뒤, 다음 문장에서 눈에 걸리는 디테일로 좁혀 가세요.",
+    };
+  }
+
+  if (kind === "dense") {
+    return {
+      rule: "句子过密",
+      severity: "warning",
+      description: `一个句子里同时装下了太多形状、细节和反应，手机上不容易一眼看清：\"${sample}\"`,
+      suggestion: "先用一句话立住大形状或核心动作，再把细节或反应移到下一句。",
+    };
+  }
+
+  if (kind === "chained") {
+    return {
+      rule: "连锁从句",
+      severity: "warning",
+      description: `多个连接从句挤在同一口气里，读者容易漏掉中间节拍：\"${sample}\"`,
+      suggestion: "把前后两个节拍拆开，让读者先落住第一个动作，再进入下一层从句。",
+    };
+  }
+
+  return {
+    rule: "细节先行",
+    severity: "warning",
+    description: `细节先出现，整体空间锚点却来得太晚：\"${sample}\"`,
+    suggestion: "先交代空间轮廓或整体布局，再落到最醒目的细节。",
+  };
+}
+
+function extractNarrativeSentences(content: string): string[] {
+  return content
+    .split(/[。！？.!?\n]+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function isDenseSentence(sentence: string, language: WritingLanguage): boolean {
+  const lengthThreshold = language === "en" ? 220 : 90;
+  const branchThreshold = language === "en" ? 4 : 4;
+  if (sentence.length < lengthThreshold) return false;
+
+  const clauseCount = countBranchMarkers(sentence, language);
+  return clauseCount >= branchThreshold;
+}
+
+function hasChainedDependentClauses(sentence: string, language: WritingLanguage): boolean {
+  const dependentCount = countDependentClauseMarkers(sentence, language);
+  if (language === "en") return dependentCount >= 4;
+  return dependentCount >= 3;
+}
+
+function detectDelayedSceneAnchor(
+  sentences: ReadonlyArray<string>,
+  language: WritingLanguage,
+): string | null {
+  if (sentences.length < 2) return null;
+
+  const secondSentence = sentences[1]!;
+  if (language === "ko" && /(그제야|뒤늦게|그때서야)/.test(secondSentence) && /(윤곽|형체|전체|전경|모습|배치)/.test(secondSentence)) {
+    return summarizeSentenceSample(`${sentences[0]} ${secondSentence}`);
+  }
+
+  if (language === "zh" && /(这才|直到这时|这时候才)/.test(secondSentence) && /(轮廓|全貌|整体|布局)/.test(secondSentence)) {
+    return summarizeSentenceSample(`${sentences[0]} ${secondSentence}`);
+  }
+
+  if (language === "en" && /\b(only then|not until then)\b/i.test(secondSentence) && /\b(outline|full shape|whole room|entire space)\b/i.test(secondSentence)) {
+    return summarizeSentenceSample(`${sentences[0]} ${secondSentence}`);
+  }
+
+  return null;
+}
+
+function countBranchMarkers(sentence: string, language: WritingLanguage): number {
+  const punctuationSeparators = (sentence.match(/[,:;，、；]/g) ?? []).length;
+
+  if (language === "ko") {
+    return punctuationSeparators
+      + (sentence.match(KOREAN_DEPENDENT_CLAUSE_MARKERS) ?? []).length
+      + (sentence.match(KOREAN_VISUAL_LOAD_MARKERS) ?? []).length;
+  }
+
+  if (language === "zh") {
+    return punctuationSeparators + (sentence.match(CHINESE_DEPENDENT_CLAUSE_MARKERS) ?? []).length;
+  }
+
+  return punctuationSeparators + (sentence.match(ENGLISH_DEPENDENT_CLAUSE_MARKERS) ?? []).length;
+}
+
+function countDependentClauseMarkers(sentence: string, language: WritingLanguage): number {
+  if (language === "ko") {
+    return (sentence.match(KOREAN_DEPENDENT_CLAUSE_MARKERS) ?? []).length;
+  }
+
+  if (language === "zh") {
+    return (sentence.match(CHINESE_DEPENDENT_CLAUSE_MARKERS) ?? []).length + (sentence.match(/[，；]/g) ?? []).length;
+  }
+
+  return (sentence.match(ENGLISH_DEPENDENT_CLAUSE_MARKERS) ?? []).length;
+}
+
+function summarizeSentenceSample(sentence: string): string {
+  const trimmed = sentence.trim();
+  if (trimmed.length <= 72) return trimmed;
+  return `${trimmed.slice(0, 69)}...`;
 }
 
 function appendParagraphShapeWarnings(

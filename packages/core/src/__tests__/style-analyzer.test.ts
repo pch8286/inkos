@@ -58,4 +58,28 @@ describe("analyzeStyle", () => {
     const hasHeKan = profile.topPatterns.some((p) => p.includes("他看"));
     expect(hasHeKan).toBe(true);
   });
+
+  it("classifies short-cutting rhythm for tightly segmented prose", () => {
+    const text = [
+      "문이 열렸다. 그는 멈췄다. 먼저 안을 봤다.",
+      "",
+      "발밑 그림자가 짧게 떨렸다. 그는 바로 칼자루를 잡았다.",
+    ].join("\n");
+
+    const profile = analyzeStyle(text);
+
+    expect(profile.rhythmPreference).toBe("short-cutting");
+  });
+
+  it("classifies flowing rhythm for longer, continuous prose", () => {
+    const text = [
+      "사람 손으로는 닿지 않을 만큼 높은 아치가 검은 돌결 사이로 겹겹이 올라가 있었고, 그 사이를 메운 붉은 유리창에는 해가 아니라 잔불 같은 빛이 걸려 있었다. 시선이 아래로 내려오자 왕좌실의 윤곽이 늦게 잡혔다.",
+      "",
+      "넓은 계단 아래 반원으로 선 무장들 너머로, 오래된 피가 닦이다 만 바닥이 느리게 드러났고, 그 위를 스치는 바람조차 무겁게 가라앉아 있었다.",
+    ].join("\n");
+
+    const profile = analyzeStyle(text);
+
+    expect(profile.rhythmPreference).toBe("flowing");
+  });
 });

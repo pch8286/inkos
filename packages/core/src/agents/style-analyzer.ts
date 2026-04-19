@@ -79,15 +79,33 @@ export function analyzeStyle(text: string, sourceName?: string): StyleProfile {
     }
   }
 
+  const rhythmPreference = classifyRhythmPreference(avgSentenceLength, avgParagraphLength);
+
   return {
     avgSentenceLength: Math.round(avgSentenceLength * 10) / 10,
     sentenceLengthStdDev: Math.round(sentenceLengthStdDev * 10) / 10,
     avgParagraphLength: Math.round(avgParagraphLength),
     paragraphLengthRange: { min: minParagraph, max: maxParagraph },
     vocabularyDiversity: Math.round(vocabularyDiversity * 1000) / 1000,
+    rhythmPreference,
     topPatterns,
     rhetoricalFeatures,
     sourceName,
     analyzedAt: new Date().toISOString(),
   };
+}
+
+function classifyRhythmPreference(
+  avgSentenceLength: number,
+  avgParagraphLength: number,
+): StyleProfile["rhythmPreference"] {
+  if (avgSentenceLength <= 30 && avgParagraphLength <= 100) {
+    return "short-cutting";
+  }
+
+  if (avgSentenceLength >= 38 || avgParagraphLength >= 150) {
+    return "flowing";
+  }
+
+  return "balanced";
 }

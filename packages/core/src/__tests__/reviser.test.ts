@@ -300,6 +300,7 @@ describe("ReviserAgent", () => {
       expect(systemPrompt).toContain("인물의 자세 변화와 손동작은 왜 그렇게 움직이는지 보이도록 직전 시각 정보와 연결한다");
       expect(systemPrompt).toContain("관계 변화는 짧은 직접 공방이나 망설임, 시선 회피 같은 장면 증거로 고친다");
       expect(systemPrompt).toContain("설명은 장면을 잇는 연결용으로 압축하고, 핵심 비트는 장면 안에서 체감되게 고친다");
+      expect(systemPrompt).toContain("과밀한 문장은 앞비트와 뒷비트로 나눠");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

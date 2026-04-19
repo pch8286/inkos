@@ -217,6 +217,36 @@ describe("validatePostWrite", () => {
     expect(result.issues.some((issue) => issue.category === "감정 직설")).toBe(true);
   });
 
+  it("warns when a Korean sentence carries too many visual units at once", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = "사람 손으로는 닿지 않을 만큼 높은 아치가 검은 돌결 사이로 겹겹이 올라가 있었고 그 사이를 메운 붉은 유리창에는 잔불 같은 빛이 걸려 있었고 시선이 아래로 내려오자 왕좌실의 윤곽이 늦게 잡혔고 넓은 계단과 반원으로 선 무장들과 피가 마르다 만 바닥이 한꺼번에 눈에 들어왔다.";
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "문장 과밀")).toBeDefined();
+    expect(findRule(result, "문장 과밀")?.severity).toBe("warning");
+  });
+
+  it("warns when a Korean sentence chains too many dependent clauses", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = "그는 문턱을 넘어서며 숨을 고르고 안쪽을 훑어보며 손을 올리다가 발을 멈췄지만 아무 말도 못 한 채 다시 고개를 돌렸다.";
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "연속 종속절")).toBeDefined();
+    expect(findRule(result, "연속 종속절")?.severity).toBe("warning");
+  });
+
+  it("warns when Korean prose zooms into detail before setting a scene anchor", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = "붉은 유리창에 걸린 잔불 같은 빛이 먼저 눈에 들어왔다. 그제야 왕좌실 전체 윤곽이 드러났다.";
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "세부 선행")).toBeDefined();
+    expect(findRule(result, "세부 선행")?.severity).toBe("warning");
+  });
+
   it("detects paragraph density drift against recent chapters", () => {
     const recent = [
       "他把伞挂在门边，又低头看了一眼鞋底带进来的泥。柜台后的热水壶正轻轻作响，白气沿着玻璃慢慢爬上去。林越没有急着开口，只先把屋里的灯都扫了一遍，确认少了一盏。",

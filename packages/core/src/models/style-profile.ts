@@ -8,6 +8,7 @@ export interface StyleProfile {
     readonly max: number;
   };
   readonly vocabularyDiversity: number; // TTR (Type-Token Ratio)
+  readonly rhythmPreference?: "short-cutting" | "balanced" | "flowing";
   readonly topPatterns: ReadonlyArray<string>;
   readonly rhetoricalFeatures: ReadonlyArray<string>;
   readonly sourceName?: string;

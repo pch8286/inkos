@@ -37,6 +37,38 @@ describe("WriterAgent", () => {
     vi.restoreAllMocks();
   });
 
+  it("formats rhythm overlay guidance from the style profile", () => {
+    const agent = new WriterAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: "/tmp",
+    });
+
+    const fingerprint = (agent as any).buildStyleFingerprint(JSON.stringify({
+      avgSentenceLength: 18,
+      sentenceLengthStdDev: 6,
+      avgParagraphLength: 54,
+      paragraphLengthRange: { min: 22, max: 88 },
+      vocabularyDiversity: 0.52,
+      topPatterns: [],
+      rhetoricalFeatures: [],
+      rhythmPreference: "short-cutting",
+    }), "ko");
+
+    expect(fingerprint).toContain("리듬 오버레이");
+    expect(fingerprint).toContain("짧게 끊어 읽히는 편");
+  });
+
   it("saves Korean chapter headings with Korean prefixes instead of Chinese ones", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-writer-save-ko-"));
     const bookDir = join(root, "book");

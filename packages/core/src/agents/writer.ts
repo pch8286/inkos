@@ -38,6 +38,27 @@ import { buildEnglishVarianceBrief } from "../utils/long-span-fatigue.js";
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+function describeRhythmPreference(
+  rhythmPreference: "short-cutting" | "balanced" | "flowing",
+  language: WritingLanguage,
+): string {
+  if (language === "en") {
+    if (rhythmPreference === "short-cutting") return "prefers shorter, quickly segmented beats";
+    if (rhythmPreference === "flowing") return "prefers longer, more continuous sentence flow";
+    return "keeps a balanced cadence between short beats and flowing lines";
+  }
+
+  if (language === "ko") {
+    if (rhythmPreference === "short-cutting") return "짧게 끊어 읽히는 편";
+    if (rhythmPreference === "flowing") return "길게 흐르며 이어지는 편";
+    return "짧은 비트와 흐르는 문장을 함께 쓰는 균형형";
+  }
+
+  if (rhythmPreference === "short-cutting") return "偏短促切分，读感利落";
+  if (rhythmPreference === "flowing") return "偏长线流动，句子连接更绵长";
+  return "短促节拍与流动长句保持平衡";
+}
+
 export interface WriteChapterInput {
   readonly book: BookConfig;
   readonly bookDir: string;
@@ -152,14 +173,13 @@ export class WriterAgent extends BaseAgent {
     const bookRules = parsedBookRules?.rules ?? null;
     const bookRulesBody = parsedBookRules?.body ?? "";
 
-    const styleFingerprint = this.buildStyleFingerprint(styleProfileRaw);
-
     const dialogueFingerprints = this.extractDialogueFingerprints(fingerprintChapters, storyBible);
     const relevantSummaries = this.findRelevantSummaries(chapterSummaries, volumeOutline, chapterNumber);
 
     const hasParentCanon = parentCanon !== "(文件尚未创建)";
     const hasFanficCanon = fanficCanonRaw !== "(文件尚未创建)";
     const resolvedLanguage = book.language ?? genreProfile.language;
+    const styleFingerprint = this.buildStyleFingerprint(styleProfileRaw, resolvedLanguage);
     const targetWords = input.lengthSpec?.target ?? input.wordCountOverride ?? book.chapterWordCount;
     const resolvedLengthSpec = input.lengthSpec ?? buildLengthSpec(targetWords, resolvedLanguage);
     const governedMemoryBlocks = input.contextPackage
@@ -1343,18 +1363,67 @@ ${overrides}\n`;
     }
   }
 
-  private buildStyleFingerprint(styleProfileRaw: string): string | undefined {
+  private buildStyleFingerprint(styleProfileRaw: string, language: WritingLanguage): string | undefined {
     if (!styleProfileRaw || styleProfileRaw === "(文件尚未创建)") return undefined;
     try {
       const profile = JSON.parse(styleProfileRaw);
       const lines: string[] = [];
-      if (profile.avgSentenceLength) lines.push(`- 平均句长：${profile.avgSentenceLength}字`);
-      if (profile.sentenceLengthStdDev) lines.push(`- 句长标准差：${profile.sentenceLengthStdDev}`);
-      if (profile.avgParagraphLength) lines.push(`- 平均段落长度：${profile.avgParagraphLength}字`);
-      if (profile.paragraphLengthRange) lines.push(`- 段落长度范围：${profile.paragraphLengthRange.min}-${profile.paragraphLengthRange.max}字`);
-      if (profile.vocabularyDiversity) lines.push(`- 词汇多样性(TTR)：${profile.vocabularyDiversity}`);
-      if (profile.topPatterns?.length > 0) lines.push(`- 高频句式：${profile.topPatterns.join("、")}`);
-      if (profile.rhetoricalFeatures?.length > 0) lines.push(`- 修辞特征：${profile.rhetoricalFeatures.join("、")}`);
+      if (profile.avgSentenceLength) {
+        lines.push(this.localize(language, {
+          zh: `- 平均句长：${profile.avgSentenceLength}字`,
+          en: `- Average sentence length: ${profile.avgSentenceLength} characters`,
+          ko: `- 평균 문장 길이: ${profile.avgSentenceLength}자`,
+        }));
+      }
+      if (profile.sentenceLengthStdDev) {
+        lines.push(this.localize(language, {
+          zh: `- 句长标准差：${profile.sentenceLengthStdDev}`,
+          en: `- Sentence-length standard deviation: ${profile.sentenceLengthStdDev}`,
+          ko: `- 문장 길이 표준편차: ${profile.sentenceLengthStdDev}`,
+        }));
+      }
+      if (profile.avgParagraphLength) {
+        lines.push(this.localize(language, {
+          zh: `- 平均段落长度：${profile.avgParagraphLength}字`,
+          en: `- Average paragraph length: ${profile.avgParagraphLength} characters`,
+          ko: `- 평균 문단 길이: ${profile.avgParagraphLength}자`,
+        }));
+      }
+      if (profile.paragraphLengthRange) {
+        lines.push(this.localize(language, {
+          zh: `- 段落长度范围：${profile.paragraphLengthRange.min}-${profile.paragraphLengthRange.max}字`,
+          en: `- Paragraph-length range: ${profile.paragraphLengthRange.min}-${profile.paragraphLengthRange.max} characters`,
+          ko: `- 문단 길이 범위: ${profile.paragraphLengthRange.min}-${profile.paragraphLengthRange.max}자`,
+        }));
+      }
+      if (profile.vocabularyDiversity) {
+        lines.push(this.localize(language, {
+          zh: `- 词汇多样性(TTR)：${profile.vocabularyDiversity}`,
+          en: `- Vocabulary diversity (TTR): ${profile.vocabularyDiversity}`,
+          ko: `- 어휘 다양성(TTR): ${profile.vocabularyDiversity}`,
+        }));
+      }
+      if (profile.rhythmPreference) {
+        lines.push(this.localize(language, {
+          zh: `- 节奏叠层：${describeRhythmPreference(profile.rhythmPreference, "zh")}`,
+          en: `- Rhythm overlay: ${describeRhythmPreference(profile.rhythmPreference, "en")}`,
+          ko: `- 리듬 오버레이: ${describeRhythmPreference(profile.rhythmPreference, "ko")}`,
+        }));
+      }
+      if (profile.topPatterns?.length > 0) {
+        lines.push(this.localize(language, {
+          zh: `- 高频句式：${profile.topPatterns.join("、")}`,
+          en: `- Repeated opening patterns: ${profile.topPatterns.join(", ")}`,
+          ko: `- 반복되는 문장 출발점: ${profile.topPatterns.join(", ")}`,
+        }));
+      }
+      if (profile.rhetoricalFeatures?.length > 0) {
+        lines.push(this.localize(language, {
+          zh: `- 修辞特征：${profile.rhetoricalFeatures.join("、")}`,
+          en: `- Rhetorical features: ${profile.rhetoricalFeatures.join(", ")}`,
+          ko: `- 수사 특성: ${profile.rhetoricalFeatures.join(", ")}`,
+        }));
+      }
       return lines.length > 0 ? lines.join("\n") : undefined;
     } catch {
       return undefined;

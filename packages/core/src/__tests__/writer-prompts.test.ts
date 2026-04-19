@@ -170,6 +170,9 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("너는 새 문장을 쓰는 writer다");
     expect(prompt).toContain("장면을 쓸 때는 독자가 먼저 큰 형상과 위치 관계를 잡게 하고, 세부 묘사는 그다음에 붙인다");
     expect(prompt).toContain("인물이 멈추거나, 숙이거나, 손을 뻗거나, 시선을 돌릴 때는");
+    expect(prompt).toContain("한 문장은 하나의 핵심 시각 단위를 중심으로 싣고");
+    expect(prompt).toContain("묘사 다음 문장에는 짧은 행동, 반응, 판단 중 하나를 붙여 호흡을 만든다");
+    expect(prompt).not.toContain("## 금지사항");
     expect(prompt).not.toContain("## Input Governance Contract");
     expect(prompt).not.toContain("## Length Guidance");
     expect(prompt).not.toContain("## 输入治理契约");
