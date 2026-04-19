@@ -3183,8 +3183,8 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const books = await Promise.all(
       bookIds.map(async (id) => {
         const book = await state.loadBookConfig(id);
-        const nextChapter = await state.getNextChapterNumber(id);
-        return { ...book, chaptersWritten: nextChapter - 1 };
+        const chaptersWritten = await state.getDurableChapterCount(id);
+        return { ...book, chaptersWritten };
       }),
     );
     return c.json({ books });

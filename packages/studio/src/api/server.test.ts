@@ -156,6 +156,10 @@ vi.mock("@actalk/inkos-core", () => {
       return maxChapter + 1;
     }
 
+    async getDurableChapterCount(id: string): Promise<number> {
+      return (await this.getNextChapterNumber(id)) - 1;
+    }
+
     bookDir(id: string): string {
       return join(this.root, "books", id);
     }

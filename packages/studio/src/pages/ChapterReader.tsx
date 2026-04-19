@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
+import {
+  ChapterRejectDialog,
+  toggleChapterRejectionInstruction,
+  validateChapterRejectDraft,
+} from "../components/ChapterRejectDialog";
 import { fetchJson, useApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { defaultLocalizedChapterTitle, localizeChapterTitle } from "../shared/chapter-title";
-import type { ChapterInlineReviewThreadPayload, ReaderSettings } from "../shared/contracts";
+import type {
+  ChapterInlineReviewThreadPayload,
+  ChapterRejectionExecutionMode,
+  ChapterRejectionInstruction,
+  ChapterRejectionPayload,
+  ReaderSettings,
+} from "../shared/contracts";
 import {
   buildReaderSettingsDiff,
   normalizeReaderSettings,
@@ -49,6 +60,7 @@ interface ChapterReaderData {
   readonly auditIssues?: ReadonlyArray<string>;
   readonly reviewNote?: string;
   readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
+  readonly rejection?: ChapterRejectionPayload | null;
   readonly content: string;
   readonly language?: "ko" | "zh" | "en";
   readonly readerSettings?: ReaderSettings;
@@ -612,6 +624,11 @@ export function ChapterReader({
   const [reviewDecision, setReviewDecision] = useState<InlineReviewDecision>("comment");
   const [reviewNoteDraft, setReviewNoteDraft] = useState("");
   const [selectionRange, setSelectionRange] = useState<{ readonly startLine: number; readonly endLine: number } | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectEditorNote, setRejectEditorNote] = useState("");
+  const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<ChapterRejectionInstruction>>([]);
+  const [rejectSubmittingMode, setRejectSubmittingMode] = useState<ChapterRejectionExecutionMode | null>(null);
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   useEffect(() => {
     setReviewThreads(data?.reviewThreads ?? []);
@@ -712,11 +729,35 @@ export function ChapterReader({
     });
   };
 
-  const handleReject = async () => {
+  const handleReject = () => {
     if (hasUnsavedTextChanges) {
       alert(t("reader.inlineReviewSaveGate"));
       return;
     }
+    setRejectEditorNote(data.rejection?.editorNote ?? "");
+    setRejectInstructions(data.rejection?.instructions ?? []);
+    setRejectError(null);
+    setRejectSubmittingMode(null);
+    setRejectDialogOpen(true);
+  };
+
+  const closeRejectDialog = () => {
+    if (rejectSubmittingMode !== null) {
+      return;
+    }
+    setRejectDialogOpen(false);
+    setRejectError(null);
+  };
+
+  const handleSubmitReject = async (executionMode: ChapterRejectionExecutionMode) => {
+    const validationError = validateChapterRejectDraft(data.language ?? "ko", rejectEditorNote, rejectInstructions);
+    if (validationError) {
+      setRejectError(validationError);
+      return;
+    }
+
+    setRejectSubmittingMode(executionMode);
+    setRejectError(null);
     await runChapterDecision({
       pendingDecision,
       nextDecision: "reject",
@@ -724,12 +765,23 @@ export function ChapterReader({
         await fetchJson(`/books/${bookId}/chapters/${chapterNumber}/reject`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reviewThreads }),
+          body: JSON.stringify({
+            reviewThreads,
+            editorNote: rejectEditorNote.trim(),
+            instructions: rejectInstructions,
+            executionMode,
+          }),
         });
       },
       setPendingDecision,
-      onSuccess: () => nav.toBook(bookId),
-      onError: (message) => alert(message),
+      onSuccess: () => {
+        setRejectDialogOpen(false);
+        nav.toBook(bookId);
+      },
+      onError: (message) => {
+        setRejectError(message);
+        setRejectSubmittingMode(null);
+      },
     });
   };
 
@@ -1032,6 +1084,23 @@ export function ChapterReader({
           <div />
         )}
       </div>
+      <ChapterRejectDialog
+        open={rejectDialogOpen}
+        language={data.language ?? "ko"}
+        chapterLabel={localizeChapterTitle(data.title, data.chapterNumber, data.language)}
+        editorNote={rejectEditorNote}
+        instructions={rejectInstructions}
+        submittingMode={rejectSubmittingMode}
+        error={rejectError}
+        onClose={closeRejectDialog}
+        onEditorNoteChange={setRejectEditorNote}
+        onToggleInstruction={(instruction) => {
+          setRejectInstructions((current) => toggleChapterRejectionInstruction(current, instruction));
+        }}
+        onSubmit={(executionMode) => {
+          void handleSubmitReject(executionMode);
+        }}
+      />
     </div>
   );
 }

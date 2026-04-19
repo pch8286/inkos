@@ -5,6 +5,7 @@ import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-activity";
+import { ChapterRejectDialog, summarizeChapterRejectionInstructions, toggleChapterRejectionInstruction } from "../components/ChapterRejectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
@@ -35,7 +36,6 @@ type ChapterMeta = BookDetailPayload["chapters"][number];
 type ReviseMode = "spot-fix" | "polish" | "rewrite" | "rework" | "anti-detect";
 type ExportFormat = "txt" | "md" | "epub";
 type BookStatus = "active" | "paused" | "outlining" | "completed" | "dropped";
-type RejectionInstruction = ChapterRejectionInstruction;
 
 interface Nav {
   toDashboard: () => void;
@@ -89,46 +89,6 @@ function structuralGateNoteLabel(language: "ko" | "zh" | "en"): string {
   return "Structural gate";
 }
 
-const STRONG_REJECTION_INSTRUCTIONS = new Set<RejectionInstruction>(["restructure", "heavy-rewrite", "full-rewrite"]);
-
-function rejectionInstructionLabel(language: "ko" | "zh" | "en", instruction: RejectionInstruction): string {
-  const ko: Record<RejectionInstruction, string> = {
-    polish: "부분 윤문",
-    "targeted-fix": "지적한 부분만 수정",
-    "tone-adjust": "톤/문체 조정",
-    restructure: "구성 재정리",
-    "heavy-rewrite": "거의 다시 쓰기",
-    "full-rewrite": "처음부터 다시 쓰기",
-  };
-  const en: Record<RejectionInstruction, string> = {
-    polish: "Polish",
-    "targeted-fix": "Targeted Fixes",
-    "tone-adjust": "Tone Adjustment",
-    restructure: "Restructure",
-    "heavy-rewrite": "Heavy Rewrite",
-    "full-rewrite": "Full Rewrite",
-  };
-  const zh: Record<RejectionInstruction, string> = {
-    polish: "局部润色",
-    "targeted-fix": "只改指出的问题",
-    "tone-adjust": "语气/文风调整",
-    restructure: "结构重整",
-    "heavy-rewrite": "大幅重写",
-    "full-rewrite": "整章重写",
-  };
-
-  if (language === "en") return en[instruction];
-  if (language === "zh") return zh[instruction];
-  return ko[instruction];
-}
-
-function summarizeRejectionInstructions(
-  language: "ko" | "zh" | "en",
-  instructions: ReadonlyArray<RejectionInstruction>,
-): string {
-  return instructions.map((instruction) => rejectionInstructionLabel(language, instruction)).join(" + ");
-}
-
 function rejectionWorkflowLabel(
   language: "ko" | "zh" | "en",
   runStatus: "idle" | "running" | "completed" | "failed",
@@ -161,21 +121,6 @@ function reworkBannerLabel(language: "ko" | "zh" | "en", chapterNumber: number):
   return `재작업 진행 중 · ${chapterNumber}화`;
 }
 
-function toggleRejectionInstruction(
-  current: ReadonlyArray<RejectionInstruction>,
-  instruction: RejectionInstruction,
-): ReadonlyArray<RejectionInstruction> {
-  if (current.includes(instruction)) {
-    return current.filter((item) => item !== instruction);
-  }
-
-  if (instruction === "full-rewrite" || STRONG_REJECTION_INSTRUCTIONS.has(instruction)) {
-    return [instruction];
-  }
-
-  return [...current.filter((item) => !STRONG_REJECTION_INSTRUCTIONS.has(item)), instruction];
-}
-
 export function BookDetail({
   bookId,
   nav,
@@ -203,7 +148,7 @@ export function BookDetail({
   const [revisingChapters, setRevisingChapters] = useState<ReadonlyArray<number>>([]);
   const [rejectTarget, setRejectTarget] = useState<ChapterMeta | null>(null);
   const [rejectEditorNote, setRejectEditorNote] = useState("");
-  const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<RejectionInstruction>>([]);
+  const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<ChapterRejectionInstruction>>([]);
   const [rejectSubmittingMode, setRejectSubmittingMode] = useState<ChapterRejectionExecutionMode | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
   const [startingReworkChapters, setStartingReworkChapters] = useState<ReadonlyArray<number>>([]);
@@ -496,7 +441,7 @@ export function BookDetail({
   const reworkRunning = activity.revising || activity.rewriting;
   const mutationBusy = writing || drafting || reworkRunning;
   const liveInstructionSummary = activeReworkChapter?.rejection
-    ? summarizeRejectionInstructions(bookLanguage, activeReworkChapter.rejection.instructions)
+    ? summarizeChapterRejectionInstructions(bookLanguage, activeReworkChapter.rejection.instructions)
     : null;
   const liveStatusLabel = writing
     ? t("dash.writing")
@@ -846,7 +791,7 @@ export function BookDetail({
                   ? rejectionWorkflowLabel(bookLanguage, isRunningRework ? "running" : ch.rejection.lastRunStatus)
                   : null;
                 const reworkSummary = ch.rejection
-                  ? summarizeRejectionInstructions(bookLanguage, ch.rejection.instructions)
+                  ? summarizeChapterRejectionInstructions(bookLanguage, ch.rejection.instructions)
                   : null;
                 return (
                 <tr key={ch.number} className={`group hover:bg-muted/30 transition-colors fade-in ${staggerClass}`}>
@@ -1018,113 +963,25 @@ export function BookDetail({
         onConfirm={handleDeleteChapter}
         onCancel={() => setChapterDeleteTarget(null)}
       />
-      {rejectTarget ? (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in">
-          <div className="w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl shadow-primary/10">
-            <div className="border-b border-border/50 px-6 py-5">
-              <h3 className="text-lg font-semibold">
-                {bookLanguage === "ko" ? "반려 및 재작업 지시" : "Reject and queue rework"}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {localizeChapterTitle(rejectTarget.title, rejectTarget.number, data.book.language as "ko" | "zh" | "en" | undefined)}
-              </p>
-            </div>
-            <div className="space-y-5 px-6 py-5">
-              <section className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  {bookLanguage === "ko" ? "의견서" : "Editor Note"}
-                </label>
-                <textarea
-                  value={rejectEditorNote}
-                  onChange={(e) => setRejectEditorNote(e.target.value)}
-                  rows={5}
-                  className="w-full rounded-xl border border-border/50 bg-secondary/20 px-3 py-3 text-sm outline-none focus:border-[color:var(--studio-state-text)]"
-                  placeholder={bookLanguage === "ko" ? "왜 반려하는지, 무엇을 고쳐야 하는지 구체적으로 적어 주세요." : "Explain what must change before this chapter comes back."}
-                />
-              </section>
-              <section className="space-y-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    {bookLanguage === "ko" ? "수정 지시" : "Rework Instructions"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {bookLanguage === "ko" ? "강한 재작성 항목을 고르면 다른 옵션은 자동으로 해제됩니다." : "Strong rewrite options replace other selections automatically."}
-                  </p>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {([
-                    "polish",
-                    "targeted-fix",
-                    "tone-adjust",
-                    "restructure",
-                    "heavy-rewrite",
-                    "full-rewrite",
-                  ] as const).map((instruction) => {
-                    const selected = rejectInstructions.includes(instruction);
-                    return (
-                      <label
-                        key={instruction}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm transition-all ${
-                          selected
-                            ? "border-[color:var(--studio-state-text)] bg-secondary/60"
-                            : "border-border/50 bg-secondary/20"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => setRejectInstructions((current) => toggleRejectionInstruction(current, instruction))}
-                        />
-                        <span>{rejectionInstructionLabel(bookLanguage, instruction)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </section>
-              <section className="rounded-xl border border-border/50 bg-secondary/20 px-4 py-3 text-sm">
-                <p className="font-semibold text-foreground">
-                  {bookLanguage === "ko" ? "요약" : "Summary"}
-                </p>
-                <p className="mt-1 text-muted-foreground">
-                  {rejectInstructions.length > 0
-                    ? summarizeRejectionInstructions(bookLanguage, rejectInstructions)
-                    : (bookLanguage === "ko" ? "수정 지시를 선택해 주세요." : "Choose at least one instruction.")}
-                </p>
-              </section>
-              {rejectError ? (
-                <p className="text-sm text-destructive">{rejectError}</p>
-              ) : null}
-            </div>
-            <div className="flex flex-col-reverse gap-2 border-t border-border/50 bg-muted/30 px-6 py-4 sm:flex-row sm:justify-end">
-              <button
-                onClick={closeRejectDialog}
-                disabled={rejectSubmittingMode !== null}
-                className="rounded-xl border border-border/50 bg-secondary px-4 py-2.5 text-sm font-medium text-foreground disabled:opacity-50"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={() => void handleSubmitReject("save-only")}
-                disabled={rejectSubmittingMode !== null}
-                className="rounded-xl border border-border/50 bg-background px-4 py-2.5 text-sm font-semibold text-foreground disabled:opacity-50"
-              >
-                {rejectSubmittingMode === "save-only"
-                  ? (bookLanguage === "ko" ? "저장 중..." : "Saving...")
-                  : (bookLanguage === "ko" ? "지시만 저장" : "Save Only")}
-              </button>
-              <button
-                onClick={() => void handleSubmitReject("start-now")}
-                disabled={rejectSubmittingMode !== null}
-                className="rounded-xl bg-destructive px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
-              >
-                {rejectSubmittingMode === "start-now"
-                  ? (bookLanguage === "ko" ? "시작 중..." : "Starting...")
-                  : (bookLanguage === "ko" ? "즉시 시작" : "Start Now")}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ChapterRejectDialog
+        open={rejectTarget !== null}
+        language={bookLanguage}
+        chapterLabel={rejectTarget
+          ? localizeChapterTitle(rejectTarget.title, rejectTarget.number, data.book.language as "ko" | "zh" | "en" | undefined)
+          : ""}
+        editorNote={rejectEditorNote}
+        instructions={rejectInstructions}
+        submittingMode={rejectSubmittingMode}
+        error={rejectError}
+        onClose={closeRejectDialog}
+        onEditorNoteChange={setRejectEditorNote}
+        onToggleInstruction={(instruction) => {
+          setRejectInstructions((current) => toggleChapterRejectionInstruction(current, instruction));
+        }}
+        onSubmit={(executionMode) => {
+          void handleSubmitReject(executionMode);
+        }}
+      />
     </div>
   );
 }

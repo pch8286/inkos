@@ -337,6 +337,70 @@ describe("StateManager", () => {
   });
 
   // -------------------------------------------------------------------------
+  // getDurableChapterCount
+  // -------------------------------------------------------------------------
+
+  describe("getDurableChapterCount", () => {
+    it("returns durable progress without bootstrapping structured state files", async () => {
+      const bookId = "dashboard-count-book";
+      const bookDir = manager.bookDir(bookId);
+      const chaptersDir = join(bookDir, "chapters");
+      const storyDir = join(bookDir, "story");
+      const stateDir = join(storyDir, "state");
+
+      await mkdir(chaptersDir, { recursive: true });
+      await mkdir(storyDir, { recursive: true });
+
+      await Promise.all([
+        manager.saveChapterIndex(bookId, [
+          {
+            number: 1,
+            title: "Ch1",
+            status: "ready-for-review",
+            wordCount: 3000,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            auditIssues: [],
+            lengthWarnings: [],
+          },
+          {
+            number: 2,
+            title: "Ch2",
+            status: "ready-for-review",
+            wordCount: 3000,
+            createdAt: "2026-01-02T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z",
+            auditIssues: [],
+            lengthWarnings: [],
+          },
+        ]),
+        writeFile(
+          join(chaptersDir, "0003_Lantern_Vault.md"),
+          "# Chapter 3: Lantern Vault\n\nPersisted body.",
+          "utf-8",
+        ),
+        writeFile(
+          join(storyDir, "current_state.md"),
+          [
+            "# Current State",
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+            "| Current Chapter | 3 |",
+            "",
+          ].join("\n"),
+          "utf-8",
+        ),
+      ]);
+
+      const chapterCount = await manager.getDurableChapterCount(bookId);
+
+      expect(chapterCount).toBe(3);
+      await expect(stat(stateDir)).rejects.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // listBooks
   // -------------------------------------------------------------------------
 

@@ -225,6 +225,12 @@ export class StateManager {
     return durableChapter + 1;
   }
 
+  async getDurableChapterCount(bookId: string): Promise<number> {
+    return await resolveDurableStoryProgress({
+      bookDir: this.bookDir(bookId),
+    });
+  }
+
   async getPersistedChapterCount(bookId: string): Promise<number> {
     const chaptersDir = join(this.bookDir(bookId), "chapters");
     const chapterNumbers = new Set<number>();

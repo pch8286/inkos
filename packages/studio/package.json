@@ -16,12 +16,12 @@
     "directory": "packages/studio"
   },
   "scripts": {
-    "prepack": "vite build && tsc -p tsconfig.server.json && node ../../scripts/prepare-package-for-publish.mjs",
+    "prepack": "node ../../scripts/build-studio-client.mjs && tsc -p tsconfig.server.json && node ../../scripts/prepare-package-for-publish.mjs",
     "postpack": "node ../../scripts/restore-package-json.mjs",
     "prepublishOnly": "node ../../scripts/verify-no-workspace-protocol.mjs .",
     "dev": "vite --host --port 4567",
-    "build": "vite build && tsc -p tsconfig.server.json",
-    "build:client": "vite build",
+    "build": "node ../../scripts/build-studio-client.mjs && tsc -p tsconfig.server.json",
+    "build:client": "node ../../scripts/build-studio-client.mjs",
     "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "test": "vitest run",
