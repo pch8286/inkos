@@ -14,7 +14,8 @@ import {
   type PipelineConfig,
   type ProjectConfig,
   type LogSink,
-  type LogEntry
+  type LogEntry,
+  type ChapterMeta,
 } from "@actalk/inkos-core";
 import { access, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -2807,7 +2808,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   async function saveChapterReviewState(params: {
     readonly bookId: string;
     readonly chapterNumber: number;
-    readonly status?: string;
+    readonly status?: ChapterMeta["status"];
     readonly reviewThreads?: ReadonlyArray<ChapterInlineReviewThreadPayload>;
     readonly rejection?: ChapterRejectionPayload | null;
     readonly updatedAt?: string;
@@ -2815,7 +2816,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const index = await state.loadChapterIndex(params.bookId);
     const updatedAt = params.updatedAt ?? new Date().toISOString();
     let found = false;
-    const updated = index.map((chapter) => {
+    const updated: ChapterMeta[] = index.map((chapter) => {
       if (chapter.number !== params.chapterNumber) {
         return chapter;
       }
@@ -2918,17 +2919,14 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     readonly bookId: string;
     readonly chapterNumber: number;
   }): Promise<null | {
-    readonly chapter: Record<string, unknown> & { number: number; reviewNote?: string };
+    readonly chapter: ChapterMeta;
     readonly fileName: string | null;
     readonly content: string | null;
     readonly reviewThreads: ReadonlyArray<ChapterInlineReviewThreadPayload>;
     readonly rejection: ChapterRejectionPayload | undefined;
   }> {
     const index = await state.loadChapterIndex(params.bookId).catch(() => []);
-    const chapter = index.find((entry) => entry.number === params.chapterNumber) as (Record<string, unknown> & {
-      number: number;
-      reviewNote?: string;
-    }) | undefined;
+    const chapter = index.find((entry) => entry.number === params.chapterNumber);
     if (!chapter) {
       return null;
     }
@@ -2965,7 +2963,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           failureMessage: params.failureMessage,
         }
       : undefined;
-    const restoredChapter = {
+    const restoredChapter: ChapterMeta = {
       ...params.snapshot.chapter,
       status: "rejected",
       updatedAt,
@@ -4500,7 +4498,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const num = parseInt(c.req.param("num"), 10);
 
     try {
-      const body = await c.req.json<RejectChapterRequest>().catch(() => ({}));
+      const body = await c.req.json<RejectChapterRequest>().catch(() => null);
       const updatedAt = new Date().toISOString();
       const parsedRequest = readRejectChapterRequest(body, updatedAt);
       await saveChapterReviewState({
