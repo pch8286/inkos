@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { fetchJson, postApi } from "../hooks/use-api";
 import type { TFunction } from "../hooks/use-i18n";
 import type { TruthAssistResponse, TruthFileDetail, TruthFileSummary, TruthWriteScope } from "../shared/contracts";
@@ -98,6 +98,18 @@ export function useCockpitConversation(input: UseCockpitConversationInput) {
   const clearProposal = (key: string) => {
     replaceProposal(key, null);
   };
+
+  const hydrateConversationState = useCallback((next: {
+    readonly threads?: Record<string, ReadonlyArray<CockpitMessage>>;
+    readonly proposals?: Record<string, ProposalState>;
+  }) => {
+    if (next.threads) {
+      setThreads({ ...next.threads });
+    }
+    if (next.proposals) {
+      setProposals({ ...next.proposals });
+    }
+  }, []);
 
   const sendDiscussPrompt = async (rawText: string, options?: SendDiscussOptions) => {
     const text = rawText.trim();
@@ -323,11 +335,13 @@ export function useCockpitConversation(input: UseCockpitConversationInput) {
 
   return {
     threads,
+    proposals,
     activeMessages,
     activeProposal,
     hasPendingChanges,
     appendMessage,
     replaceThread,
+    hydrateConversationState,
     clearProposal,
     sendDiscussPrompt,
     sendBinderPrompt,

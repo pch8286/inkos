@@ -6,6 +6,12 @@ import { useColors } from "../hooks/use-colors";
 import type { SSEMessage } from "../hooks/use-sse";
 import { resolveStudioLanguage } from "../shared/language";
 import { platformOptionsForLanguage } from "../shared/book-create-form";
+import {
+  loadAiSessionRecord,
+  saveAiSessionRecord,
+  writeAiSessionPointer,
+  type PersistedAiSessionRecord,
+} from "../shared/ai-session-store";
 import type {
   TruthFileDetail,
   TruthFileSummary,
@@ -40,7 +46,9 @@ import {
 import {
   toSetupConversation,
   type CockpitMessage,
+  type FoundationPreviewKey,
   type InspectorTab,
+  type ProposalState,
 } from "./cockpit-shared";
 import {
   appendQueuedComposerEntry,
@@ -132,6 +140,44 @@ interface ProjectSummary {
   readonly reasoningEffort?: string;
 }
 
+interface PersistedCockpitPayload {
+  readonly threads: Readonly<Record<string, ReadonlyArray<CockpitMessage>>>;
+  readonly proposals: Readonly<Record<string, ProposalState>>;
+  readonly queuedComposerEntries: CockpitComposerQueueState;
+  readonly draftInputByThread: Readonly<Record<string, string>>;
+  readonly setupDraft: {
+    readonly title: string;
+    readonly genre: string;
+    readonly platform: string;
+    readonly words: string;
+    readonly targetChapters: string;
+    readonly brief: string;
+    readonly selectedFoundationPreviewKey: FoundationPreviewKey;
+  } | null;
+  readonly uiContext: {
+    readonly mode: CockpitMode;
+    readonly selectedBookId: string;
+    readonly selectedTruthFile: string;
+    readonly selectedChapterNumber: number | null;
+    readonly showNewSetup: boolean;
+    readonly inspectorTab: InspectorTab;
+  };
+}
+
+const COCKPIT_SESSION_ID = "studio:cockpit";
+const COCKPIT_POINTER_SCOPE = "cockpit";
+
+function isPersistedCockpitPayload(value: unknown): value is PersistedCockpitPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (!record.uiContext || typeof record.uiContext !== "object") {
+    return false;
+  }
+  return true;
+}
+
 export function getCockpitCreateActionErrorKey(showNewSetup: boolean): "cockpit.createRequiresOpenSetup" | null {
   return showNewSetup ? null : "cockpit.createRequiresOpenSetup";
 }
@@ -190,10 +236,12 @@ export function Cockpit({
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
   const [showNewSetup, setShowNewSetup] = useState(!initialBookId);
   const [input, setInput] = useState("");
+  const [draftInputByThread, setDraftInputByThread] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>(!initialBookId ? "setup" : "focus");
   const [queuedComposerEntries, setQueuedComposerEntries] = useState<CockpitComposerQueueState>({});
+  const [cockpitPersistenceHydrated, setCockpitPersistenceHydrated] = useState(false);
   const queuedComposerEntriesRef = useRef<CockpitComposerQueueState>({});
   const queueDispatchingRef = useRef(false);
   const activeThreadKeyRef = useRef("");
@@ -248,11 +296,13 @@ export function Cockpit({
   );
   const {
     threads,
+    proposals,
     activeMessages,
     activeProposal,
     hasPendingChanges,
     appendMessage,
     replaceThread,
+    hydrateConversationState,
     clearProposal,
     sendDiscussPrompt,
     sendBinderPrompt,
@@ -369,6 +419,112 @@ export function Cockpit({
     setupPlatform,
     setupBrief,
   };
+
+  const setComposerInput = (value: string, threadKey = activeThreadKeyRef.current || activeThreadKey) => {
+    setInput(value);
+    setDraftInputByThread((current) => {
+      if (!value) {
+        if (!(threadKey in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[threadKey];
+        return next;
+      }
+      if (current[threadKey] === value) {
+        return current;
+      }
+      return {
+        ...current,
+        [threadKey]: value,
+      };
+    });
+  };
+
+  useEffect(() => {
+    setInput(draftInputByThread[activeThreadKey] ?? "");
+  }, [activeThreadKey, draftInputByThread]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      const record = await loadAiSessionRecord<PersistedCockpitPayload>(COCKPIT_SESSION_ID);
+      if (cancelled) {
+        return;
+      }
+      const payload = record?.payload;
+      if (!isPersistedCockpitPayload(payload)) {
+        setCockpitPersistenceHydrated(true);
+        return;
+      }
+
+      hydrateConversationState({
+        threads: { ...(payload.threads ?? {}) },
+        proposals: { ...(payload.proposals ?? {}) },
+      });
+
+      const restoredQueue = payload.queuedComposerEntries ?? {};
+      queuedComposerEntriesRef.current = restoredQueue;
+      setQueuedComposerEntries(restoredQueue);
+      setDraftInputByThread({ ...(payload.draftInputByThread ?? {}) });
+
+      const restoredContext = payload.uiContext;
+      if (!initialBookId && typeof restoredContext.selectedBookId === "string") {
+        setSelectedBookId(restoredContext.selectedBookId);
+      }
+      if (restoredContext.mode === "discuss" || restoredContext.mode === "binder" || restoredContext.mode === "draft") {
+        setMode(restoredContext.mode);
+      }
+      if (typeof restoredContext.selectedTruthFile === "string") {
+        setSelectedTruthFile(restoredContext.selectedTruthFile);
+      }
+      if (typeof restoredContext.selectedChapterNumber === "number" || restoredContext.selectedChapterNumber === null) {
+        setSelectedChapterNumber(restoredContext.selectedChapterNumber);
+      }
+      setShowNewSetup(initialBookId ? false : Boolean(restoredContext.showNewSetup));
+      if (
+        restoredContext.inspectorTab === "focus"
+        || restoredContext.inspectorTab === "changes"
+        || restoredContext.inspectorTab === "setup"
+        || restoredContext.inspectorTab === "activity"
+      ) {
+        setInspectorTab(restoredContext.inspectorTab);
+      }
+
+      if (payload.setupDraft) {
+        setSetupTitle(payload.setupDraft.title);
+        setSetupGenre(payload.setupDraft.genre);
+        setSetupPlatform(payload.setupDraft.platform);
+        setSetupWords(payload.setupDraft.words);
+        setSetupTargetChapters(payload.setupDraft.targetChapters);
+        setSetupBrief(payload.setupDraft.brief);
+        setSelectedFoundationPreviewKey(payload.setupDraft.selectedFoundationPreviewKey);
+      }
+
+      setCockpitPersistenceHydrated(true);
+    };
+
+    void hydrate().catch(() => {
+      if (!cancelled) {
+        setCockpitPersistenceHydrated(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hydrateConversationState,
+    initialBookId,
+    setSelectedFoundationPreviewKey,
+    setSetupBrief,
+    setSetupGenre,
+    setSetupPlatform,
+    setSetupTargetChapters,
+    setSetupTitle,
+    setSetupWords,
+  ]);
 
   useEffect(() => {
     if (initialBookId) {
@@ -496,7 +652,7 @@ export function Cockpit({
       return;
     }
 
-    setInput("");
+    setComposerInput("");
     if (action === "ask") {
       await sendBinderPrompt(text, "ask");
       return;
@@ -523,7 +679,7 @@ export function Cockpit({
     const text = (parsedCommand?.text ?? rawInput).trim();
 
     if (explicitInput === undefined) {
-      setInput("");
+      setComposerInput("");
     }
 
     await executeComposerAction(action, text);
@@ -578,7 +734,7 @@ export function Cockpit({
       return;
     }
 
-    setInput("");
+    setComposerInput("");
     if (!busy) {
       void runNextQueuedComposerEntryRef.current(activeThreadKey);
     }
@@ -597,7 +753,7 @@ export function Cockpit({
       return;
     }
 
-    setInput(formatQueuedComposerEntryForInput(restoredEntry, mode));
+    setComposerInput(formatQueuedComposerEntryForInput(restoredEntry, mode));
   };
 
   useEffect(() => {
@@ -613,6 +769,75 @@ export function Cockpit({
     }
     void runNextQueuedComposerEntryRef.current(activeThreadKey);
   }, [activeThreadKey, busy, queuedComposerEntries]);
+
+  useEffect(() => {
+    if (!cockpitPersistenceHydrated) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const record: PersistedAiSessionRecord<PersistedCockpitPayload> = {
+        version: 1,
+        sessionId: COCKPIT_SESSION_ID,
+        kind: "cockpit",
+        bookId: selectedBookId || null,
+        scopeKey: COCKPIT_POINTER_SCOPE,
+        updatedAt: Date.now(),
+        payload: {
+          threads,
+          proposals,
+          queuedComposerEntries,
+          draftInputByThread,
+          setupDraft: {
+            title: setupTitle,
+            genre: setupGenre,
+            platform: setupPlatform,
+            words: setupWords,
+            targetChapters: setupTargetChapters,
+            brief: setupBrief,
+            selectedFoundationPreviewKey,
+          },
+          uiContext: {
+            mode,
+            selectedBookId,
+            selectedTruthFile,
+            selectedChapterNumber,
+            showNewSetup,
+            inspectorTab,
+          },
+        },
+      };
+
+      void saveAiSessionRecord(record)
+        .then(() => {
+          writeAiSessionPointer(COCKPIT_POINTER_SCOPE, COCKPIT_SESSION_ID);
+        })
+        .catch(() => undefined);
+    }, 160);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    cockpitPersistenceHydrated,
+    draftInputByThread,
+    inspectorTab,
+    mode,
+    proposals,
+    queuedComposerEntries,
+    selectedBookId,
+    selectedChapterNumber,
+    selectedFoundationPreviewKey,
+    selectedTruthFile,
+    setupBrief,
+    setupGenre,
+    setupPlatform,
+    setupTargetChapters,
+    setupTitle,
+    setupWords,
+    showNewSetup,
+    threads,
+  ]);
 
   const canUseBinder = Boolean(selectedBookId && (truthListData?.files.length ?? 0) > 0);
   const canUseDraft = Boolean(selectedBookId);
@@ -938,7 +1163,7 @@ export function Cockpit({
           canUseDraft={canUseDraft}
           hasPendingProposalChanges={Boolean(activeProposal?.changes.length)}
           queuedComposerEntries={activeQueuedComposerEntries}
-          onInputChange={setInput}
+          onInputChange={setComposerInput}
           onQueueComposerInput={queueComposerInput}
           onRestoreQueuedComposerInput={restoreQueuedComposerInput}
           onSubmit={handleSubmit}

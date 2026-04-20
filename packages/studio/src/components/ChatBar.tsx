@@ -4,6 +4,14 @@ import type { SSEMessage } from "../hooks/use-sse";
 import { cn } from "../lib/utils";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { TruthAssistResponse, TruthFileDetail, TruthWriteScope } from "../shared/contracts";
+import {
+  clearAiSessionPointer,
+  deleteAiSessionRecord,
+  loadAiSessionRecord,
+  saveAiSessionRecord,
+  writeAiSessionPointer,
+  type PersistedAiSessionRecord,
+} from "../shared/ai-session-store";
 import type { TruthAssistantContext } from "../shared/truth-assistant";
 import {
   buildTruthLineDiff,
@@ -13,7 +21,7 @@ import {
   summarizeTruthDiff,
   truthThreadKey,
 } from "../shared/truth-assistant";
-import { readStoredTruthThreads, writeStoredTruthThreads, type StoredTruthThreads } from "../shared/truth-session";
+import { clearStoredTruthThreads, readStoredTruthThreads } from "../shared/truth-session";
 import { buildTruthAssistRequest, isTruthProposalApplicable } from "../shared/truth-write-scope";
 import { mergeInterviewAnswerIntoAlignmentContext } from "../shared/truth-workspace";
 import {
@@ -93,6 +101,54 @@ interface ProjectLlmSummary {
   readonly provider: string;
   readonly model: string;
   readonly reasoningEffort?: string;
+}
+
+interface PersistedChatbarPayload {
+  readonly messages: ReadonlyArray<ChatMessage>;
+}
+
+interface PersistedTruthPayload {
+  readonly threads: TruthThreads;
+}
+
+const CHATBAR_SESSION_ID = "studio:chatbar:general";
+const CHATBAR_POINTER_SCOPE = "chatbar";
+const TRUTH_POINTER_SCOPE = "truth";
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (record.role === "user" || record.role === "assistant")
+    && typeof record.content === "string"
+    && typeof record.timestamp === "number";
+}
+
+function isTruthMessage(value: unknown): value is TruthMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string"
+    && (record.role === "user" || record.role === "assistant")
+    && typeof record.content === "string"
+    && typeof record.createdAt === "number"
+    && (record.kind === "chat" || record.kind === "proposal" || record.kind === "clarification" || record.kind === "question")
+    && Array.isArray(record.targetFiles);
+}
+
+function normalizeTruthThreads(value: unknown): TruthThreads {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, thread]) => [
+      key,
+      Array.isArray(thread) ? thread.filter(isTruthMessage) : [],
+    ] as const)
+    .filter(([, thread]) => thread.length > 0);
+  return Object.fromEntries(entries);
 }
 
 export function resolveDirectWriteTarget(
@@ -471,6 +527,7 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ReadonlyArray<ChatMessage>>([]);
   const [truthThreads, setTruthThreads] = useState<TruthThreads>({});
+  const [chatPersistenceHydrated, setChatPersistenceHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [truthSending, setTruthSending] = useState(false);
   const [truthError, setTruthError] = useState<string | null>(null);
@@ -551,16 +608,103 @@ export function ChatPanel({
   }, [truthKey, truthMode]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const hydrateGeneralChat = async () => {
+      const record = await loadAiSessionRecord<PersistedChatbarPayload>(CHATBAR_SESSION_ID);
+      if (cancelled) {
+        return;
+      }
+      const restoredMessages = Array.isArray(record?.payload?.messages)
+        ? record.payload.messages.filter(isChatMessage)
+        : [];
+      if (restoredMessages.length > 0) {
+        setMessages((current) => current.length > 0 ? current : restoredMessages);
+      }
+      setChatPersistenceHydrated(true);
+    };
+
+    void hydrateGeneralChat().catch(() => {
+      if (!cancelled) {
+        setChatPersistenceHydrated(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!chatPersistenceHydrated) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (messages.length === 0) {
+        void deleteAiSessionRecord(CHATBAR_SESSION_ID).catch(() => undefined);
+        clearAiSessionPointer(CHATBAR_POINTER_SCOPE);
+        return;
+      }
+
+      const record: PersistedAiSessionRecord<PersistedChatbarPayload> = {
+        version: 1,
+        sessionId: CHATBAR_SESSION_ID,
+        kind: "chatbar",
+        bookId: activeBookId ?? null,
+        scopeKey: CHATBAR_POINTER_SCOPE,
+        updatedAt: Date.now(),
+        payload: {
+          messages,
+        },
+      };
+
+      void saveAiSessionRecord(record)
+        .then(() => {
+          writeAiSessionPointer(CHATBAR_POINTER_SCOPE, CHATBAR_SESSION_ID);
+        })
+        .catch(() => undefined);
+    }, 160);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [activeBookId, chatPersistenceHydrated, messages]);
+
+  useEffect(() => {
     if (!truthContext || hydratedTruthBooksRef.current.has(truthContext.bookId)) {
       return;
     }
-    const stored = readStoredTruthThreads(truthContext.bookId);
     hydratedTruthBooksRef.current.add(truthContext.bookId);
-    if (!stored) {
-      return;
-    }
-    skipTruthThreadPersistRef.current.add(truthContext.bookId);
-    setTruthThreads((current) => ({ ...stored.threads, ...current }));
+    let cancelled = false;
+
+    const hydrateTruthThreads = async () => {
+      const sessionId = `studio:truth:${truthContext.bookId}`;
+      const record = await loadAiSessionRecord<PersistedTruthPayload>(sessionId);
+      if (cancelled) {
+        return;
+      }
+
+      const persistedThreads = normalizeTruthThreads(record?.payload?.threads);
+      if (Object.keys(persistedThreads).length > 0) {
+        skipTruthThreadPersistRef.current.add(truthContext.bookId);
+        setTruthThreads((current) => ({ ...persistedThreads, ...current }));
+        writeAiSessionPointer(TRUTH_POINTER_SCOPE, sessionId);
+        return;
+      }
+
+      const legacy = readStoredTruthThreads(truthContext.bookId);
+      if (!legacy) {
+        return;
+      }
+      setTruthThreads((current) => ({ ...legacy.threads, ...current }));
+    };
+
+    void hydrateTruthThreads().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, [truthContext]);
 
   useEffect(() => {
@@ -574,10 +718,33 @@ export function ChatPanel({
     const bookThreads = Object.fromEntries(
       Object.entries(truthThreads).filter(([key]) => key.startsWith(`truth:${truthContext.bookId}:`)),
     );
-    writeStoredTruthThreads(truthContext.bookId, {
+    const sessionId = `studio:truth:${truthContext.bookId}`;
+
+    if (Object.keys(bookThreads).length === 0) {
+      void deleteAiSessionRecord(sessionId).catch(() => undefined);
+      clearAiSessionPointer(TRUTH_POINTER_SCOPE);
+      clearStoredTruthThreads(truthContext.bookId);
+      return;
+    }
+
+    const record: PersistedAiSessionRecord<PersistedTruthPayload> = {
       version: 1,
-      threads: bookThreads,
-    } satisfies StoredTruthThreads);
+      sessionId,
+      kind: "truth",
+      bookId: truthContext.bookId,
+      scopeKey: `truth:${truthContext.bookId}`,
+      updatedAt: Date.now(),
+      payload: {
+        threads: bookThreads,
+      },
+    };
+
+    void saveAiSessionRecord(record)
+      .then(() => {
+        writeAiSessionPointer(TRUTH_POINTER_SCOPE, sessionId);
+        clearStoredTruthThreads(truthContext.bookId);
+      })
+      .catch(() => undefined);
   }, [truthContext, truthThreads]);
 
   useEffect(() => {
