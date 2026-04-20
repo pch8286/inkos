@@ -397,6 +397,9 @@ export interface StudioRun {
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
   readonly logs: ReadonlyArray<RunLogEntry>;
+  readonly elapsedMs?: number | null;
+  readonly totalChars?: number | null;
+  readonly chineseChars?: number | null;
   readonly result?: unknown;
   readonly error?: string;
 }

@@ -747,6 +747,7 @@ describe("createStudioServer daemon lifecycle", () => {
   it("reflects project edits immediately without restarting the studio server", async () => {
     process.env.INKOS_LLM_PROVIDER = "openai";
     process.env.INKOS_LLM_BASE_URL = "https://stale.example.com/v1";
+    process.env.INKOS_LLM_API_KEY = "stale-key";
     process.env.INKOS_LLM_MODEL = "stale-model";
     process.env.INKOS_LLM_REASONING_EFFORT = "low";
     process.env.INKOS_LLM_TEMPERATURE = "0.95";
@@ -793,6 +794,7 @@ describe("createStudioServer daemon lifecycle", () => {
       maxTokens: 2048,
       stream: true,
     });
+    expect(process.env.INKOS_LLM_API_KEY).toBeUndefined();
   });
 
   it("reloads latest llm config for doctor checks without restarting the studio server", async () => {

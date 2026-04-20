@@ -87,6 +87,18 @@ export class RunStore {
     ]);
   }
 
+  updateProgress(runId: string, progress: {
+    elapsedMs?: number | null;
+    totalChars?: number | null;
+    chineseChars?: number | null;
+  }): StudioRun {
+    return this.update(runId, {
+      elapsedMs: progress.elapsedMs ?? null,
+      totalChars: progress.totalChars ?? null,
+      chineseChars: progress.chineseChars ?? null,
+    }, []);
+  }
+
   succeed(runId: string, result: unknown): StudioRun {
     return this.update(
       runId,

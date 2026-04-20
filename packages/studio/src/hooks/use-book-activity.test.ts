@@ -154,12 +154,16 @@ describe("deriveBookActivity", () => {
           message: "Preparing chapter context",
         },
       ],
+      elapsedMs: 5400,
+      totalChars: 2048,
     })).toMatchObject({
       writing: false,
       drafting: true,
       draftCancelling: false,
       activeOperation: "draft",
       liveDetail: "Preparing chapter context",
+      elapsedMs: 5400,
+      totalChars: 2048,
     });
   });
 });

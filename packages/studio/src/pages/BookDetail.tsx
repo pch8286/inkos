@@ -5,7 +5,12 @@ import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-activity";
-import { ChapterRejectDialog, summarizeChapterRejectionInstructions, toggleChapterRejectionInstruction } from "../components/ChapterRejectDialog";
+import {
+  ChapterRejectDialog,
+  summarizeChapterRejectionInstructions,
+  toggleChapterRejectionInstruction,
+  validateChapterRejectDraft,
+} from "../components/ChapterRejectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
@@ -150,6 +155,8 @@ export function BookDetail({
   const [rejectEditorNote, setRejectEditorNote] = useState("");
   const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<ChapterRejectionInstruction>>([]);
   const [rejectSubmittingMode, setRejectSubmittingMode] = useState<ChapterRejectionExecutionMode | null>(null);
+  const [rejectEditorNoteError, setRejectEditorNoteError] = useState<string | null>(null);
+  const [rejectInstructionsError, setRejectInstructionsError] = useState<string | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
   const [startingReworkChapters, setStartingReworkChapters] = useState<ReadonlyArray<number>>([]);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -304,6 +311,8 @@ export function BookDetail({
     setRejectTarget(chapter);
     setRejectEditorNote(chapter.rejection?.editorNote ?? "");
     setRejectInstructions(chapter.rejection?.instructions ?? []);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectSubmittingMode(null);
     setRejectError(null);
   };
@@ -312,23 +321,26 @@ export function BookDetail({
     setRejectTarget(null);
     setRejectEditorNote("");
     setRejectInstructions([]);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectError(null);
   };
 
   const handleSubmitReject = async (executionMode: ChapterRejectionExecutionMode) => {
     if (!rejectTarget) return;
 
-    const editorNote = rejectEditorNote.trim();
-    if (!editorNote) {
-      setRejectError(bookLanguage === "ko" ? "의견서를 입력해야 반려할 수 있습니다." : "Editor note is required.");
-      return;
-    }
-    if (rejectInstructions.length === 0) {
-      setRejectError(bookLanguage === "ko" ? "최소 한 개의 수정 지시를 선택하세요." : "Choose at least one rework instruction.");
+    const validationErrors = validateChapterRejectDraft(bookLanguage, rejectEditorNote, rejectInstructions);
+    setRejectEditorNoteError(validationErrors.editorNote);
+    setRejectInstructionsError(validationErrors.instructions);
+    if (validationErrors.editorNote || validationErrors.instructions) {
+      setRejectError(null);
       return;
     }
 
+    const editorNote = rejectEditorNote.trim();
     setRejectSubmittingMode(executionMode);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectError(null);
     try {
       await fetchJson(`/books/${bookId}/chapters/${rejectTarget.number}/reject`, {
@@ -976,10 +988,26 @@ export function BookDetail({
         instructions={rejectInstructions}
         submittingMode={rejectSubmittingMode}
         error={rejectError}
+        editorNoteError={rejectEditorNoteError}
+        instructionsError={rejectInstructionsError}
         onClose={closeRejectDialog}
-        onEditorNoteChange={setRejectEditorNote}
+        onEditorNoteChange={(value) => {
+          setRejectEditorNote(value);
+          if (rejectEditorNoteError) {
+            setRejectEditorNoteError(null);
+          }
+          if (rejectError) {
+            setRejectError(null);
+          }
+        }}
         onToggleInstruction={(instruction) => {
           setRejectInstructions((current) => toggleChapterRejectionInstruction(current, instruction));
+          if (rejectInstructionsError) {
+            setRejectInstructionsError(null);
+          }
+          if (rejectError) {
+            setRejectError(null);
+          }
         }}
         onSubmit={(executionMode) => {
           void handleSubmitReject(executionMode);

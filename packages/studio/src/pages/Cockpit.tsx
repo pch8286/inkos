@@ -13,6 +13,7 @@ import {
   type PersistedAiSessionRecord,
 } from "../shared/ai-session-store";
 import type {
+  StudioRun,
   TruthFileDetail,
   TruthFileSummary,
 } from "../shared/contracts";
@@ -108,6 +109,7 @@ interface BookDetailResponse {
   };
   readonly chapters: ReadonlyArray<BookChapterSummary>;
   readonly nextChapter: number;
+  readonly activeRun?: StudioRun | null;
 }
 
 interface ChapterDetailResponse {
@@ -889,6 +891,7 @@ export function Cockpit({
     setupDiscussionState,
     setupSessionStatus: setupSession?.status ?? null,
     activityEntries,
+    activeRun: bookDetailData?.activeRun ?? null,
   });
   const statusStageLabel = t(`cockpit.stage.${statusStrip.stage}`);
   const statusModelLabel = statusStrip.modelLabel === "-"

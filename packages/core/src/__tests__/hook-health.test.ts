@@ -50,6 +50,27 @@ describe("analyzeHookHealth", () => {
     expect(issues.some((issue) => issue.category === "Hook Debt" && issue.description.includes("5 active hooks"))).toBe(true);
   });
 
+  it("localizes active hook cap warnings in Korean", () => {
+    const issues = analyzeHookHealth({
+      language: "ko",
+      chapterNumber: 20,
+      hooks: [
+        createHook({ hookId: "H001" }),
+        createHook({ hookId: "H002" }),
+        createHook({ hookId: "H003" }),
+        createHook({ hookId: "H004" }),
+        createHook({ hookId: "H005" }),
+      ],
+      maxActiveHooks: 4,
+    });
+
+    expect(issues).toContainEqual(expect.objectContaining({
+      category: "복선 부채",
+      description: "현재 활성 복선이 5개로, 권장 상한 4개를 넘었습니다.",
+      suggestion: "새 복선을 더 열기 전에, 기존 복선을 먼저 진전시키거나 회수하거나 뒤로 미루세요.",
+    }));
+  });
+
   it("warns when a short-payoff hook is already under payoff pressure without real movement", () => {
     const issues = analyzeHookHealth({
       language: "en",

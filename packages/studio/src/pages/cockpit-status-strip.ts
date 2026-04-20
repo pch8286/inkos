@@ -1,3 +1,4 @@
+import type { StudioRun } from "../shared/contracts";
 import { compactModelLabel, shortLabelForProvider, type ReasoningEffort } from "../shared/llm";
 
 export type CockpitStatusStage =
@@ -42,6 +43,7 @@ export interface CockpitStatusStripInput {
   readonly setupDiscussionState: "discussing" | "ready";
   readonly setupSessionStatus: "proposed" | "approved" | "creating" | null;
   readonly activityEntries: ReadonlyArray<CockpitStatusActivityEntry>;
+  readonly activeRun?: StudioRun | null;
 }
 
 export type CockpitStatusProgressMode = "determinate" | "indeterminate" | "none";
@@ -59,6 +61,8 @@ export interface CockpitStatusStrip {
   readonly liveDetail: string | null;
   readonly progressMode: CockpitStatusProgressMode;
   readonly progressValue: number | null;
+  readonly elapsedMs?: number | null;
+  readonly totalChars?: number | null;
 }
 
 export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): CockpitStatusStrip {
@@ -68,6 +72,7 @@ export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): Cockpi
   const latestEvent = latestEventInfo.summary;
   const { mode: progressMode, value: progressValue } = deriveProgressMode(stage);
   const isLive = stage !== "idle" && stage !== "ready";
+  const persistedRunDetail = getPersistedRunLiveDetail(input.activeRun);
 
   return {
     providerLabel: shortLabelForProvider(input.provider.trim()),
@@ -84,10 +89,13 @@ export function deriveCockpitStatusStrip(input: CockpitStatusStripInput): Cockpi
       isLive,
       createJobs: input.createJobs,
       latestEvent,
+      persistedRunDetail,
       targetLabel,
     }),
     progressMode,
     progressValue,
+    elapsedMs: getFiniteNumber(input.activeRun?.elapsedMs),
+    totalChars: getFiniteNumber(input.activeRun?.totalChars),
   };
 }
 
@@ -110,6 +118,14 @@ function deriveCockpitStage(input: CockpitStatusStripInput): CockpitStatusStage 
 
   if (input.busy) {
     return "working";
+  }
+
+  if (input.activeRun?.status === "running") {
+    return "working";
+  }
+
+  if (input.activeRun?.status === "queued") {
+    return "queued";
   }
 
   if (input.createJobs.some((job) => job.status === "creating")) {
@@ -200,6 +216,7 @@ function deriveLiveDetail(input: {
   readonly isLive: boolean;
   readonly createJobs: ReadonlyArray<CockpitCreateJob>;
   readonly latestEvent: string | null;
+  readonly persistedRunDetail: string | null;
   readonly targetLabel: string;
 }): string | null {
   if (!input.isLive) {
@@ -234,7 +251,28 @@ function deriveLiveDetail(input: {
     return input.latestEvent;
   }
 
+  if (input.persistedRunDetail) {
+    return input.persistedRunDetail;
+  }
+
   return input.targetLabel;
+}
+
+function getPersistedRunLiveDetail(activeRun: StudioRun | null | undefined): string | null {
+  if (!activeRun) {
+    return null;
+  }
+
+  const lastLogMessage = activeRun.logs.at(-1)?.message?.trim();
+  if (lastLogMessage) {
+    return lastLogMessage;
+  }
+
+  return trimText(activeRun.stage);
+}
+
+function getFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function normalizeReasoningLabel(value: string | null | undefined): string | null {

@@ -63,6 +63,18 @@ function emptyInstructionSummary(language: "ko" | "zh" | "en"): string {
   return "수정 지시를 선택해 주세요.";
 }
 
+function editorNoteRequiredMessage(language: "ko" | "zh" | "en"): string {
+  if (language === "en") return "Please enter a rejection editor note.";
+  if (language === "zh") return "请输入驳回 editor note。";
+  return "반려 editor note를 입력해 주세요.";
+}
+
+function instructionRequiredMessage(language: "ko" | "zh" | "en"): string {
+  if (language === "en") return "Choose at least one rework instruction.";
+  if (language === "zh") return "请至少选择一项返工指示。";
+  return "최소 한 개의 수정 지시를 선택하세요.";
+}
+
 function saveOnlyLabel(language: "ko" | "zh" | "en", submittingMode: ChapterRejectionExecutionMode | null): string {
   if (submittingMode === "save-only") {
     if (language === "en") return "Saving...";
@@ -147,22 +159,20 @@ export function toggleChapterRejectionInstruction(
   return [...current.filter((item) => !STRONG_REJECTION_INSTRUCTIONS.has(item)), instruction];
 }
 
+export interface ChapterRejectValidationErrors {
+  readonly editorNote: string | null;
+  readonly instructions: string | null;
+}
+
 export function validateChapterRejectDraft(
   language: "ko" | "zh" | "en",
   editorNote: string,
   instructions: ReadonlyArray<ChapterRejectionInstruction>,
-): string | null {
-  if (editorNote.trim().length === 0) {
-    if (language === "en") return "Editor note is required.";
-    if (language === "zh") return "驳回前必须填写编辑备注。";
-    return "의견서를 입력해야 반려할 수 있습니다.";
-  }
-  if (instructions.length === 0) {
-    if (language === "en") return "Choose at least one rework instruction.";
-    if (language === "zh") return "请至少选择一项返工指示。";
-    return "최소 한 개의 수정 지시를 선택하세요.";
-  }
-  return null;
+): ChapterRejectValidationErrors {
+  return {
+    editorNote: editorNote.trim().length === 0 ? editorNoteRequiredMessage(language) : null,
+    instructions: instructions.length === 0 ? instructionRequiredMessage(language) : null,
+  };
 }
 
 export function resolveChapterRejectDialogPortalTarget(
@@ -179,6 +189,8 @@ export function ChapterRejectDialog({
   instructions,
   submittingMode,
   error,
+  editorNoteError,
+  instructionsError,
   onClose,
   onEditorNoteChange,
   onToggleInstruction,
@@ -191,6 +203,8 @@ export function ChapterRejectDialog({
   instructions: ReadonlyArray<ChapterRejectionInstruction>;
   submittingMode: ChapterRejectionExecutionMode | null;
   error: string | null;
+  editorNoteError: string | null;
+  instructionsError: string | null;
   onClose: () => void;
   onEditorNoteChange: (value: string) => void;
   onToggleInstruction: (instruction: ChapterRejectionInstruction) => void;
@@ -243,9 +257,18 @@ export function ChapterRejectDialog({
               value={editorNote}
               onChange={(event) => onEditorNoteChange(event.target.value)}
               rows={5}
-              className="w-full rounded-xl border border-border/50 bg-secondary/20 px-3 py-3 text-sm outline-none focus:border-[color:var(--studio-state-text)]"
+              aria-invalid={editorNoteError ? "true" : "false"}
+              aria-describedby={editorNoteError ? "chapter-reject-editor-note-error" : undefined}
+              className={`w-full rounded-xl border bg-secondary/20 px-3 py-3 text-sm outline-none focus:border-[color:var(--studio-state-text)] ${
+                editorNoteError ? "border-destructive/60" : "border-border/50"
+              }`}
               placeholder={editorNotePlaceholder(language)}
             />
+            {editorNoteError ? (
+              <p id="chapter-reject-editor-note-error" className="text-sm text-destructive">
+                {editorNoteError}
+              </p>
+            ) : null}
           </section>
           <section className="space-y-3">
             <div>
@@ -276,6 +299,9 @@ export function ChapterRejectDialog({
                 );
               })}
             </div>
+            {instructionsError ? (
+              <p className="text-sm text-destructive">{instructionsError}</p>
+            ) : null}
           </section>
           <section className="rounded-xl border border-border/50 bg-secondary/20 px-4 py-3 text-sm">
             <p className="font-semibold text-foreground">{rejectionSummaryLabel(language)}</p>

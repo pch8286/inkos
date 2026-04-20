@@ -214,11 +214,54 @@ function stripReservedKeys(extra?: Record<string, unknown>): Record<string, unkn
 
 // === Error Wrapping ===
 
-function wrapLLMError(error: unknown, context?: { readonly baseUrl?: string; readonly model?: string }): Error {
+function wrapCliOAuthAuthError(
+  provider: "gemini-cli" | "codex-cli",
+  context?: { readonly baseUrl?: string; readonly model?: string },
+): Error {
+  const ctxLine = context
+    ? `\n  (baseUrl: ${context.baseUrl}, model: ${context.model})`
+    : "";
+  const loginCommand = provider === "codex-cli" ? "codex login" : "gemini auth";
+  const providerLabel = provider === "codex-cli" ? "Codex CLI" : "Gemini CLI";
+  return new Error(
+    `${providerLabel} authentication failed. The local OAuth session is expired or invalid. ` +
+    `Run '${loginCommand}' again and retry.${ctxLine}`,
+  );
+}
+
+function wrapLLMError(error: unknown, context?: {
+  readonly provider?: LLMClient["provider"];
+  readonly baseUrl?: string;
+  readonly model?: string;
+}): Error {
   const msg = String(error);
   const ctxLine = context
     ? `\n  (baseUrl: ${context.baseUrl}, model: ${context.model})`
     : "";
+  const normalized = msg.toLowerCase();
+
+  if (
+    context?.provider === "codex-cli"
+    && (
+      normalized.includes("refresh_token_reused")
+      || normalized.includes("refresh token was already used")
+      || normalized.includes("access token could not be refreshed")
+      || normalized.includes("sign in again")
+    )
+  ) {
+    return wrapCliOAuthAuthError("codex-cli", context);
+  }
+
+  if (
+    context?.provider === "gemini-cli"
+    && (
+      normalized.includes("oauth")
+      || normalized.includes("authentication")
+    )
+    && normalized.includes("sign in again")
+  ) {
+    return wrapCliOAuthAuthError("gemini-cli", context);
+  }
 
   if (msg.includes("400")) {
     return new Error(
@@ -300,6 +343,7 @@ export async function chatCompletion(
   };
   const onStreamProgress = options?.onStreamProgress;
   const errorCtx = {
+    provider: client.provider,
     baseUrl: client.provider === "anthropic"
       ? "(anthropic)"
       : client.provider === "gemini-cli"
@@ -404,6 +448,17 @@ export async function chatWithTools(
     readonly projectRoot?: string;
   },
 ): Promise<ChatWithToolsResult> {
+  const errorCtx = {
+    provider: client.provider,
+    baseUrl: client.provider === "anthropic"
+      ? "(anthropic)"
+      : client.provider === "gemini-cli"
+        ? "(gemini-cli)"
+        : client.provider === "codex-cli"
+          ? "(codex-cli)"
+          : client._openai?.baseURL ?? "(openai)",
+    model,
+  };
   try {
     const resolved = {
       temperature: options?.temperature ?? client.defaults.temperature,
@@ -432,7 +487,7 @@ export async function chatWithTools(
     }
     return await chatWithToolsOpenAIChat(client._openai!, model, messages, tools, resolved);
   } catch (error) {
-    throw wrapLLMError(error);
+    throw wrapLLMError(error, errorCtx);
   }
 }
 

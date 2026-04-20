@@ -114,7 +114,10 @@ console.log(JSON.stringify({
   return { commandPath, oauthPath, isolatedHomeBase, sourceHome };
 }
 
-async function createFakeCodexCliFixture(): Promise<{
+async function createFakeCodexCliFixture(options?: {
+  readonly errorMessage?: string;
+  readonly stderrMessage?: string;
+}): Promise<{
   readonly commandPath: string;
   readonly authPath: string;
   readonly isolatedHomeBase: string;
@@ -139,10 +142,19 @@ const stdin = await new Promise((resolve, reject) => {
   process.stdin.on("error", reject);
 });
 
+const errorMessage = ${JSON.stringify(options?.errorMessage ?? "")};
+const stderrMessage = ${JSON.stringify(options?.stderrMessage ?? "")};
+
 const modelIndex = args.indexOf("--model");
 const model = modelIndex >= 0 ? args[modelIndex + 1] : "gpt-5.4";
 console.log(JSON.stringify({ type: "thread.started", thread_id: "fake-thread" }));
 console.log(JSON.stringify({ type: "turn.started" }));
+
+if (errorMessage) {
+  console.log(JSON.stringify({ type: "error", message: errorMessage }));
+  if (stderrMessage) process.stderr.write(stderrMessage);
+  process.exit(1);
+}
 
 let text = "FAKE_CODEX_OK";
 if (stdin.includes("Return exactly one JSON object")) {
@@ -634,5 +646,35 @@ describe("chatCompletion stream fallback", () => {
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0]?.name).toBe("list_books");
     expect(JSON.parse(result.toolCalls[0]!.arguments)).toEqual({ limit: 1 });
+  });
+
+  it("surfaces codex-cli refresh token failures as re-login guidance", async () => {
+    const fixture = await createFakeCodexCliFixture({
+      errorMessage: "Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.",
+      stderrMessage: "401 Unauthorized: {\"error\":{\"code\":\"refresh_token_reused\"}}",
+    });
+    const client: LLMClient = {
+      provider: "codex-cli",
+      apiFormat: "chat",
+      stream: false,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+        extra: {
+          codexCliCommand: fixture.commandPath,
+          codexCliAuthSource: fixture.authPath,
+          codexCliIsolatedHomeBase: fixture.isolatedHomeBase,
+        },
+      },
+    };
+
+    const error = await captureError(chatCompletion(client, "gpt-5.4", [
+      { role: "user", content: "ping" },
+    ]));
+
+    expect(error.message).toContain("codex login");
+    expect(error.message).not.toContain("INKOS_LLM_API_KEY");
   });
 });

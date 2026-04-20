@@ -41,12 +41,16 @@ export function analyzeHookHealth(params: {
   if (activeHooks.length > maxActiveHooks) {
     issues.push(warning(
       params.language,
-      params.language === "en"
-        ? `There are ${activeHooks.length} active hooks, above the recommended cap of ${maxActiveHooks}.`
-        : `当前有 ${activeHooks.length} 个活跃伏笔，已经高于建议上限 ${maxActiveHooks} 个。`,
-      params.language === "en"
-        ? "Prefer advancing, resolving, or deferring existing debt before opening more hooks."
-        : "优先推进、回收或延后已有伏笔，再继续开新伏笔。",
+      localize(params.language, {
+        en: `There are ${activeHooks.length} active hooks, above the recommended cap of ${maxActiveHooks}.`,
+        ko: `현재 활성 복선이 ${activeHooks.length}개로, 권장 상한 ${maxActiveHooks}개를 넘었습니다.`,
+        zh: `当前有 ${activeHooks.length} 个活跃伏笔，已经高于建议上限 ${maxActiveHooks} 个。`,
+      }),
+      localize(params.language, {
+        en: "Prefer advancing, resolving, or deferring existing debt before opening more hooks.",
+        ko: "새 복선을 더 열기 전에, 기존 복선을 먼저 진전시키거나 회수하거나 뒤로 미루세요.",
+        zh: "优先推进、回收或延后已有伏笔，再继续开新伏笔。",
+      }),
     ));
   }
 
@@ -80,9 +84,11 @@ export function analyzeHookHealth(params: {
         entries: unresolvedPressure,
         mentionsCurrentChapter: Boolean(params.delta),
       }),
-      params.language === "en"
-        ? "Move one pressured hook with a real payoff, escalation, or explicit defer before opening adjacent debt."
-        : "先让一个已进入压力区的伏笔发生真实推进、回收或明确延后，再继续扩展同类债务。",
+      localize(params.language, {
+        en: "Move one pressured hook with a real payoff, escalation, or explicit defer before opening adjacent debt.",
+        ko: "압박 구간에 들어간 복선 하나를 실제로 진전시키거나 회수하거나 명시적으로 뒤로 미룬 뒤, 인접한 복선을 더 여세요.",
+        zh: "先让一个已进入压力区的伏笔发生真实推进、回收或明确延后，再继续扩展同类债务。",
+      }),
     ));
   } else {
     const latestRealAdvance = activeHooks.reduce(
@@ -96,12 +102,16 @@ export function analyzeHookHealth(params: {
     ) {
       issues.push(warning(
         params.language,
-        params.language === "en"
-          ? `No real hook advancement has landed for ${params.chapterNumber - latestRealAdvance} chapters.`
-          : `已经连续 ${params.chapterNumber - latestRealAdvance} 章没有真实伏笔推进。`,
-        params.language === "en"
-          ? "Schedule one old hook for real movement instead of opening parallel restatements."
-          : "下一章优先让一个旧伏笔发生真实推进，而不是继续平行重述。",
+        localize(params.language, {
+          en: `No real hook advancement has landed for ${params.chapterNumber - latestRealAdvance} chapters.`,
+          ko: `${params.chapterNumber - latestRealAdvance}화 연속으로 복선이 실제로 진전되지 않았습니다.`,
+          zh: `已经连续 ${params.chapterNumber - latestRealAdvance} 章没有真实伏笔推进。`,
+        }),
+        localize(params.language, {
+          en: "Schedule one old hook for real movement instead of opening parallel restatements.",
+          ko: "다음 화에서는 병렬 반복 대신 기존 복선 하나를 실제로 움직이세요.",
+          zh: "下一章优先让一个旧伏笔发生真实推进，而不是继续平行重述。",
+        }),
       ));
     }
   }
@@ -116,12 +126,16 @@ export function analyzeHookHealth(params: {
     if (newHookIds.length >= newHookBurstThreshold && params.delta.hookOps.resolve.length === 0) {
       issues.push(warning(
         params.language,
-        params.language === "en"
-          ? `Opened ${newHookIds.length} new hooks without resolving any older debt.`
-          : `本章新开了 ${newHookIds.length} 个伏笔，但没有回收任何旧债。`,
-        params.language === "en"
-          ? "Keep the hook table from ballooning by pairing new openings with old payoffs."
-          : "控制伏笔膨胀，新开伏笔时尽量配套回收旧伏笔。",
+        localize(params.language, {
+          en: `Opened ${newHookIds.length} new hooks without resolving any older debt.`,
+          ko: `이번 화에서 새 복선 ${newHookIds.length}개를 열었지만, 기존 복선은 하나도 회수하지 않았습니다.`,
+          zh: `本章新开了 ${newHookIds.length} 个伏笔，但没有回收任何旧债。`,
+        }),
+        localize(params.language, {
+          en: "Keep the hook table from ballooning by pairing new openings with old payoffs.",
+          ko: "복선이 과하게 불어나지 않도록, 새 복선을 열 때는 기존 복선 회수도 함께 배치하세요.",
+          zh: "控制伏笔膨胀，新开伏笔时尽量配套回收旧伏笔。",
+        }),
       ));
     }
   }
@@ -144,18 +158,27 @@ function buildPressureDescription(params: {
       const pressure = localizePressureLabel(lifecycle, params.language);
       return params.language === "en"
         ? `${hook.hookId} (${timing}, ${pressure})`
-        : `${hook.hookId}（${timing}，${pressure}）`;
+        : params.language === "ko"
+          ? `${hook.hookId} (${timing}, ${pressure})`
+          : `${hook.hookId}（${timing}，${pressure}）`;
     });
   const suffix = params.entries.length > summarized.length
-    ? params.language === "en"
-      ? `, +${params.entries.length - summarized.length} more`
-      : `，另有 ${params.entries.length - summarized.length} 条`
+    ? localize(params.language, {
+      en: `, +${params.entries.length - summarized.length} more`,
+      ko: `, 외 ${params.entries.length - summarized.length}건`,
+      zh: `，另有 ${params.entries.length - summarized.length} 条`,
+    })
     : "";
 
   if (params.language === "en") {
     return params.mentionsCurrentChapter
       ? `Hooks are already under payoff pressure but this chapter left them untouched: ${summarized.join(", ")}${suffix}.`
       : `Hooks are already under payoff pressure without recent movement: ${summarized.join(", ")}${suffix}.`;
+  }
+  if (params.language === "ko") {
+    return params.mentionsCurrentChapter
+      ? `이 복선들은 이미 회수/진전 압박 구간에 들어왔지만, 이번 화에서 실제로 처리되지 않았습니다: ${summarized.join(", ")}${suffix}.`
+      : `이 복선들은 이미 회수/진전 압박 구간에 들어왔지만, 최근 실제 진전이 없습니다: ${summarized.join(", ")}${suffix}.`;
   }
 
   return params.mentionsCurrentChapter
@@ -168,12 +191,24 @@ function localizePressureLabel(
   language: WritingLanguage,
 ): string {
   if (lifecycle.overdue) {
-    return language === "en" ? "overdue" : "已逾期";
+    return localize(language, {
+      en: "overdue",
+      ko: "기한 초과",
+      zh: "已逾期",
+    });
   }
   if (lifecycle.readyToResolve) {
-    return language === "en" ? "ready to pay off" : "可回收";
+    return localize(language, {
+      en: "ready to pay off",
+      ko: "회수 가능",
+      zh: "可回收",
+    });
   }
-  return language === "en" ? "stale" : "陈旧";
+  return localize(language, {
+    en: "stale",
+    ko: "정체",
+    zh: "陈旧",
+  });
 }
 
 function warning(
@@ -183,8 +218,29 @@ function warning(
 ): AuditIssue {
   return {
     severity: "warning",
-    category: language === "en" ? "Hook Debt" : "伏笔债务",
+    category: localize(language, {
+      en: "Hook Debt",
+      ko: "복선 부채",
+      zh: "伏笔债务",
+    }),
     description,
     suggestion,
   };
+}
+
+function localize(
+  language: WritingLanguage,
+  messages: {
+    readonly en: string;
+    readonly ko: string;
+    readonly zh: string;
+  },
+): string {
+  if (language === "en") {
+    return messages.en;
+  }
+  if (language === "ko") {
+    return messages.ko;
+  }
+  return messages.zh;
 }

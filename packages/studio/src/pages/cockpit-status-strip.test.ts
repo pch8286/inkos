@@ -256,6 +256,43 @@ describe("deriveCockpitStatusStrip", () => {
     });
   });
 
+  it("uses a persisted active run to restore live draft status after refresh", () => {
+    expect(deriveCockpitStatusStrip({
+      ...baseInput,
+      activeRun: {
+        id: "run-1",
+        bookId: "book-1",
+        chapter: null,
+        chapterNumber: null,
+        action: "draft",
+        status: "running",
+        stage: "Drafting",
+        createdAt: "2026-04-20T00:00:00.000Z",
+        updatedAt: "2026-04-20T00:00:03.000Z",
+        startedAt: "2026-04-20T00:00:01.000Z",
+        finishedAt: null,
+        logs: [
+          {
+            timestamp: "2026-04-20T00:00:03.000Z",
+            level: "info",
+            message: "Preparing chapter context",
+          },
+        ],
+        elapsedMs: 5400,
+        totalChars: 2048,
+      },
+    })).toMatchObject({
+      stage: "working",
+      isLive: true,
+      liveStage: "working",
+      liveDetail: "Preparing chapter context",
+      progressMode: "indeterminate",
+      progressValue: null,
+      elapsedMs: 5400,
+      totalChars: 2048,
+    });
+  });
+
   it("falls back to latest event for live detail when there is no active create-job detail", () => {
     expect(deriveCockpitStatusStrip({
       ...baseInput,

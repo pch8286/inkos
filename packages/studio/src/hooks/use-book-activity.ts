@@ -102,6 +102,10 @@ function getPersistedRunLiveDetail(activeRun: StudioRun | null | undefined): str
   return stage ? stage : null;
 }
 
+function getPersistedRunProgressValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function getBookId(message: SSEMessage): string | null {
   const data = message.data as { bookId?: unknown } | null;
   return typeof data?.bookId === "string" ? data.bookId : null;
@@ -264,8 +268,8 @@ export function deriveBookActivity(
   }
 
   let liveDetail: string | null = getPersistedRunLiveDetail(activeRun);
-  let elapsedMs: number | null = null;
-  let totalChars: number | null = null;
+  let elapsedMs: number | null = getPersistedRunProgressValue(activeRun?.elapsedMs);
+  let totalChars: number | null = getPersistedRunProgressValue(activeRun?.totalChars);
 
   // llm:progress/log SSE payloads are global, so only surface them when this
   // book owns the most recent active pipeline in the current session.

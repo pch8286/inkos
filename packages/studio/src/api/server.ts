@@ -2254,6 +2254,10 @@ function syncProjectRuntimeLlmEnv(llm: {
   if (baseUrl) process.env.INKOS_LLM_BASE_URL = baseUrl;
   else delete process.env.INKOS_LLM_BASE_URL;
 
+  if (isCliOAuthProvider(provider)) {
+    delete process.env.INKOS_LLM_API_KEY;
+  }
+
   if (typeof llm.temperature === "number" && Number.isFinite(llm.temperature)) {
     process.env.INKOS_LLM_TEMPERATURE = String(llm.temperature);
   } else {
@@ -2812,7 +2816,11 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     readonly action: "draft" | "revise" | "rewrite" | "write-next";
     readonly stage: string;
     readonly chapterNumber?: number;
-  }): { readonly runId: string; readonly sink: LogSink } {
+  }): {
+    readonly runId: string;
+    readonly sink: LogSink;
+    readonly onStreamProgress: NonNullable<PipelineConfig["onStreamProgress"]>;
+  } {
     const run = runStore.create({
       bookId: params.bookId,
       chapterNumber: params.chapterNumber,
@@ -2840,7 +2848,19 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       },
     };
 
-    return { runId: run.id, sink };
+    const onStreamProgress: NonNullable<PipelineConfig["onStreamProgress"]> = (progress) => {
+      if (progress.status !== "streaming") {
+        return;
+      }
+
+      runStore.updateProgress(run.id, {
+        elapsedMs: progress.elapsedMs,
+        totalChars: progress.totalChars,
+        chineseChars: progress.chineseChars,
+      });
+    };
+
+    return { runId: run.id, sink, onStreamProgress };
   }
 
   function completeTrackedBookRun(runId: string, result: unknown): void {
@@ -3056,6 +3076,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         });
         const pipelineConfigPromise = buildPipelineConfig(undefined, {
           extraSinks: [trackedRun.sink],
+          onStreamProgress: trackedRun.onStreamProgress,
         });
         await state.rollbackToChapter(params.bookId, Math.max(0, params.chapterNumber - 1));
         const pipeline = new PipelineRunner(await pipelineConfigPromise);
@@ -3106,6 +3127,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     void (async () => {
       const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
         extraSinks: [trackedRun.sink],
+        onStreamProgress: trackedRun.onStreamProgress,
       }));
       return await pipeline.reviseDraft(
         params.bookId,
@@ -4440,6 +4462,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       // Fire and forget — progress/completion/errors pushed via SSE
       const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
         extraSinks: [trackedRun.sink],
+        onStreamProgress: trackedRun.onStreamProgress,
       }));
       pipeline.writeNextChapter(id, body.wordCount).then(
         (result) => {
@@ -4483,6 +4506,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     try {
       const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
         extraSinks: [trackedRun.sink],
+        onStreamProgress: trackedRun.onStreamProgress,
       }));
       pipeline.writeDraft(id, body.context, body.wordCount).then(
         async (result) => {
@@ -5392,6 +5416,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       await state.rollbackToChapter(id, rollbackTarget);
       const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
         extraSinks: [trackedRun.sink],
+        onStreamProgress: trackedRun.onStreamProgress,
       }));
       pipeline.writeNextChapter(id).then(
         (result) => {

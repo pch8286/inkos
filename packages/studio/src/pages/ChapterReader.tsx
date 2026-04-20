@@ -628,6 +628,8 @@ export function ChapterReader({
   const [rejectEditorNote, setRejectEditorNote] = useState("");
   const [rejectInstructions, setRejectInstructions] = useState<ReadonlyArray<ChapterRejectionInstruction>>([]);
   const [rejectSubmittingMode, setRejectSubmittingMode] = useState<ChapterRejectionExecutionMode | null>(null);
+  const [rejectEditorNoteError, setRejectEditorNoteError] = useState<string | null>(null);
+  const [rejectInstructionsError, setRejectInstructionsError] = useState<string | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -736,6 +738,8 @@ export function ChapterReader({
     }
     setRejectEditorNote(data.rejection?.editorNote ?? "");
     setRejectInstructions(data.rejection?.instructions ?? []);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectError(null);
     setRejectSubmittingMode(null);
     setRejectDialogOpen(true);
@@ -746,17 +750,23 @@ export function ChapterReader({
       return;
     }
     setRejectDialogOpen(false);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectError(null);
   };
 
   const handleSubmitReject = async (executionMode: ChapterRejectionExecutionMode) => {
-    const validationError = validateChapterRejectDraft(data.language ?? "ko", rejectEditorNote, rejectInstructions);
-    if (validationError) {
-      setRejectError(validationError);
+    const validationErrors = validateChapterRejectDraft(data.language ?? "ko", rejectEditorNote, rejectInstructions);
+    setRejectEditorNoteError(validationErrors.editorNote);
+    setRejectInstructionsError(validationErrors.instructions);
+    if (validationErrors.editorNote || validationErrors.instructions) {
+      setRejectError(null);
       return;
     }
 
     setRejectSubmittingMode(executionMode);
+    setRejectEditorNoteError(null);
+    setRejectInstructionsError(null);
     setRejectError(null);
     await runChapterDecision({
       pendingDecision,
@@ -1092,10 +1102,26 @@ export function ChapterReader({
         instructions={rejectInstructions}
         submittingMode={rejectSubmittingMode}
         error={rejectError}
+        editorNoteError={rejectEditorNoteError}
+        instructionsError={rejectInstructionsError}
         onClose={closeRejectDialog}
-        onEditorNoteChange={setRejectEditorNote}
+        onEditorNoteChange={(value) => {
+          setRejectEditorNote(value);
+          if (rejectEditorNoteError) {
+            setRejectEditorNoteError(null);
+          }
+          if (rejectError) {
+            setRejectError(null);
+          }
+        }}
         onToggleInstruction={(instruction) => {
           setRejectInstructions((current) => toggleChapterRejectionInstruction(current, instruction));
+          if (rejectInstructionsError) {
+            setRejectInstructionsError(null);
+          }
+          if (rejectError) {
+            setRejectError(null);
+          }
         }}
         onSubmit={(executionMode) => {
           void handleSubmitReject(executionMode);

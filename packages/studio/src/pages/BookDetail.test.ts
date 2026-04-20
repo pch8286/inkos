@@ -215,6 +215,8 @@ describe("BookDetail", () => {
               message: "Preparing chapter context",
             },
           ],
+          elapsedMs: 5400,
+          totalChars: 2048,
         },
       },
       loading: false,
@@ -235,5 +237,9 @@ describe("BookDetail", () => {
     expect(html).toContain("LIVE");
     expect(html).toContain("book.drafting");
     expect(html).toContain("Preparing chapter context");
+    expect(html).toContain("radar.progressElapsed");
+    expect(html).toContain("5.4s");
+    expect(html).toContain("radar.progressChars");
+    expect(html).toContain("2,048");
   });
 });
