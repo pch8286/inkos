@@ -10,12 +10,51 @@ import {
 
 const DEFAULT_GEMINI_CLI_MODEL = "auto-gemini-3";
 
+function hasPersistedLlmOverride(content: string): boolean {
+  return /^INKOS_LLM_(PROVIDER|BASE_URL|API_KEY|MODEL)=.+$/m.test(content);
+}
+
+async function hasPersistedLlmConfig(root: string): Promise<boolean> {
+  try {
+    const projectConfigRaw = await readFile(join(root, "inkos.json"), "utf-8");
+    const projectConfig = JSON.parse(projectConfigRaw) as {
+      llm?: { provider?: string; baseUrl?: string; model?: string };
+    };
+    const llm = projectConfig.llm;
+    if (
+      typeof llm?.baseUrl === "string" && llm.baseUrl.trim().length > 0
+      || typeof llm?.model === "string" && llm.model.trim().length > 0
+      || llm?.provider === "gemini-cli"
+      || llm?.provider === "codex-cli"
+    ) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  for (const envPath of [GLOBAL_ENV_PATH, join(root, ".env")]) {
+    try {
+      const envContent = await readFile(envPath, "utf-8");
+      if (hasPersistedLlmOverride(envContent)) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return false;
+}
+
 export const doctorCommand = new Command("doctor")
   .description("Check environment and project health")
   .option("--repair-node-runtime", "Write .nvmrc and .node-version pinned to Node 22 for this project")
   .action(async (opts: { repairNodeRuntime?: boolean }) => {
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
     const root = findProjectRoot();
+
+    log("\nInkOS Doctor\n");
 
     if (opts.repairNodeRuntime) {
       const repair = await ensureNodeRuntimePinFiles(root);
@@ -160,6 +199,7 @@ export const doctorCommand = new Command("doctor")
     try {
       const { createLLMClient, chatCompletion, LLMConfigSchema, isApiKeyOptionalForEndpoint } = await import("@actalk/inkos-core");
       const { loadConfig } = await import("../utils.js");
+      const hasStoredConfig = await hasPersistedLlmConfig(root);
 
       let llmConfig;
       try {
@@ -197,7 +237,7 @@ export const doctorCommand = new Command("doctor")
         }
       }
 
-      if (!llmConfig) {
+      if (!llmConfig || !hasStoredConfig) {
         checks.push({
           name: "API Connectivity",
           ok: false,
@@ -215,7 +255,13 @@ export const doctorCommand = new Command("doctor")
         });
 
         const isCliOauthProvider = llmConfig.provider === "gemini-cli" || String(llmConfig.provider) === "codex-cli";
-        if (apiKeyOptional && !isCliOauthProvider) {
+        if (isCliOauthProvider) {
+          checks.push({
+            name: "API Connectivity",
+            ok: true,
+            detail: "Skipped for OAuth-backed CLI provider",
+          });
+        } else if (apiKeyOptional) {
           checks.push({
             name: "API Connectivity",
             ok: true,
@@ -264,7 +310,6 @@ export const doctorCommand = new Command("doctor")
     }
 
     // Output
-    log("\nInkOS Doctor\n");
     for (const check of checks) {
       const icon = check.ok ? "[OK]" : "[!!]";
       log(`  ${icon} ${check.name}: ${check.detail}`);

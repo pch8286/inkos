@@ -1,3 +1,4 @@
+import type { StudioRun } from "../shared/contracts";
 import type { SSEMessage } from "./use-sse";
 
 const START_EVENTS = new Set(["write:start", "draft:start", "revise:start", "rewrite:start"]);
@@ -72,6 +73,35 @@ export interface BookActivity {
   readonly totalChars: number | null;
 }
 
+function deriveOperationFromRunAction(action: StudioRun["action"]): BookActivity["activeOperation"] {
+  switch (action) {
+    case "write-next":
+      return "write";
+    case "draft":
+      return "draft";
+    case "revise":
+      return "revise";
+    case "rewrite":
+      return "rewrite";
+    default:
+      return null;
+  }
+}
+
+function getPersistedRunLiveDetail(activeRun: StudioRun | null | undefined): string | null {
+  if (!activeRun) {
+    return null;
+  }
+
+  const lastLogMessage = activeRun.logs.at(-1)?.message?.trim();
+  if (lastLogMessage) {
+    return lastLogMessage;
+  }
+
+  const stage = activeRun.stage.trim();
+  return stage ? stage : null;
+}
+
 function getBookId(message: SSEMessage): string | null {
   const data = message.data as { bookId?: unknown } | null;
   return typeof data?.bookId === "string" ? data.bookId : null;
@@ -120,14 +150,23 @@ export function deriveActiveBookIds(messages: ReadonlyArray<SSEMessage>): Readon
   return active;
 }
 
-export function deriveBookActivity(messages: ReadonlyArray<SSEMessage>, bookId: string): BookActivity {
-  let writing = false;
-  let drafting = false;
+export function deriveBookActivity(
+  messages: ReadonlyArray<SSEMessage>,
+  bookId: string,
+  activeRun?: StudioRun | null,
+): BookActivity {
+  const persistedOperation = activeRun?.bookId === bookId && activeRun.status === "running"
+    ? deriveOperationFromRunAction(activeRun.action)
+    : null;
+  let writing = persistedOperation === "write";
+  let drafting = persistedOperation === "draft";
   let draftCancelling = false;
-  let revising = false;
-  let rewriting = false;
-  let activeOperation: BookActivity["activeOperation"] = null;
-  let activeChapterNumber: number | null = null;
+  let revising = persistedOperation === "revise";
+  let rewriting = persistedOperation === "rewrite";
+  let activeOperation: BookActivity["activeOperation"] = persistedOperation;
+  let activeChapterNumber: number | null = persistedOperation === "revise" || persistedOperation === "rewrite"
+    ? activeRun?.chapterNumber ?? activeRun?.chapter ?? null
+    : null;
   let lastError: string | null = null;
   let latestStartIndex = -1;
   let lastStartedBookId: string | null = null;
@@ -224,7 +263,7 @@ export function deriveBookActivity(messages: ReadonlyArray<SSEMessage>, bookId: 
     }
   }
 
-  let liveDetail: string | null = null;
+  let liveDetail: string | null = getPersistedRunLiveDetail(activeRun);
   let elapsedMs: number | null = null;
   let totalChars: number | null = null;
 

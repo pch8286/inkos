@@ -143,6 +143,7 @@ describe("PipelineRunner structured-state memory sync", () => {
     const { WriterAgent } = await import("../agents/writer.js");
     const { ContinuityAuditor } = await import("../agents/continuity.js");
     const { StateValidatorAgent } = await import("../agents/state-validator.js");
+    const { StructuralGateAgent } = await import("../agents/structural-gate.js");
 
     root = await mkdtemp(join(tmpdir(), "inkos-runner-memory-sync-"));
     const state = new StateManager(root);
@@ -257,6 +258,12 @@ describe("PipelineRunner structured-state memory sync", () => {
       issues: [],
       summary: "clean",
       tokenUsage: ZERO_USAGE,
+    });
+    vi.spyOn(StructuralGateAgent.prototype, "evaluateStructuralGate").mockResolvedValue({
+      passed: true,
+      summary: "structural gate bypassed for memory sync test",
+      criticalFindings: [],
+      softFindings: [],
     });
     vi.spyOn(StateValidatorAgent.prototype, "validate").mockResolvedValue({
       warnings: [],

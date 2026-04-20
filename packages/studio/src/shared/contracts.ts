@@ -242,6 +242,7 @@ export interface BookDetailPayload {
   readonly chapters: ReadonlyArray<ChapterSummary>;
   readonly nextChapter: number;
   readonly pendingStructuralGate?: StructuralGateSummaryPayload | null;
+  readonly activeRun?: StudioRun | null;
 }
 
 // --- Truth Files ---
@@ -369,7 +370,7 @@ export interface ReviewActionPayload {
 
 // --- Runs ---
 
-export type RunAction = "draft" | "audit" | "revise" | "write-next";
+export type RunAction = "draft" | "audit" | "revise" | "rewrite" | "write-next";
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 

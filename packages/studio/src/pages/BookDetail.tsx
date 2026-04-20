@@ -160,7 +160,10 @@ export function BookDetail({
   const [settingsPlatform, setSettingsPlatform] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("txt");
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
-  const activity = useMemo(() => deriveBookActivity(sse.messages, bookId), [bookId, sse.messages]);
+  const activity = useMemo(
+    () => deriveBookActivity(sse.messages, bookId, data?.activeRun),
+    [bookId, data?.activeRun, sse.messages],
+  );
   const writing = writeRequestPending || activity.writing;
   const drafting = draftRequestPending || activity.drafting;
   const draftCancelling = draftCancelSubmitting || draftCancelRequested || activity.draftCancelling;

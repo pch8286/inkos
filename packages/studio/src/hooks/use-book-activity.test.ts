@@ -133,6 +133,35 @@ describe("deriveBookActivity", () => {
       activeChapterNumber: null,
     });
   });
+
+  it("falls back to a persisted active run when SSE history is empty after refresh", () => {
+    expect(deriveBookActivity([], "alpha", {
+      id: "run-1",
+      bookId: "alpha",
+      chapter: null,
+      chapterNumber: null,
+      action: "draft",
+      status: "running",
+      stage: "Generating draft",
+      createdAt: "2026-04-20T10:00:00.000Z",
+      updatedAt: "2026-04-20T10:00:05.000Z",
+      startedAt: "2026-04-20T10:00:01.000Z",
+      finishedAt: null,
+      logs: [
+        {
+          timestamp: "2026-04-20T10:00:04.000Z",
+          level: "info",
+          message: "Preparing chapter context",
+        },
+      ],
+    })).toMatchObject({
+      writing: false,
+      drafting: true,
+      draftCancelling: false,
+      activeOperation: "draft",
+      liveDetail: "Preparing chapter context",
+    });
+  });
 });
 
 describe("deriveActiveBookIds", () => {

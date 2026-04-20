@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   ChapterRejectDialog,
+  resolveChapterRejectDialogPortalTarget,
   summarizeChapterRejectionInstructions,
   toggleChapterRejectionInstruction,
   validateChapterRejectDraft,
@@ -22,6 +23,18 @@ describe("ChapterRejectDialog helpers", () => {
     expect(validateChapterRejectDraft("ko", "   ", [])).toBe("의견서를 입력해야 반려할 수 있습니다.");
     expect(validateChapterRejectDraft("ko", "수정 의견", [])).toBe("최소 한 개의 수정 지시를 선택하세요.");
     expect(validateChapterRejectDraft("ko", "수정 의견", ["polish"])).toBeNull();
+  });
+
+  it("uses document.body as the portal target when available", () => {
+    const body = { nodeName: "BODY" } as unknown as HTMLElement;
+    const ownerDocument = { body } as Document;
+
+    expect(resolveChapterRejectDialogPortalTarget(ownerDocument)).toBe(body);
+  });
+
+  it("falls back to inline rendering when no document body exists", () => {
+    expect(resolveChapterRejectDialogPortalTarget(undefined)).toBeNull();
+    expect(resolveChapterRejectDialogPortalTarget({ body: null } as unknown as Document)).toBeNull();
   });
 });
 

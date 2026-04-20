@@ -328,6 +328,42 @@ describe("chatCompletion stream fallback", () => {
     expect(error.message).not.toContain("\"stream\": false");
   });
 
+  it("treats missing extra defaults as an empty object", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "ok" } }],
+      usage: ZERO_USAGE,
+    });
+
+    const client = {
+      provider: "openai",
+      apiFormat: "chat",
+      stream: false,
+      _openai: {
+        chat: {
+          completions: {
+            create,
+          },
+        },
+      } as unknown as OpenAI,
+      defaults: {
+        temperature: 0.7,
+        maxTokens: 512,
+        thinkingBudget: 0,
+        maxTokensCap: null,
+      },
+    } as LLMClient;
+
+    const result = await chatCompletion(client, "test-model", [
+      { role: "user", content: "ping" },
+    ]);
+
+    expect(result.content).toBe("ok");
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      model: "test-model",
+      stream: false,
+    }));
+  });
+
   it("dispatches gemini-cli provider to local CLI runtime", async () => {
     const client: LLMClient = {
       provider: "gemini-cli",

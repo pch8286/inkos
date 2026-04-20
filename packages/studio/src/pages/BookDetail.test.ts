@@ -96,6 +96,7 @@ const sampleData: BookDetailPayload = {
     ],
     softFindings: [],
   },
+  activeRun: null,
 };
 
 describe("BookDetail", () => {
@@ -189,5 +190,50 @@ describe("BookDetail", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.writeNext/s);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.draftOnly/s);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*book\.deleteBook/s);
+  });
+
+  it("renders a live banner from persisted active run state after refresh", () => {
+    useApiMock.mockReturnValue({
+      data: {
+        ...sampleData,
+        activeRun: {
+          id: "run-1",
+          bookId: "gate-book",
+          chapter: null,
+          chapterNumber: null,
+          action: "draft",
+          status: "running",
+          stage: "Generating draft",
+          createdAt: "2026-04-20T00:00:00.000Z",
+          updatedAt: "2026-04-20T00:00:03.000Z",
+          startedAt: "2026-04-20T00:00:01.000Z",
+          finishedAt: null,
+          logs: [
+            {
+              timestamp: "2026-04-20T00:00:03.000Z",
+              level: "info",
+              message: "Preparing chapter context",
+            },
+          ],
+        },
+      },
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: { messages: [] },
+      }),
+    );
+
+    expect(html).toContain("LIVE");
+    expect(html).toContain("book.drafting");
+    expect(html).toContain("Preparing chapter context");
   });
 });

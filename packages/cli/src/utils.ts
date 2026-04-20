@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createLLMClient, StateManager, createLogger, createStderrSink, createJsonLineSink, loadProjectConfig, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH, type ProjectConfig, type PipelineConfig, type LogSink } from "@actalk/inkos-core";
 import { formatSqliteMemorySupportWarning } from "./runtime-requirements.js";
 
@@ -27,8 +28,33 @@ export async function resolveContext(opts: {
   return undefined;
 }
 
+function isInkosProjectRoot(dir: string): boolean {
+  return existsSync(join(dir, "inkos.json"));
+}
+
+function isInkosRepoRoot(dir: string): boolean {
+  return (
+    existsSync(join(dir, "pnpm-workspace.yaml"))
+    && existsSync(join(dir, "packages", "cli", "package.json"))
+    && existsSync(join(dir, "packages", "studio", "package.json"))
+  );
+}
+
 export function findProjectRoot(): string {
-  return process.cwd();
+  const cwd = process.cwd();
+  let current = cwd;
+
+  while (true) {
+    if (isInkosProjectRoot(current) || isInkosRepoRoot(current)) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return cwd;
+    }
+    current = parent;
+  }
 }
 
 export async function loadConfig(options?: { readonly requireApiKey?: boolean }): Promise<ProjectConfig> {

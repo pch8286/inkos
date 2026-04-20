@@ -671,6 +671,67 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(rollbackToChapterMock).toHaveBeenCalledWith("draft-book", 1);
   });
 
+  it("returns the active run in book detail while a draft is still running", async () => {
+    await mkdir(join(root, "books", "draft-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "draft-book", "book.json"), JSON.stringify({
+      id: "draft-book",
+      title: "Draft Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      status: "active",
+      targetChapters: 50,
+      chapterWordCount: 2500,
+      language: "ko",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    let resolveDraft!: (value: {
+      chapterNumber: number;
+      title: string;
+      wordCount: number;
+      filePath: string;
+    }) => void;
+    const draftPromise = new Promise<{
+      chapterNumber: number;
+      title: string;
+      wordCount: number;
+      filePath: string;
+    }>((resolve) => {
+      resolveDraft = resolve;
+    });
+    writeDraftMock.mockReturnValueOnce(draftPromise);
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const startResponse = await app.request("http://localhost/api/books/draft-book/draft", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({}),
+    });
+    expect(startResponse.status).toBe(200);
+
+    const detailResponse = await app.request("http://localhost/api/books/draft-book");
+    expect(detailResponse.status).toBe(200);
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      book: { id: "draft-book" },
+      activeRun: {
+        bookId: "draft-book",
+        action: "draft",
+        status: "running",
+      },
+    });
+
+    resolveDraft({
+      chapterNumber: 1,
+      title: "Drafted chapter",
+      wordCount: 1600,
+      filePath: join(root, "books", "draft-book", "chapters", "0001_Drafted_chapter.md"),
+    });
+    await draftPromise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("rejects cancelling when no draft is running", async () => {
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);

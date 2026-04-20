@@ -204,9 +204,9 @@ const MIN_SALVAGEABLE_CHARS = 500;
 /** Keys managed by the provider layer — prevent extra from overriding them. */
 const RESERVED_KEYS = new Set(["max_tokens", "temperature", "model", "messages", "stream"]);
 
-function stripReservedKeys(extra: Record<string, unknown>): Record<string, unknown> {
+function stripReservedKeys(extra?: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(extra)) {
+  for (const [key, value] of Object.entries(extra ?? {})) {
     if (!RESERVED_KEYS.has(key)) result[key] = value;
   }
   return result;

@@ -1,3 +1,6 @@
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+
 import type {
   ChapterRejectionExecutionMode,
   ChapterRejectionInstruction,
@@ -162,6 +165,12 @@ export function validateChapterRejectDraft(
   return null;
 }
 
+export function resolveChapterRejectDialogPortalTarget(
+  ownerDocument: Document | undefined,
+): HTMLElement | null {
+  return ownerDocument?.body ?? null;
+}
+
 export function ChapterRejectDialog({
   open,
   language,
@@ -187,15 +196,39 @@ export function ChapterRejectDialog({
   onToggleInstruction: (instruction: ChapterRejectionInstruction) => void;
   onSubmit: (executionMode: ChapterRejectionExecutionMode) => void;
 }) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && submittingMode === null) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [onClose, open, submittingMode]);
+
   if (!open) {
     return null;
   }
 
   const saveOnlySubmitting = submittingMode === "save-only";
   const startNowSubmitting = submittingMode === "start-now";
-
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in">
+  const dialog = (
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm fade-in"
+      onClick={(event) => {
+        if (event.target === overlayRef.current && submittingMode === null) {
+          onClose();
+        }
+      }}
+    >
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl shadow-primary/10">
         <div className="border-b border-border/50 px-6 py-5">
           <h3 className="text-lg font-semibold">{chapterRejectDialogTitle(language)}</h3>
@@ -290,4 +323,7 @@ export function ChapterRejectDialog({
       </div>
     </div>
   );
+  const portalTarget = resolveChapterRejectDialogPortalTarget(typeof document === "undefined" ? undefined : document);
+
+  return portalTarget ? createPortal(dialog, portalTarget) : dialog;
 }

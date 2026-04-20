@@ -26,6 +26,7 @@ import { basename, delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
+import { RunStore } from "./lib/run-store.js";
 import { buildStudioBookConfig, defaultStudioPlatformForLanguage, normalizeStudioPlatform } from "./book-create.js";
 import { discoverLlmCapabilities } from "./llm-capabilities.js";
 import { defaultModelForProvider, isCliOAuthProvider } from "../shared/llm.js";
@@ -2771,6 +2772,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   createIdempotencyRecords.clear();
   const app = new Hono();
   const state = new StateManager(root);
+  const runStore = new RunStore();
   let cachedConfig = initialConfig;
   let radarScanInFlight: Promise<void> | null = null;
   let recentActivity: Array<{ event: string; data: unknown; timestamp: number }> = [];
@@ -2803,6 +2805,52 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   async function loadLatestChapterNumber(bookId: string): Promise<number> {
     const chapterIndex = await state.loadChapterIndex(bookId).catch(() => []);
     return chapterIndex.reduce((max, chapter) => Math.max(max, chapter.number), 0);
+  }
+
+  function startTrackedBookRun(params: {
+    readonly bookId: string;
+    readonly action: "draft" | "revise" | "rewrite" | "write-next";
+    readonly stage: string;
+    readonly chapterNumber?: number;
+  }): { readonly runId: string; readonly sink: LogSink } {
+    const run = runStore.create({
+      bookId: params.bookId,
+      chapterNumber: params.chapterNumber,
+      action: params.action,
+    });
+    runStore.markRunning(run.id, params.stage);
+
+    const sink: LogSink = {
+      write(entry: LogEntry): void {
+        const message = stripAnsi(entry.message).trim();
+        if (!message) {
+          return;
+        }
+
+        const stage = parseProgressStage(message);
+        if (stage) {
+          runStore.updateStage(run.id, stage);
+        }
+
+        runStore.appendLog(run.id, {
+          timestamp: entry.timestamp,
+          level: entry.level === "warn" || entry.level === "error" ? entry.level : "info",
+          message,
+        });
+      },
+    };
+
+    return { runId: run.id, sink };
+  }
+
+  function completeTrackedBookRun(runId: string, result: unknown): void {
+    runStore.succeed(runId, result);
+  }
+
+  function failTrackedBookRun(runId: string, error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    runStore.fail(runId, message);
+    return message;
   }
 
   async function saveChapterReviewState(params: {
@@ -2993,6 +3041,12 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     readonly derivedMode: ChapterRejectionDerivedMode;
   }): void {
     if (params.derivedMode === "rewrite") {
+      const trackedRun = startTrackedBookRun({
+        bookId: params.bookId,
+        action: "rewrite",
+        chapterNumber: params.chapterNumber,
+        stage: `Rewriting Chapter ${params.chapterNumber}`,
+      });
       broadcast("rewrite:start", { bookId: params.bookId, chapter: params.chapterNumber });
       let rewriteSnapshot: Awaited<ReturnType<typeof snapshotRejectedChapter>> = null;
       void (async () => {
@@ -3000,12 +3054,15 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           bookId: params.bookId,
           chapterNumber: params.chapterNumber,
         });
-        const pipelineConfigPromise = buildPipelineConfig();
+        const pipelineConfigPromise = buildPipelineConfig(undefined, {
+          extraSinks: [trackedRun.sink],
+        });
         await state.rollbackToChapter(params.bookId, Math.max(0, params.chapterNumber - 1));
         const pipeline = new PipelineRunner(await pipelineConfigPromise);
         return await pipeline.writeNextChapter(params.bookId);
       })()
         .then(async (result) => {
+          completeTrackedBookRun(trackedRun.runId, result);
           await finalizeChapterRejectionSuccess({
             bookId: params.bookId,
             chapterNumber: result.chapterNumber,
@@ -3019,7 +3076,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           });
         })
         .catch(async (error: unknown) => {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = failTrackedBookRun(trackedRun.runId, error);
           if (rewriteSnapshot?.rejection) {
             await restoreFailedRewriteSnapshot({
               bookId: params.bookId,
@@ -3039,9 +3096,17 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       return;
     }
 
+    const trackedRun = startTrackedBookRun({
+      bookId: params.bookId,
+      action: "revise",
+      chapterNumber: params.chapterNumber,
+      stage: `Revising Chapter ${params.chapterNumber}`,
+    });
     broadcast("revise:start", { bookId: params.bookId, chapter: params.chapterNumber });
     void (async () => {
-      const pipeline = new PipelineRunner(await buildPipelineConfig());
+      const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [trackedRun.sink],
+      }));
       return await pipeline.reviseDraft(
         params.bookId,
         params.chapterNumber,
@@ -3049,6 +3114,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       );
     })().then(
       async (result) => {
+        completeTrackedBookRun(trackedRun.runId, result);
         await updateChapterRejectionRunResult({
           bookId: params.bookId,
           chapterNumber: params.chapterNumber,
@@ -3063,7 +3129,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         });
       },
       async (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = failTrackedBookRun(trackedRun.runId, error);
         await updateChapterRejectionRunResult({
           bookId: params.bookId,
           chapterNumber: params.chapterNumber,
@@ -3217,6 +3283,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         pendingStructuralGate: pendingStructuralGate?.finalBlockingStatus === "blocked"
           ? pendingStructuralGate
           : null,
+        activeRun: runStore.findActiveRun(id),
       });
     } catch {
       return c.json({ error: `Book "${id}" not found` }, 404);
@@ -4361,21 +4428,36 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   app.post("/api/books/:id/write-next", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json<{ wordCount?: number }>().catch(() => ({ wordCount: undefined }));
+    const trackedRun = startTrackedBookRun({
+      bookId: id,
+      action: "write-next",
+      stage: "Writing",
+    });
 
     broadcast("write:start", { bookId: id });
 
-    // Fire and forget — progress/completion/errors pushed via SSE
-    const pipeline = new PipelineRunner(await buildPipelineConfig());
-    pipeline.writeNextChapter(id, body.wordCount).then(
-      (result) => {
-        broadcast("write:complete", { bookId: id, chapterNumber: result.chapterNumber, status: result.status, title: result.title, wordCount: result.wordCount });
-      },
-      (e: unknown) => {
-        broadcast("write:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
-      },
-    );
+    try {
+      // Fire and forget — progress/completion/errors pushed via SSE
+      const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [trackedRun.sink],
+      }));
+      pipeline.writeNextChapter(id, body.wordCount).then(
+        (result) => {
+          completeTrackedBookRun(trackedRun.runId, result);
+          broadcast("write:complete", { bookId: id, chapterNumber: result.chapterNumber, status: result.status, title: result.title, wordCount: result.wordCount });
+        },
+        (e: unknown) => {
+          const message = failTrackedBookRun(trackedRun.runId, e);
+          broadcast("write:error", { bookId: id, error: message });
+        },
+      );
 
-    return c.json({ status: "writing", bookId: id });
+      return c.json({ status: "writing", bookId: id });
+    } catch (e) {
+      const message = failTrackedBookRun(trackedRun.runId, e);
+      broadcast("write:error", { bookId: id, error: message });
+      return c.json({ error: message }, 500);
+    }
   });
 
   app.post("/api/books/:id/draft", async (c) => {
@@ -4390,11 +4472,18 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       cancelRequested: false,
     };
     activeDrafts.set(id, activeDraft);
+    const trackedRun = startTrackedBookRun({
+      bookId: id,
+      action: "draft",
+      stage: "Drafting",
+    });
 
     broadcast("draft:start", { bookId: id });
 
     try {
-      const pipeline = new PipelineRunner(await buildPipelineConfig());
+      const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [trackedRun.sink],
+      }));
       pipeline.writeDraft(id, body.context, body.wordCount).then(
         async (result) => {
           if (activeDrafts.get(id) !== activeDraft) {
@@ -4405,22 +4494,26 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           if (activeDraft.cancelRequested) {
             try {
               const deletedChapterNumbers = [...await state.rollbackToChapter(id, activeDraft.baselineChapterNumber)];
+              completeTrackedBookRun(trackedRun.runId, {
+                cancelled: true,
+                deletedChapterNumbers,
+              });
               broadcast("draft:cancelled", {
                 bookId: id,
                 chapterNumber: result.chapterNumber,
                 deletedChapterNumbers,
               });
             } catch (rollbackError) {
+              const message = failTrackedBookRun(trackedRun.runId, rollbackError);
               broadcast("draft:error", {
                 bookId: id,
-                error: rollbackError instanceof Error
-                  ? rollbackError.message
-                  : String(rollbackError),
+                error: message,
               });
             }
             return;
           }
 
+          completeTrackedBookRun(trackedRun.runId, result);
           broadcast("draft:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount });
         },
         async (e: unknown) => {
@@ -4431,25 +4524,32 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           if (activeDraft.cancelRequested) {
             try {
               const deletedChapterNumbers = [...await state.rollbackToChapter(id, activeDraft.baselineChapterNumber)];
+              completeTrackedBookRun(trackedRun.runId, {
+                cancelled: true,
+                deletedChapterNumbers,
+              });
               broadcast("draft:cancelled", {
                 bookId: id,
                 deletedChapterNumbers,
               });
             } catch {
               // Keep cancellation semantics when the draft never produced a restorable snapshot.
+              completeTrackedBookRun(trackedRun.runId, { cancelled: true });
               broadcast("draft:cancelled", { bookId: id });
             }
             return;
           }
 
-          broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
+          const message = failTrackedBookRun(trackedRun.runId, e);
+          broadcast("draft:error", { bookId: id, error: message });
         },
       );
       return c.json({ status: "drafting", bookId: id });
     } catch (e) {
       activeDrafts.delete(id);
-      broadcast("draft:error", { bookId: id, error: e instanceof Error ? e.message : String(e) });
-      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      const message = failTrackedBookRun(trackedRun.runId, e);
+      broadcast("draft:error", { bookId: id, error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
@@ -4462,6 +4562,10 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
     if (!activeDraft.cancelRequested) {
       activeDraft.cancelRequested = true;
+      const activeRun = runStore.findActiveRun(id);
+      if (activeRun?.action === "draft") {
+        runStore.updateStage(activeRun.id, "Cancelling draft");
+      }
       broadcast("draft:cancel-requested", { bookId: id });
     }
 
@@ -4917,6 +5021,12 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const chapterNum = parseInt(c.req.param("chapter"), 10);
     const bookDir = state.bookDir(id);
     const body = await c.req.json<{ mode?: string }>().catch(() => ({ mode: "spot-fix" }));
+    const trackedRun = startTrackedBookRun({
+      bookId: id,
+      action: "revise",
+      chapterNumber: chapterNum,
+      stage: `Revising Chapter ${chapterNum}`,
+    });
 
     broadcast("revise:start", { bookId: id, chapter: chapterNum });
     try {
@@ -4952,11 +5062,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         (body.mode ?? "spot-fix") as "spot-fix",
         book.genre,
       );
+      completeTrackedBookRun(trackedRun.runId, result);
       broadcast("revise:complete", { bookId: id, chapter: chapterNum });
       return c.json(result);
     } catch (e) {
-      broadcast("revise:error", { bookId: id, error: String(e) });
-      return c.json({ error: String(e) }, 500);
+      const message = failTrackedBookRun(trackedRun.runId, e);
+      broadcast("revise:error", { bookId: id, error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
@@ -5268,19 +5380,34 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const id = c.req.param("id");
     const chapterNum = parseInt(c.req.param("chapter"), 10);
     const rollbackTarget = Math.max(0, chapterNum - 1);
+    const trackedRun = startTrackedBookRun({
+      bookId: id,
+      action: "rewrite",
+      chapterNumber: chapterNum,
+      stage: `Rewriting Chapter ${chapterNum}`,
+    });
 
     broadcast("rewrite:start", { bookId: id, chapter: chapterNum });
     try {
       await state.rollbackToChapter(id, rollbackTarget);
-      const pipeline = new PipelineRunner(await buildPipelineConfig());
+      const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
+        extraSinks: [trackedRun.sink],
+      }));
       pipeline.writeNextChapter(id).then(
-        (result) => broadcast("rewrite:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount }),
-        (e) => broadcast("rewrite:error", { bookId: id, error: e instanceof Error ? e.message : String(e) }),
+        (result) => {
+          completeTrackedBookRun(trackedRun.runId, result);
+          broadcast("rewrite:complete", { bookId: id, chapterNumber: result.chapterNumber, title: result.title, wordCount: result.wordCount });
+        },
+        (e) => {
+          const message = failTrackedBookRun(trackedRun.runId, e);
+          broadcast("rewrite:error", { bookId: id, error: message });
+        },
       );
       return c.json({ status: "rewriting", bookId: id, chapter: chapterNum });
     } catch (e) {
-      broadcast("rewrite:error", { bookId: id, error: String(e) });
-      return c.json({ error: String(e) }, 500);
+      const message = failTrackedBookRun(trackedRun.runId, e);
+      broadcast("rewrite:error", { bookId: id, error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
