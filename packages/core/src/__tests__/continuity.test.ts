@@ -243,13 +243,15 @@ describe("ContinuityAuditor", () => {
       const systemPrompt = messages?.[0]?.content ?? "";
 
       expect(systemPrompt).toContain("웹소설 원고를 검토하는 auditor agent");
-      expect(systemPrompt).toContain("모바일 가독성, 문체 보존, 묘사 강약의 균형");
-      expect(systemPrompt).toContain("묘사 강약의 균형");
+      expect(systemPrompt).toContain("모바일 가독성, 문체 보존, 묘사 강약, 문장 연결 리듬의 균형");
+      expect(systemPrompt).toContain("문장 연결 리듬의 균형");
       expect(systemPrompt).toContain("리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요");
       expect(systemPrompt).toContain("핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지");
+      expect(systemPrompt).toContain("행동·표정·대사·감각의 증거만으로도 감정과 의도가 읽히는지");
       expect(systemPrompt).toContain("다인 장면에서는 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지");
       expect(systemPrompt).toContain("인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지");
-      expect(systemPrompt).toContain("묘사가 핵심 대상에 집중되며 강약을 가지는지도 함께 점검하세요");
+      expect(systemPrompt).toContain("묘사가 핵심 대상에 집중되며 강약을 가지는지");
+      expect(systemPrompt).toContain("평문 연결 문장이 읽기 속도를 안정적으로 받치는지도 함께 점검하세요");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

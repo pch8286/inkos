@@ -171,10 +171,15 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("독자가 먼저 큰 형상과 위치 관계를 잡도록 장면을 세우고");
     expect(prompt).toContain("인물의 행동은 그 행동을 촉발한 시각 정보, 압박, 목표와 자연스럽게 연결한다");
     expect(prompt).toContain("장면마다 초점 대상을 먼저 정하고");
+    expect(prompt).toContain("문단마다 가장 강하게 남길 핵심 디테일 1개를 정하고");
     expect(prompt).toContain("한 문장은 하나의 핵심 시각 단위를 중심에 두고");
     expect(prompt).toContain("묘사 뒤에는 짧은 행동, 반응, 판단을 붙여 호흡을 전진시킨다");
     expect(prompt).toContain("전경에는 결정적 디테일을 두고, 중경과 배경은 기능이 보이도록 간결하게 정리한다");
     expect(prompt).toContain("장면마다 1-2개의 결정적 디테일을 남기고");
+    expect(prompt).toContain("평문 문장으로 장면을 연결하고");
+    expect(prompt).toContain("속도를 올리는 구간에서는 동작, 선택, 대사를 앞세우고");
+    expect(prompt).toContain("독자가 장면에서 바로 읽을 수 있는 감정과 의도는 행동, 표정, 대사, 감각의 증거로 먼저 전달한다");
+    expect(prompt).toContain("행동과 표정이 이미 전달한 감정은 다음 설명문 대신 다음 반응이나 선택으로 이어 준다");
     expect(prompt).not.toContain("## 금지사항");
     expect(prompt).not.toContain("## Input Governance Contract");
     expect(prompt).not.toContain("## Length Guidance");

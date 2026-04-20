@@ -257,7 +257,7 @@ function buildDimensionNote(
       return language === "en"
         ? "Audit as a diagnostic reader, not a rewriter: identify where the prose becomes hard to picture or parse on first read. Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable. Also flag paragraphs that jump to isolated micro-detail or abstract verdict before the reader can picture the physical setup."
         : language === "ko"
-          ? "리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요. 핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지 보고, 서술이 장면이 이미 보여 준 의미를 더 선명하게 전달하는지도 살피세요. 공간과 형상이 먼저 세워지고 그 위에 세부 디테일과 판단이 놓이는지, 그리고 묘사가 핵심 대상에 집중되며 강약을 가지는지도 함께 점검하세요."
+          ? "리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요. 핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지 보고, 행동·표정·대사·감각의 증거만으로도 감정과 의도가 읽히는지 살피세요. 공간과 형상이 먼저 세워지고 그 위에 세부 디테일과 판단이 놓이는지, 묘사가 핵심 대상에 집중되며 강약을 가지는지, 그리고 평문 연결 문장이 읽기 속도를 안정적으로 받치는지도 함께 점검하세요."
           : "用诊断型读者视角审阅，指出哪些地方读者无法一遍看清、需要回读。检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。同时标记那些在读者还没看清空间与轮廓前，就先跳到孤立细节或抽象判断的段落。";
     case 19:
       return language === "en"
@@ -275,7 +275,7 @@ function buildDimensionNote(
       return language === "en"
         ? "Flag chapters that compress important emotional, relational, or payoff beats into chronicle summary instead of scene. Also flag action beats whose trigger is missing, so characters kneel, reach, pause, or inspect before the reader knows what drew them there."
         : language === "ko"
-          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트가 장면으로 충분히 펼쳐지는지 점검하세요. 인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지 확인하세요. 장면마다 강조해야 할 디테일과 빠르게 넘어갈 정보가 구분되어, 읽기 속도가 유지되는지도 함께 보세요."
+          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트가 장면으로 충분히 펼쳐지는지 점검하세요. 인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지 확인하세요. 장면마다 강조해야 할 디테일과 빠르게 넘어갈 정보가 구분되어 읽기 속도가 유지되는지, 문단마다 핵심 디테일이 선명하게 남는지, 설명 문장이 전환과 압축의 역할을 분명하게 맡는지도 함께 보세요."
           : "检查重要情绪变化、关系推进或回收段落是否被压成流水账式摘要而没有真正落成场景。同时标记那些角色先停步、伸手、俯身、查看，但读者还不知道动作缘由的句段。";
     case 24:
       return language === "en"
@@ -561,7 +561,7 @@ ${dimList}
   "summary": "一句话总结审查结论"
 }
 \n\n只有当存在 critical 级别问题时，passed 才为 false。`
-        : `당신은 ${genreLabel} 웹소설 원고를 검토하는 auditor agent입니다. 모바일 가독성, 문체 보존, 묘사 강약의 균형을 기준으로, 리뷰어처럼 원고의 장점을 보존하면서 연속성, 일관성, 품질을 점검하세요. 모든 출력은 한국어로 작성하세요.${protagonistBlock}${searchNote}
+        : `당신은 ${genreLabel} 웹소설 원고를 검토하는 auditor agent입니다. 모바일 가독성, 문체 보존, 묘사 강약, 문장 연결 리듬의 균형을 기준으로, 리뷰어처럼 원고의 장점을 보존하면서 연속성, 일관성, 품질을 점검하세요. 모든 출력은 한국어로 작성하세요.${protagonistBlock}${searchNote}
 
 검토 차원:
 ${dimList}
@@ -573,8 +573,8 @@ ${dimList}
     {
       "severity": "critical|warning|info",
       "category": "검토 항목명",
-      "description": "독서 흐름이 흔들리는 지점, 묘사 밀도, 장면 초점에 대한 근거를 담은 설명",
-      "suggestion": "문장 분리, 압축, 재배치, 묘사 축소, 핵심 디테일 집중, 보존 우선 중 맞는 최소 수정 제안"
+      "description": "독서 흐름이 흔들리는 지점, 묘사 밀도, 장면 초점, 문장 연결 리듬에 대한 근거를 담은 설명",
+      "suggestion": "문장 분리, 압축, 재배치, 묘사 축소, 핵심 디테일 집중, 평문 연결 강화, 보존 우선 중 맞는 최소 수정 제안"
     }
   ],
   "summary": "한 줄 검토 결론"
