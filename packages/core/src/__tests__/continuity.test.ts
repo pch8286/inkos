@@ -176,7 +176,7 @@ describe("ContinuityAuditor", () => {
     }
   });
 
-  it("asks Korean audits to inspect scene-vs-summary and narrator over-conclusion", async () => {
+  it("uses reviewer-oriented Korean audit guidance for scene readability", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-auditor-ko-style-test-"));
     const bookDir = join(root, "book");
     const storyDir = join(bookDir, "story");
@@ -242,12 +242,14 @@ describe("ContinuityAuditor", () => {
         | undefined;
       const systemPrompt = messages?.[0]?.content ?? "";
 
-      expect(systemPrompt).toContain("진단하는 독자 시점으로 읽고");
-      expect(systemPrompt).toContain("핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지");
-      expect(systemPrompt).toContain("다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지");
-      expect(systemPrompt).toContain("서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지");
-      expect(systemPrompt).toContain("독자가 공간과 형상을 잡기 전에 뜬 세부 디테일");
-      expect(systemPrompt).toContain("왜 멈추고, 왜 손을 뻗고, 왜 들여다보는지");
+      expect(systemPrompt).toContain("웹소설 원고를 검토하는 auditor agent");
+      expect(systemPrompt).toContain("모바일 가독성, 문체 보존, 묘사 강약의 균형");
+      expect(systemPrompt).toContain("묘사 강약의 균형");
+      expect(systemPrompt).toContain("리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요");
+      expect(systemPrompt).toContain("핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지");
+      expect(systemPrompt).toContain("다인 장면에서는 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지");
+      expect(systemPrompt).toContain("인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지");
+      expect(systemPrompt).toContain("묘사가 핵심 대상에 집중되며 강약을 가지는지도 함께 점검하세요");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -540,13 +542,13 @@ describe("ContinuityAuditor", () => {
       const systemPrompt = messages?.[0]?.content ?? "";
       const userPrompt = messages?.[1]?.content ?? "";
 
-      expect(systemPrompt).toContain("감사 차원:");
+      expect(systemPrompt).toContain("검토 차원:");
       expect(systemPrompt).toContain("캐릭터 붕괴 검사");
-      expect(systemPrompt).toContain("표시하세요.");
+      expect(systemPrompt).toContain("확인하세요.");
       expect(systemPrompt).not.toContain("Hook Check");
       expect(systemPrompt).not.toContain("伏笔检查");
 
-      expect(userPrompt).toContain("제1화를 감사하세요.");
+      expect(userPrompt).toContain("제1화를 리뷰하세요.");
       expect(userPrompt).toContain("## 현재 상태 카드");
       expect(userPrompt).toContain("## 본문 통제 입력");
       expect(userPrompt).toContain("### 선택된 근거");

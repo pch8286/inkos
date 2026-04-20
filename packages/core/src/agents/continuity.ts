@@ -257,7 +257,7 @@ function buildDimensionNote(
       return language === "en"
         ? "Audit as a diagnostic reader, not a rewriter: identify where the prose becomes hard to picture or parse on first read. Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable. Also flag paragraphs that jump to isolated micro-detail or abstract verdict before the reader can picture the physical setup."
         : language === "ko"
-          ? "진단하는 독자 시점으로 읽고, 어디서 한 번에 그림이 안 잡히는지 표시하세요. 핵심 감정 변화나 관계 변화가 사후 요약으로만 보고되지 않았는지, 그리고 서술자가 장면이 이미 보여 준 의미를 다시 결론으로 덮지 않았는지 확인하세요. 또한 독자가 공간과 형상을 잡기 전에 뜬 세부 디테일이나 추상 판정문으로 먼저 들어가는 문단도 표시하세요."
+          ? "리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요. 핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지 보고, 서술이 장면이 이미 보여 준 의미를 더 선명하게 전달하는지도 살피세요. 공간과 형상이 먼저 세워지고 그 위에 세부 디테일과 판단이 놓이는지, 그리고 묘사가 핵심 대상에 집중되며 강약을 가지는지도 함께 점검하세요."
           : "用诊断型读者视角审阅，指出哪些地方读者无法一遍看清、需要回读。检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。同时标记那些在读者还没看清空间与轮廓前，就先跳到孤立细节或抽象判断的段落。";
     case 19:
       return language === "en"
@@ -269,13 +269,13 @@ function buildDimensionNote(
       return language === "en"
         ? "In multi-character scenes, check whether dialogue carries resistance, bargaining, concealment, or pressure rather than leaving the beat in narrated summary instead of direct pressure or exchange. When useful, the exchange should be broken with gesture, reaction, or setting detail instead of reading like disembodied lines."
         : language === "ko"
-          ? "다인 장면이 직접 공방 없이 설명 위주로 흘러가지 않았는지, 그리고 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지 확인하세요. 필요할 때는 대사가 몸짓, 반응, 주변 디테일과 함께 배치되는지도 보세요."
+          ? "다인 장면에서는 대사가 저항, 협상, 은폐, 압박을 실제로 싣는지 확인하세요. 직접 공방이 장면 중심으로 살아 있고, 몸짓, 반응, 주변 디테일이 대사와 함께 배치되는지도 함께 점검하세요."
           : "多角色场景里，检查对话是否承载阻力、试探、隐瞒或施压，而不是被说明性摘要取代。必要时也检查对话有没有被动作、反应、环境细节打断，而不是像脱离场景的台词串。";
     case 17:
       return language === "en"
         ? "Flag chapters that compress important emotional, relational, or payoff beats into chronicle summary instead of scene. Also flag action beats whose trigger is missing, so characters kneel, reach, pause, or inspect before the reader knows what drew them there."
         : language === "ko"
-          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트를 장면 대신 나열식 요약으로 눌러버리는지 점검하세요. 또한 인물이 왜 멈추고, 왜 손을 뻗고, 왜 들여다보는지 보이기 전에 동작만 먼저 뜨는 구절도 표시하세요."
+          ? "중요한 감정 변화, 관계 이동, 카타르시스 비트가 장면으로 충분히 펼쳐지는지 점검하세요. 인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지 확인하세요. 장면마다 강조해야 할 디테일과 빠르게 넘어갈 정보가 구분되어, 읽기 속도가 유지되는지도 함께 보세요."
           : "检查重要情绪变化、关系推进或回收段落是否被压成流水账式摘要而没有真正落成场景。同时标记那些角色先停步、伸手、俯身、查看，但读者还不知道动作缘由的句段。";
     case 24:
       return language === "en"
@@ -561,9 +561,9 @@ ${dimList}
   "summary": "一句话总结审查结论"
 }
 \n\n只有当存在 critical 级别问题时，passed 才为 false。`
-        : `당신은 엄격한 ${genreLabel} 웹소설 편집자입니다. 연속성, 일관성, 품질을 기준으로 해당 챕터를 감사하세요. 모든 출력은 한국어로 작성하세요.${protagonistBlock}${searchNote}
+        : `당신은 ${genreLabel} 웹소설 원고를 검토하는 auditor agent입니다. 모바일 가독성, 문체 보존, 묘사 강약의 균형을 기준으로, 리뷰어처럼 원고의 장점을 보존하면서 연속성, 일관성, 품질을 점검하세요. 모든 출력은 한국어로 작성하세요.${protagonistBlock}${searchNote}
 
-감사 차원:
+검토 차원:
 ${dimList}
 
 출력 형식은 반드시 JSON:
@@ -572,12 +572,12 @@ ${dimList}
   "issues": [
     {
       "severity": "critical|warning|info",
-      "category": "감사 항목명",
-      "description": "문제점 설명",
-      "suggestion": "수정 제안"
+      "category": "검토 항목명",
+      "description": "독서 흐름이 흔들리는 지점, 묘사 밀도, 장면 초점에 대한 근거를 담은 설명",
+      "suggestion": "문장 분리, 압축, 재배치, 묘사 축소, 핵심 디테일 집중, 보존 우선 중 맞는 최소 수정 제안"
     }
   ],
-  "summary": "한 줄 감사 결론"
+  "summary": "한 줄 검토 결론"
 }
 
 critical 이슈가 있을 때만 passed가 false가 됩니다.`;
@@ -703,14 +703,14 @@ ${hooksBlock}${volumeSummariesBlock}${subplotBlock}${emotionalBlock}${matrixBloc
 
 ## 待审章节内容
 ${chapterContent}`
-        : `제${chapterNumber}화를 감사하세요.
+        : `제${chapterNumber}화를 리뷰하세요.
 
 ## 현재 상태 카드
 ${currentState}
 ${ledgerBlock}
 ${hooksBlock}${volumeSummariesBlock}${subplotBlock}${emotionalBlock}${matrixBlock}${summariesBlock}${canonBlock}${fanficCanonBlock}${reducedControlBlock || outlineBlock}${prevChapterBlock}${styleGuideBlock}
 
-## 대상 챕터 내용
+## 검토 대상 챕터 내용
 ${chapterContent}`;
 
     const chatMessages = [
