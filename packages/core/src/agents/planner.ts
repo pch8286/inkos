@@ -321,6 +321,7 @@ export class PlannerAgent extends BaseAgent {
         line.length > 0
         && !line.startsWith("#")
         && !line.startsWith("-")
+        && !line.startsWith(">")
         && !this.isTemplatePlaceholder(line),
       );
   }
@@ -611,6 +612,7 @@ export class PlannerAgent extends BaseAgent {
     return (
       /^\((describe|briefly describe|write)\b[\s\S]*\)$/i.test(normalized)
       || /^\((?:앞으로|여기에|여기서|이번 화|이 장면|적는다|작성한다)[\s\S]*\)$/u.test(normalized)
+      || /^\(비어 있음\)$/u.test(normalized)
       || /^（(?:在这里描述|描述|填写|写下)[\s\S]*）$/u.test(normalized)
     );
   }

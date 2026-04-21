@@ -135,6 +135,41 @@ describe("BookDetail", () => {
     expect(html).toContain("부분 윤문 + 톤/문체 조정");
   });
 
+  it("renders episode starter controls above the chapter tools", () => {
+    useApiMock.mockReturnValue({
+      data: {
+        ...sampleData,
+        episodeStarter: {
+          direction: "첫 화는 선택을 강요받는 장면에서 시작한다.",
+          conti: "- 빚 독촉\n- 숨겨둔 능력 노출 위기",
+          avoid: "세계관 설명으로 시작하지 않는다.",
+          markdown: "",
+          exists: true,
+          warnings: [],
+        },
+      },
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: { messages: [] },
+      }),
+    );
+
+    expect(html).toContain("이번 화 스타터");
+    expect(html).toContain("저장됨");
+    expect(html).toContain("콘티");
+    expect(html).toContain("상단 초고와 다음 화 버튼에 적용됩니다.");
+    expect(html).not.toContain("초고 쓰기");
+  });
+
   it("renders a live rework banner when revise activity is running for a rejected chapter", () => {
     useApiMock.mockReturnValue({
       data: sampleData,

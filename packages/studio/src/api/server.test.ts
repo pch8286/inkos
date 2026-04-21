@@ -732,6 +732,168 @@ describe("createStudioServer daemon lifecycle", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
+  it("persists episode starter guidance separately from current_focus and exposes it in book detail", async () => {
+    await mkdir(join(root, "books", "starter-book", "story"), { recursive: true });
+    await mkdir(join(root, "books", "starter-book", "chapters"), { recursive: true });
+    await writeFile(join(root, "books", "starter-book", "book.json"), JSON.stringify({
+      id: "starter-book",
+      title: "Starter Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      status: "active",
+      targetChapters: 50,
+      chapterWordCount: 2500,
+      language: "ko",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }, null, 2), "utf-8");
+    await writeFile(join(root, "books", "starter-book", "story", "current_focus.md"), "# 현재 포커스\n\n기존 포커스.\n", "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const saveResponse = await app.request("http://localhost/api/books/starter-book/episode-starter", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        direction: "주인공이 첫 장면에서 선택을 강요받는다.",
+        conti: "- 빚 독촉 장면\n- 숨겨둔 능력을 들킬 위기",
+        avoid: "세계관 설명으로 시작하지 말 것.",
+      }),
+    });
+
+    expect(saveResponse.status).toBe(200);
+    await expect(saveResponse.json()).resolves.toMatchObject({
+      direction: "주인공이 첫 장면에서 선택을 강요받는다.",
+      exists: true,
+      warnings: [],
+    });
+
+    const starterMarkdown = await readFile(join(root, "books", "starter-book", "story", "episode_starter.md"), "utf-8");
+    expect(starterMarkdown).toContain("## 이번 화 방향성");
+    expect(starterMarkdown).toContain("주인공이 첫 장면에서 선택을 강요받는다.");
+    expect(await readFile(join(root, "books", "starter-book", "story", "current_focus.md"), "utf-8"))
+      .toContain("기존 포커스.");
+
+    const detailResponse = await app.request("http://localhost/api/books/starter-book");
+    expect(detailResponse.status).toBe(200);
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      episodeStarter: {
+        direction: "주인공이 첫 장면에서 선택을 강요받는다.",
+        conti: "- 빚 독촉 장면\n- 숨겨둔 능력을 들킬 위기",
+        avoid: "세계관 설명으로 시작하지 말 것.",
+        exists: true,
+      },
+    });
+  });
+
+  it("passes episode starter guidance to draft requests and reports length warnings before drafting", async () => {
+    await mkdir(join(root, "books", "starter-draft-book", "story"), { recursive: true });
+    await writeFile(join(root, "books", "starter-draft-book", "book.json"), JSON.stringify({
+      id: "starter-draft-book",
+      title: "Starter Draft Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      status: "active",
+      targetChapters: 50,
+      chapterWordCount: 2500,
+      language: "ko",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const longConti = Array.from({ length: 45 }, (_, index) => `- 장면 ${index + 1}: 긴 콘티`).join("\n");
+    const blockedDraftResponse = await app.request("http://localhost/api/books/starter-draft-book/draft", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        episodeStarter: {
+          direction: "첫 화에서 계약 제안을 받는다.",
+          conti: longConti,
+          avoid: "설정 설명만 늘어놓지 않는다.",
+        },
+      }),
+    });
+
+    expect(blockedDraftResponse.status).toBe(409);
+    await expect(blockedDraftResponse.json()).resolves.toMatchObject({
+      error: "EPISODE_STARTER_CONFIRMATION_REQUIRED",
+      warnings: expect.arrayContaining(["EPISODE_STARTER_LONG_CONTI"]),
+    });
+    expect(writeDraftMock).not.toHaveBeenCalled();
+
+    const draftResponse = await app.request("http://localhost/api/books/starter-draft-book/draft", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        confirmEpisodeStarterWarnings: true,
+        episodeStarter: {
+          direction: "첫 화에서 계약 제안을 받는다.",
+          conti: longConti,
+          avoid: "설정 설명만 늘어놓지 않는다.",
+        },
+      }),
+    });
+
+    expect(draftResponse.status).toBe(200);
+    await expect(draftResponse.json()).resolves.toMatchObject({
+      status: "drafting",
+      bookId: "starter-draft-book",
+      warnings: expect.arrayContaining(["EPISODE_STARTER_LONG_CONTI"]),
+    });
+    expect(writeDraftMock).toHaveBeenCalledWith(
+      "starter-draft-book",
+      expect.stringContaining("## 이번 화 콘티"),
+      undefined,
+    );
+    expect(writeDraftMock.mock.calls[0]?.[1]).toContain("첫 화에서 계약 제안을 받는다.");
+  });
+
+  it("passes blank episode starter guidance to write-next requests", async () => {
+    await mkdir(join(root, "books", "starter-write-book", "story"), { recursive: true });
+    await writeFile(join(root, "books", "starter-write-book", "book.json"), JSON.stringify({
+      id: "starter-write-book",
+      title: "Starter Write Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      status: "active",
+      targetChapters: 50,
+      chapterWordCount: 2500,
+      language: "ko",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }, null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/starter-write-book/write-next", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        episodeStarter: {
+          direction: "",
+          conti: "",
+          avoid: "",
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "writing",
+      bookId: "starter-write-book",
+      warnings: [],
+    });
+    expect(writeNextChapterMock).toHaveBeenCalledWith("starter-write-book", undefined);
+    expect(pipelineConfigs.at(-1)).toMatchObject({
+      externalContext: expect.stringContaining("## 이번 화 방향성"),
+    });
+  });
+
   it("rejects cancelling when no draft is running", async () => {
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);

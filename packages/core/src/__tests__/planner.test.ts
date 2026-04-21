@@ -101,6 +101,42 @@ describe("PlannerAgent", () => {
     await expect(readFile(result.runtimePath, "utf-8")).resolves.toContain("mentor conflict");
   });
 
+  it("uses the episode starter direction instead of its markdown note as the chapter goal", async () => {
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await planner.planChapter({
+      book,
+      bookDir,
+      chapterNumber: 3,
+      externalContext: [
+        "# 이번 화 스타터",
+        "",
+        "> 짧은 초고 입력 문서다. Book Detail에서 초고를 쓸 때 current_focus.md보다 우선한다.",
+        "",
+        "## 이번 화 방향성",
+        "",
+        "주인공이 조사 콘티의 첫 단서를 따라가며 빚 독촉자를 직접 만난다.",
+        "",
+        "## 이번 화 콘티",
+        "",
+        "- 골목 입구에서 오래된 표식을 발견한다.",
+        "- 빚 독촉자가 거래 조건을 꺼낸다.",
+        "",
+        "## 피할 것",
+        "",
+        "세계관 설명으로 시작하지 않는다.",
+      ].join("\n"),
+    });
+
+    expect(result.intent.goal).toBe("주인공이 조사 콘티의 첫 단서를 따라가며 빚 독촉자를 직접 만난다.");
+    expect(result.intent.goal).not.toContain("짧은 초고 입력 문서");
+  });
+
   it("prefers a matched outline node over ordinary current focus text", async () => {
     await Promise.all([
       writeFile(

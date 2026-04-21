@@ -237,12 +237,22 @@ export interface RejectChapterRequest {
   readonly executionMode: ChapterRejectionExecutionMode;
 }
 
+export interface EpisodeStarterPayload {
+  readonly direction: string;
+  readonly conti: string;
+  readonly avoid: string;
+  readonly markdown: string;
+  readonly exists: boolean;
+  readonly warnings: ReadonlyArray<string>;
+}
+
 export interface BookDetailPayload {
   readonly book: BookDetail;
   readonly chapters: ReadonlyArray<ChapterSummary>;
   readonly nextChapter: number;
   readonly pendingStructuralGate?: StructuralGateSummaryPayload | null;
   readonly activeRun?: StudioRun | null;
+  readonly episodeStarter?: EpisodeStarterPayload | null;
 }
 
 // --- Truth Files ---

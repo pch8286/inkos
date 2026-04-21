@@ -2203,6 +2203,7 @@ ${matrix}`,
     );
 
     return {
+      externalContext,
       chapterIntent: plan.intentMarkdown,
       contextPackage: composed.contextPackage,
       ruleStack: composed.ruleStack,

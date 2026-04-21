@@ -213,6 +213,7 @@ export class WriterAgent extends BaseAgent {
       ? this.buildGovernedUserPrompt({
           chapterNumber,
           chapterIntent: input.chapterIntent,
+          externalContext: input.externalContext,
           contextPackage: input.contextPackage,
           ruleStack: input.ruleStack,
           trace: input.trace,
@@ -868,6 +869,7 @@ ${lengthRequirementBlock}
   private buildGovernedUserPrompt(params: {
     readonly chapterNumber: number;
     readonly chapterIntent: string;
+    readonly externalContext?: string;
     readonly contextPackage: ContextPackage;
     readonly ruleStack: RuleStack;
     readonly trace?: ChapterTrace;
@@ -907,6 +909,13 @@ ${lengthRequirementBlock}
     const selectedEvidenceBlock = params.selectedEvidenceBlock
       ? `\n${params.selectedEvidenceBlock}\n`
       : "";
+    const externalContextBlock = params.externalContext?.trim()
+      ? params.language === "en"
+        ? `\n## Current Task Starter\nUse this current-chapter starter directly when planning scenes. It is local to this chapter and should shape the concrete beats unless it violates hard guardrails.\n\n${params.externalContext.trim()}\n`
+        : params.language === "ko"
+          ? `\n## 이번 화 스타터\n아래 스타터 원문을 이번 화 장면 설계에 직접 반영한다. 하드 가드레일과 충돌하지 않는 한 방향성, 콘티, 피할 것을 구체 장면에 우선 적용한다.\n\n${params.externalContext.trim()}\n`
+          : `\n## 本章启动卡\n将下面的本章启动卡直接落实到场景设计中。只要不违反硬护栏，就优先执行其中的方向、分镜和避免事项。\n\n${params.externalContext.trim()}\n`
+      : "";
     const explicitHookAgenda = this.extractMarkdownSection(params.chapterIntent, "## Hook Agenda");
     const hookAgendaBlock = explicitHookAgenda
       ? params.language === "en"
@@ -921,6 +930,7 @@ ${lengthRequirementBlock}
 
 ## Chapter Intent
 ${params.chapterIntent}
+${externalContextBlock}
 
 ## Selected Context
 ${contextSections || "(none)"}
@@ -949,6 +959,7 @@ ${lengthRequirementBlock}
 
 ## 본장 의도
 ${params.chapterIntent}
+${externalContextBlock}
 
 ## 선택된 컨텍스트
 ${contextSections || "(없음)"}
@@ -976,6 +987,7 @@ ${lengthRequirementBlock}
 
 ## 本章意图
 ${params.chapterIntent}
+${externalContextBlock}
 
 ## 已选上下文
 ${contextSections || "(无)"}

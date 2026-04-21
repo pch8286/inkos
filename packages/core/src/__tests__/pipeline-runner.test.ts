@@ -562,7 +562,7 @@ describe("PipelineRunner", () => {
       expect(composeChapter).toHaveBeenCalledTimes(1);
 
       const writeInput = writeChapter.mock.calls[0]?.[0];
-      expect(writeInput?.externalContext).toBeUndefined();
+      expect(writeInput?.externalContext).toBe("Ignore the guild chase and bring focus back to mentor conflict.");
       expect(writeInput?.chapterIntent).toContain("# Chapter Intent");
       expect(writeInput?.contextPackage?.selectedContext.length).toBeGreaterThan(0);
       expect(writeInput?.ruleStack?.activeOverrides).toHaveLength(1);

@@ -33,7 +33,9 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
-  Save
+  Save,
+  AlertTriangle,
+  ClipboardList
 } from "lucide-react";
 
 type ChapterMeta = BookDetailPayload["chapters"][number];
@@ -41,6 +43,12 @@ type ChapterMeta = BookDetailPayload["chapters"][number];
 type ReviseMode = "spot-fix" | "polish" | "rewrite" | "rework" | "anti-detect";
 type ExportFormat = "txt" | "md" | "epub";
 type BookStatus = "active" | "paused" | "outlining" | "completed" | "dropped";
+
+interface EpisodeStarterDraft {
+  readonly direction: string;
+  readonly conti: string;
+  readonly avoid: string;
+}
 
 interface Nav {
   toDashboard: () => void;
@@ -126,6 +134,42 @@ function reworkBannerLabel(language: "ko" | "zh" | "en", chapterNumber: number):
   return `재작업 진행 중 · ${chapterNumber}화`;
 }
 
+function episodeStarterWarningLabel(code: string, language: "ko" | "zh" | "en"): string {
+  if (language === "en") {
+    if (code === "EPISODE_STARTER_LONG_CONTI") return "Scene beats are long. Consider narrowing this to the few beats the draft must hit.";
+    if (code === "EPISODE_STARTER_OVER_BUDGET") return "The starter is large enough to crowd the draft prompt.";
+    if (code === "EPISODE_STARTER_POSSIBLE_CONFLICT") return "This may conflict with existing binder or outline material.";
+    return code;
+  }
+  if (language === "zh") {
+    if (code === "EPISODE_STARTER_LONG_CONTI") return "分镜偏长。建议只保留草稿必须命中的几个节拍。";
+    if (code === "EPISODE_STARTER_OVER_BUDGET") return "启动卡内容过长，可能挤占草稿提示空间。";
+    if (code === "EPISODE_STARTER_POSSIBLE_CONFLICT") return "可能与现有设定或大纲冲突。";
+    return code;
+  }
+  if (code === "EPISODE_STARTER_LONG_CONTI") return "콘티가 깁니다. 초고가 꼭 맞혀야 할 비트만 남기는 편이 좋습니다.";
+  if (code === "EPISODE_STARTER_OVER_BUDGET") return "스타터 내용이 길어 초고 프롬프트 공간을 많이 차지할 수 있습니다.";
+  if (code === "EPISODE_STARTER_POSSIBLE_CONFLICT") return "기존 설정집이나 아웃라인과 충돌할 수 있습니다.";
+  return code;
+}
+
+function summarizeEpisodeStarterWarnings(warnings: ReadonlyArray<string>, language: "ko" | "zh" | "en"): string {
+  return warnings.map((warning) => episodeStarterWarningLabel(warning, language)).join("\n");
+}
+
+function collectLocalEpisodeStarterWarnings(draft: EpisodeStarterDraft): string[] {
+  const warnings = new Set<string>();
+  const contiLines = draft.conti.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const totalLength = draft.direction.length + draft.conti.length + draft.avoid.length;
+  const combined = `${draft.direction}\n${draft.conti}\n${draft.avoid}`;
+  if (contiLines.length > 12 || draft.conti.length > 1600) warnings.add("EPISODE_STARTER_LONG_CONTI");
+  if (totalLength > 2400) warnings.add("EPISODE_STARTER_OVER_BUDGET");
+  if (/(기존\s*설정|설정집|정전|canon|outline|아웃라인|스토리\s*바이블).{0,20}(무시|반대|충돌|갈아엎|리셋|바꿔|override|ignore|contradict)/iu.test(combined)) {
+    warnings.add("EPISODE_STARTER_POSSIBLE_CONFLICT");
+  }
+  return [...warnings];
+}
+
 export function BookDetail({
   bookId,
   nav,
@@ -167,6 +211,11 @@ export function BookDetail({
   const [settingsPlatform, setSettingsPlatform] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("txt");
   const [exportApprovedOnly, setExportApprovedOnly] = useState(false);
+  const [starterDirection, setStarterDirection] = useState(data?.episodeStarter?.direction ?? "");
+  const [starterConti, setStarterConti] = useState(data?.episodeStarter?.conti ?? "");
+  const [starterAvoid, setStarterAvoid] = useState(data?.episodeStarter?.avoid ?? "");
+  const [starterWarnings, setStarterWarnings] = useState<ReadonlyArray<string>>(data?.episodeStarter?.warnings ?? []);
+  const [savingStarter, setSavingStarter] = useState(false);
   const activity = useMemo(
     () => deriveBookActivity(sse.messages, bookId, data?.activeRun),
     [bookId, data?.activeRun, sse.messages],
@@ -209,22 +258,80 @@ export function BookDetail({
     }
   }, [bookId, refetch, sse.messages]);
 
-  const handleWriteNext = async () => {
-    setWriteRequestPending(true);
+  useEffect(() => {
+    if (!data?.episodeStarter) return;
+    setStarterDirection(data.episodeStarter.direction);
+    setStarterConti(data.episodeStarter.conti);
+    setStarterAvoid(data.episodeStarter.avoid);
+    setStarterWarnings(data.episodeStarter.warnings);
+  }, [data?.episodeStarter]);
+
+  const currentEpisodeStarterDraft = (): EpisodeStarterDraft => ({
+    direction: starterDirection.trim(),
+    conti: starterConti.trim(),
+    avoid: starterAvoid.trim(),
+  });
+
+  const handleSaveEpisodeStarter = async () => {
+    setSavingStarter(true);
     try {
-      await postApi(`/books/${bookId}/write-next`);
+      const payload = await fetchJson<NonNullable<BookDetailPayload["episodeStarter"]>>(`/books/${bookId}/episode-starter`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentEpisodeStarterDraft()),
+      });
+      setStarterDirection(payload.direction);
+      setStarterConti(payload.conti);
+      setStarterAvoid(payload.avoid);
+      setStarterWarnings(payload.warnings);
+      refetch();
     } catch (e) {
-      setWriteRequestPending(false);
-      alert(e instanceof Error ? e.message : "Failed");
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSavingStarter(false);
     }
   };
 
-  const handleDraft = async () => {
-    setDraftRequestPending(true);
+  const handleStarterWriteAction = async (action: "draft" | "write-next") => {
+    const episodeStarter = currentEpisodeStarterDraft();
+    const warnings = collectLocalEpisodeStarterWarnings(episodeStarter);
+    const language = data ? resolveStudioLanguage(data.book.language) : "ko";
+    if (warnings.length > 0) {
+      const prompt = action === "draft"
+        ? language === "ko"
+          ? "계속 초고를 쓸까요?"
+          : language === "zh"
+            ? "仍要继续生成草稿吗？"
+            : "Continue drafting?"
+        : language === "ko"
+          ? "계속 다음 화를 쓸까요?"
+          : language === "zh"
+            ? "仍要继续写下一章吗？"
+            : "Continue writing the next chapter?";
+      const proceed = window.confirm(`${summarizeEpisodeStarterWarnings(warnings, language)}\n\n${prompt}`);
+      if (!proceed) {
+        setStarterWarnings(warnings);
+        return;
+      }
+    }
+
+    if (action === "draft") {
+      setDraftRequestPending(true);
+    } else {
+      setWriteRequestPending(true);
+    }
     try {
-      await postApi(`/books/${bookId}/draft`);
+      await postApi(`/books/${bookId}/${action === "draft" ? "draft" : "write-next"}`, {
+        episodeStarter,
+        confirmEpisodeStarterWarnings: true,
+      });
+      setStarterWarnings(warnings);
     } catch (e) {
-      setDraftRequestPending(false);
+      if (action === "draft") {
+        setDraftRequestPending(false);
+      } else {
+        setWriteRequestPending(false);
+      }
       alert(e instanceof Error ? e.message : "Failed");
     }
   };
@@ -528,7 +635,7 @@ export function BookDetail({
 
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={handleWriteNext}
+            onClick={() => handleStarterWriteAction("write-next")}
             disabled={mutationBusy}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl disabled:opacity-50 ${c.btnPrimary}`}
           >
@@ -536,7 +643,7 @@ export function BookDetail({
             {writing ? t("dash.writing") : t("book.writeNext")}
           </button>
           <button
-            onClick={drafting ? handleCancelDraft : handleDraft}
+            onClick={drafting ? handleCancelDraft : () => handleStarterWriteAction("draft")}
             disabled={writing || draftCancelling || reworkRunning}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl transition-all border disabled:opacity-50 ${
               drafting
@@ -626,6 +733,93 @@ export function BookDetail({
       <div className={`rounded-2xl border px-4 py-3 text-sm ${c.info}`}>
         {t("book.actionGuide")}
       </div>
+
+      <section className="rounded-2xl border border-border/40 bg-background/80 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ClipboardList size={16} className="text-muted-foreground" />
+              <h2 className="text-sm font-bold">이번 화 스타터</h2>
+              {data.episodeStarter?.exists ? (
+                <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  {bookLanguage === "ko" ? "저장됨" : bookLanguage === "zh" ? "已保存" : "Saved"}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {bookLanguage === "ko"
+                ? "설정집을 크게 확정하지 않고, 이번 초고가 반드시 맞힐 방향과 콘티만 짧게 잡습니다."
+                : bookLanguage === "zh"
+                  ? "不先锁定完整设定，只抓住这次草稿必须命中的方向和分镜。"
+                  : "Set only the direction and scene beats this draft must hit."}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <button
+              onClick={handleSaveEpisodeStarter}
+              disabled={savingStarter || mutationBusy}
+              className="flex items-center gap-2 rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-xs font-bold text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:opacity-50"
+            >
+              {savingStarter ? <div className="h-3.5 w-3.5 rounded-full border-2 border-border/30 border-t-ring animate-spin" /> : <Save size={14} />}
+              {bookLanguage === "ko" ? "스타터 저장" : bookLanguage === "zh" ? "保存启动卡" : "Save Starter"}
+            </button>
+            <p className="text-[11px] font-medium text-muted-foreground">
+              {bookLanguage === "ko"
+                ? "상단 초고와 다음 화 버튼에 적용됩니다."
+                : bookLanguage === "zh"
+                  ? "会应用到顶部的草稿和下一章按钮。"
+                  : "Applies to the top Draft and Next Chapter buttons."}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1.4fr_1fr]">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">이번 화 방향성</span>
+            <textarea
+              value={starterDirection}
+              onChange={(event) => setStarterDirection(event.target.value)}
+              rows={4}
+              placeholder="예: 독자가 주인공의 결핍과 첫 선택을 바로 보게 한다."
+              className="min-h-28 resize-y rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">콘티</span>
+            <textarea
+              value={starterConti}
+              onChange={(event) => setStarterConti(event.target.value)}
+              rows={4}
+              placeholder="- 첫 장면&#10;- 갈등 비트&#10;- 마지막 훅"
+              className="min-h-28 resize-y rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">피할 것</span>
+            <textarea
+              value={starterAvoid}
+              onChange={(event) => setStarterAvoid(event.target.value)}
+              rows={4}
+              placeholder="예: 세계관 설명으로 시작하지 않기."
+              className="min-h-28 resize-y rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+            />
+          </label>
+        </div>
+
+        {starterWarnings.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <div className="flex items-center gap-2 font-semibold">
+              <AlertTriangle size={14} />
+              {bookLanguage === "ko" ? "확인 필요" : bookLanguage === "zh" ? "需要确认" : "Needs Review"}
+            </div>
+            <ul className="mt-1 space-y-1">
+              {starterWarnings.map((warning) => (
+                <li key={warning}>{episodeStarterWarningLabel(warning, bookLanguage)}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
 
       {data.pendingStructuralGate ? (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">

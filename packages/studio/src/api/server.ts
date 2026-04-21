@@ -53,6 +53,7 @@ import type {
   ChapterRejectionExecutionMode,
   ChapterRejectionInstruction,
   ChapterRejectionPayload,
+  EpisodeStarterPayload,
   ReaderSettings,
   RejectChapterRequest,
   TruthSaveRequest,
@@ -1299,6 +1300,10 @@ const RADAR_FIT_CHECK_CONTEXT_FILES = [
   "pending_hooks.md",
 ] as const;
 const RADAR_FIT_CHECK_PREVIEW_LIMIT = 1200;
+const EPISODE_STARTER_FILE = "episode_starter.md";
+const EPISODE_STARTER_LONG_CONTI_LINE_LIMIT = 12;
+const EPISODE_STARTER_LONG_CONTI_CHAR_LIMIT = 1600;
+const EPISODE_STARTER_TOTAL_CHAR_LIMIT = 2400;
 const TRUTH_FILES = [
   "author_intent.md",
   "current_focus.md",
@@ -1580,6 +1585,166 @@ function truthFileTemplate(file: TruthFileName, language: StudioLanguage): strin
   if (language === "ko") return "# 파생 설정 정리\n\n(파생 설정 또는 변형 규칙을 정리한다.)\n";
   if (language === "zh") return "# 同人设定汇总\n\n（整理衍生设定或改编规则。）\n";
   return "# Fanfic Canon\n\n(Summarize derivative canon or adaptation rules here.)\n";
+}
+
+type EpisodeStarterInput = Pick<EpisodeStarterPayload, "direction" | "conti" | "avoid">;
+
+interface DraftRequestBody {
+  readonly wordCount?: number;
+  readonly context?: string;
+  readonly episodeStarter?: EpisodeStarterInput;
+  readonly confirmEpisodeStarterWarnings?: boolean;
+}
+
+function normalizeEpisodeStarterInput(value: unknown): EpisodeStarterInput {
+  const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  return {
+    direction: typeof record.direction === "string" ? record.direction.trim() : "",
+    conti: typeof record.conti === "string" ? record.conti.trim() : "",
+    avoid: typeof record.avoid === "string" ? record.avoid.trim() : "",
+  };
+}
+
+function episodeStarterLabels(language: StudioLanguage): {
+  readonly title: string;
+  readonly direction: string;
+  readonly conti: string;
+  readonly avoid: string;
+  readonly note: string;
+} {
+  if (language === "zh") {
+    return {
+      title: "本章启动卡",
+      direction: "本章方向",
+      conti: "本章分镜",
+      avoid: "避免事项",
+      note: "这是短程写作输入。通过书籍详情页起草时，它会优先于 current_focus.md。",
+    };
+  }
+  if (language === "en") {
+    return {
+      title: "Current Chapter Starter",
+      direction: "Current Chapter Direction",
+      conti: "Current Chapter Scene Beats",
+      avoid: "Avoid",
+      note: "Short-horizon drafting input. When drafting from Book Detail, this takes priority over current_focus.md.",
+    };
+  }
+  return {
+    title: "이번 화 스타터",
+    direction: "이번 화 방향성",
+    conti: "이번 화 콘티",
+    avoid: "피할 것",
+    note: "짧은 초고 입력 문서다. Book Detail에서 초고를 쓸 때 current_focus.md보다 우선한다.",
+  };
+}
+
+function buildEpisodeStarterMarkdown(input: EpisodeStarterInput, language: StudioLanguage): string {
+  const labels = episodeStarterLabels(language);
+  return [
+    `# ${labels.title}`,
+    "",
+    `> ${labels.note}`,
+    "",
+    `## ${labels.direction}`,
+    "",
+    input.direction || "(비어 있음)",
+    "",
+    `## ${labels.conti}`,
+    "",
+    input.conti || "(비어 있음)",
+    "",
+    `## ${labels.avoid}`,
+    "",
+    input.avoid || "(비어 있음)",
+    "",
+  ].join("\n");
+}
+
+function extractEpisodeStarterSection(markdown: string, names: ReadonlyArray<string>): string {
+  const nameSet = new Set(names.map((name) => name.toLowerCase()));
+  const collected: string[] = [];
+  let collecting = false;
+
+  for (const line of markdown.split(/\r?\n/u)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/u);
+    if (heading) {
+      if (collecting) break;
+      collecting = nameSet.has((heading[1] ?? "").trim().toLowerCase());
+      continue;
+    }
+    if (collecting) {
+      collected.push(line);
+    }
+  }
+
+  return collected.join("\n").trim().replace(/^\(비어 있음\)$/u, "");
+}
+
+function parseEpisodeStarterMarkdown(markdown: string): EpisodeStarterInput {
+  return {
+    direction: extractEpisodeStarterSection(markdown, [
+      "이번 화 방향성",
+      "1화 방향성",
+      "本章方向",
+      "第1章方向",
+      "Current Chapter Direction",
+      "Episode 1 Direction",
+    ]),
+    conti: extractEpisodeStarterSection(markdown, [
+      "이번 화 콘티",
+      "1화 콘티",
+      "本章分镜",
+      "第1章分镜",
+      "Current Chapter Scene Beats",
+      "Episode 1 Scene Beats",
+    ]),
+    avoid: extractEpisodeStarterSection(markdown, ["피할 것", "避免事项", "Avoid"]),
+  };
+}
+
+function episodeStarterWarnings(input: EpisodeStarterInput): string[] {
+  const warnings = new Set<string>();
+  const contiLines = input.conti.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const totalLength = input.direction.length + input.conti.length + input.avoid.length;
+  const combined = `${input.direction}\n${input.conti}\n${input.avoid}`;
+
+  if (contiLines.length > EPISODE_STARTER_LONG_CONTI_LINE_LIMIT || input.conti.length > EPISODE_STARTER_LONG_CONTI_CHAR_LIMIT) {
+    warnings.add("EPISODE_STARTER_LONG_CONTI");
+  }
+  if (totalLength > EPISODE_STARTER_TOTAL_CHAR_LIMIT) {
+    warnings.add("EPISODE_STARTER_OVER_BUDGET");
+  }
+  if (/(기존\s*설정|설정집|정전|canon|outline|아웃라인|스토리\s*바이블).{0,20}(무시|반대|충돌|갈아엎|리셋|바꿔|override|ignore|contradict)/iu.test(combined)) {
+    warnings.add("EPISODE_STARTER_POSSIBLE_CONFLICT");
+  }
+
+  return [...warnings];
+}
+
+async function readEpisodeStarterPayload(bookDir: string, language: StudioLanguage): Promise<EpisodeStarterPayload> {
+  const starterPath = join(bookDir, "story", EPISODE_STARTER_FILE);
+  const markdown = await readFile(starterPath, "utf-8").catch(() => "");
+  const input = markdown ? parseEpisodeStarterMarkdown(markdown) : { direction: "", conti: "", avoid: "" };
+  return {
+    ...input,
+    markdown: markdown || buildEpisodeStarterMarkdown(input, language),
+    exists: Boolean(markdown),
+    warnings: episodeStarterWarnings(input),
+  };
+}
+
+async function saveEpisodeStarterPayload(bookDir: string, input: EpisodeStarterInput, language: StudioLanguage): Promise<EpisodeStarterPayload> {
+  const storyDir = join(bookDir, "story");
+  await mkdir(storyDir, { recursive: true });
+  const markdown = buildEpisodeStarterMarkdown(input, language);
+  await writeFile(join(storyDir, EPISODE_STARTER_FILE), markdown, "utf-8");
+  return {
+    ...input,
+    markdown,
+    exists: true,
+    warnings: episodeStarterWarnings(input),
+  };
 }
 
 async function resolveTruthFileLanguage(
@@ -3283,6 +3448,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     try {
       const book = await state.loadBookConfig(id);
       const bookDir = state.bookDir(id);
+      const language = isStudioLanguage(book.language) ? book.language : "ko";
       const chapters = await state.loadChapterIndex(id);
       const nextChapter = await state.getNextChapterNumber(id);
       const enrichedChapters = await Promise.all(
@@ -3306,6 +3472,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           ? pendingStructuralGate
           : null,
         activeRun: runStore.findActiveRun(id),
+        episodeStarter: await readEpisodeStarterPayload(bookDir, language),
       });
     } catch {
       return c.json({ error: `Book "${id}" not found` }, 404);
@@ -4447,9 +4614,50 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   // --- Actions ---
 
+  app.put("/api/books/:id/episode-starter", async (c) => {
+    const id = c.req.param("id");
+    try {
+      const book = await state.loadBookConfig(id);
+      const language = isStudioLanguage(book.language) ? book.language : "ko";
+      const body = await c.req.json().catch(() => ({}));
+      const payload = await saveEpisodeStarterPayload(
+        state.bookDir(id),
+        normalizeEpisodeStarterInput(body),
+        language,
+      );
+      return c.json(payload);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "Failed to save episode starter" }, 500);
+    }
+  });
+
   app.post("/api/books/:id/write-next", async (c) => {
     const id = c.req.param("id");
-    const body = await c.req.json<{ wordCount?: number }>().catch(() => ({ wordCount: undefined }));
+    const body: DraftRequestBody = await c.req.json<DraftRequestBody>().catch(() => ({}));
+    let writeContext = body.context;
+    let starterPayload: EpisodeStarterPayload | null = null;
+    if (body.episodeStarter) {
+      try {
+        const book = await state.loadBookConfig(id);
+        const language = isStudioLanguage(book.language) ? book.language : "ko";
+        starterPayload = await saveEpisodeStarterPayload(
+          state.bookDir(id),
+          normalizeEpisodeStarterInput(body.episodeStarter),
+          language,
+        );
+        if (starterPayload.warnings.length > 0 && body.confirmEpisodeStarterWarnings !== true) {
+          return c.json({
+            error: "EPISODE_STARTER_CONFIRMATION_REQUIRED",
+            warnings: starterPayload.warnings,
+            episodeStarter: starterPayload,
+          }, 409);
+        }
+        writeContext = [body.context?.trim(), starterPayload.markdown.trim()].filter(Boolean).join("\n\n");
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : "Failed to prepare episode starter" }, 500);
+      }
+    }
+
     const trackedRun = startTrackedBookRun({
       bookId: id,
       action: "write-next",
@@ -4463,6 +4671,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       const pipeline = new PipelineRunner(await buildPipelineConfig(undefined, {
         extraSinks: [trackedRun.sink],
         onStreamProgress: trackedRun.onStreamProgress,
+        externalContext: writeContext,
       }));
       pipeline.writeNextChapter(id, body.wordCount).then(
         (result) => {
@@ -4475,7 +4684,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         },
       );
 
-      return c.json({ status: "writing", bookId: id });
+      return c.json({ status: "writing", bookId: id, warnings: starterPayload?.warnings ?? [] });
     } catch (e) {
       const message = failTrackedBookRun(trackedRun.runId, e);
       broadcast("write:error", { bookId: id, error: message });
@@ -4485,9 +4694,33 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.post("/api/books/:id/draft", async (c) => {
     const id = c.req.param("id");
-    const body = await c.req.json<{ wordCount?: number; context?: string }>().catch(() => ({ wordCount: undefined, context: undefined }));
+    const body: DraftRequestBody = await c.req.json<DraftRequestBody>().catch(() => ({}));
     if (activeDrafts.has(id)) {
       return c.json({ error: "Draft already in progress" }, 409);
+    }
+
+    let draftContext = body.context;
+    let starterPayload: EpisodeStarterPayload | null = null;
+    if (body.episodeStarter) {
+      try {
+        const book = await state.loadBookConfig(id);
+        const language = isStudioLanguage(book.language) ? book.language : "ko";
+        starterPayload = await saveEpisodeStarterPayload(
+          state.bookDir(id),
+          normalizeEpisodeStarterInput(body.episodeStarter),
+          language,
+        );
+        if (starterPayload.warnings.length > 0 && body.confirmEpisodeStarterWarnings !== true) {
+          return c.json({
+            error: "EPISODE_STARTER_CONFIRMATION_REQUIRED",
+            warnings: starterPayload.warnings,
+            episodeStarter: starterPayload,
+          }, 409);
+        }
+        draftContext = [body.context?.trim(), starterPayload.markdown.trim()].filter(Boolean).join("\n\n");
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : "Failed to prepare episode starter" }, 500);
+      }
     }
 
     const activeDraft = {
@@ -4508,7 +4741,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
         extraSinks: [trackedRun.sink],
         onStreamProgress: trackedRun.onStreamProgress,
       }));
-      pipeline.writeDraft(id, body.context, body.wordCount).then(
+      pipeline.writeDraft(id, draftContext, body.wordCount).then(
         async (result) => {
           if (activeDrafts.get(id) !== activeDraft) {
             return;
@@ -4568,7 +4801,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           broadcast("draft:error", { bookId: id, error: message });
         },
       );
-      return c.json({ status: "drafting", bookId: id });
+      return c.json({ status: "drafting", bookId: id, warnings: starterPayload?.warnings ?? [] });
     } catch (e) {
       activeDrafts.delete(id);
       const message = failTrackedBookRun(trackedRun.runId, e);

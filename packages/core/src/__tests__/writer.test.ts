@@ -1236,6 +1236,22 @@ describe("WriterAgent", () => {
         bookDir,
         chapterNumber: 1,
         chapterIntent: "# Chapter Intent\n\n## Goal\n왕좌 위 첫 착각극을 세운다.\n",
+        externalContext: [
+          "# 이번 화 스타터",
+          "",
+          "## 이번 화 방향성",
+          "",
+          "왕좌 위 착각극을 조사 콘티의 첫 단서와 연결한다.",
+          "",
+          "## 이번 화 콘티",
+          "",
+          "- 신하가 남긴 표식을 발견한다.",
+          "- 마왕인 척하며 추궁을 피한다.",
+          "",
+          "## 피할 것",
+          "",
+          "세계관 설명으로 시작하지 않는다.",
+        ].join("\n"),
         contextPackage: {
           chapter: 1,
           selectedContext: [
@@ -1262,6 +1278,10 @@ describe("WriterAgent", () => {
       const creativePrompt = (chatSpy.mock.calls[0]?.[0] as ReadonlyArray<{ content: string }> | undefined)?.[1]?.content ?? "";
       expect(creativePrompt).toContain("제1장을 집필한다.");
       expect(creativePrompt).toContain("## 본장 의도");
+      expect(creativePrompt).toContain("## 이번 화 스타터");
+      expect(creativePrompt).toContain("왕좌 위 착각극을 조사 콘티의 첫 단서와 연결한다.");
+      expect(creativePrompt).toContain("- 신하가 남긴 표식을 발견한다.");
+      expect(creativePrompt).toContain("세계관 설명으로 시작하지 않는다.");
       expect(creativePrompt).toContain("## 선택된 컨텍스트");
       expect(creativePrompt).toContain("요구 사항:");
       expect(creativePrompt).not.toContain("请续写第1章");
