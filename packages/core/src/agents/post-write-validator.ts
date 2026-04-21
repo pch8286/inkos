@@ -409,20 +409,45 @@ export function detectParagraphLengthDrift(
   const dropPercent = Math.round((1 - shrinkRatio) * 100);
 
   return [
-    language === "en"
-      ? {
-          rule: "Paragraph density drift",
-          severity: "warning",
-          description: `Average paragraph length dropped from ${Math.round(recent.averageLength)} to ${Math.round(current.averageLength)} characters (${dropPercent}% shorter) compared with recent chapters.`,
-          suggestion: "Let action, observation, and reaction share paragraphs more often instead of cutting every beat into a single short line.",
-        }
-      : {
-          rule: "段落密度漂移",
-          severity: "warning",
-          description: `当前章平均段长从近期章节的${Math.round(recent.averageLength)}字降到${Math.round(current.averageLength)}字，缩短了${dropPercent}%。`,
-          suggestion: "不要把每个动作都切成单独短句；适当把动作、观察和反应并入同一段，恢复段落层次。",
-        },
+    localizeParagraphDensityDriftWarning(
+      language,
+      Math.round(recent.averageLength),
+      Math.round(current.averageLength),
+      dropPercent,
+    ),
   ];
+}
+
+function localizeParagraphDensityDriftWarning(
+  language: WritingLanguage,
+  recentAverage: number,
+  currentAverage: number,
+  dropPercent: number,
+): PostWriteViolation {
+  if (language === "en") {
+    return {
+      rule: "Paragraph density drift",
+      severity: "warning",
+      description: `Average paragraph length dropped from ${recentAverage} to ${currentAverage} characters (${dropPercent}% shorter) compared with recent chapters.`,
+      suggestion: "Let action, observation, and reaction share paragraphs more often instead of cutting every beat into a single short line.",
+    };
+  }
+
+  if (language === "ko") {
+    return {
+      rule: "문단 밀도 변화",
+      severity: "warning",
+      description: `현재 장의 평균 문단 길이가 최근 장의 ${recentAverage}자에서 ${currentAverage}자로 줄었습니다(${dropPercent}% 감소).`,
+      suggestion: "모든 동작을 짧은 문단으로 끊기보다, 연결된 행동과 관찰, 반응을 한 문단 안에서 함께 처리해 문단의 층위를 회복하세요.",
+    };
+  }
+
+  return {
+    rule: "段落密度漂移",
+    severity: "warning",
+    description: `当前章平均段长从近期章节的${recentAverage}字降到${currentAverage}字，缩短了${dropPercent}%。`,
+    suggestion: "不要把每个动作都切成单独短句；适当把动作、观察和反应并入同一段，恢复段落层次。",
+  };
 }
 
 /** English-specific post-write validation rules. */
@@ -718,40 +743,72 @@ function appendParagraphShapeWarnings(
   if (shape.paragraphs.length < 4) return;
 
   if (shape.shortParagraphs.length >= 4 && shape.shortRatio >= 0.6) {
-    violations.push(
-      language === "en"
-        ? {
-            rule: "Paragraph fragmentation",
-            severity: "warning",
-            description: `${shape.shortParagraphs.length} of ${shape.paragraphs.length} paragraphs are shorter than ${shape.shortThreshold} characters.`,
-            suggestion: "Merge adjacent action, observation, and reaction beats so the chapter does not collapse into one-line paragraphs.",
-          }
-        : {
-            rule: "段落过碎",
-            severity: "warning",
-            description: `${shape.paragraphs.length}个段落里有${shape.shortParagraphs.length}个不足${shape.shortThreshold}字，段落被切得过碎。`,
-            suggestion: "把相邻的动作、观察、反应适当并段，不要每句话都单独起段。",
-          },
-    );
+    violations.push(localizeParagraphFragmentationWarning(language, shape));
   }
 
   if (shape.maxConsecutiveShort >= 3) {
-    violations.push(
-      language === "en"
-        ? {
-            rule: "Consecutive short paragraphs",
-            severity: "warning",
-            description: `${shape.maxConsecutiveShort} short paragraphs appear back to back.`,
-            suggestion: "Break the one-beat-per-paragraph rhythm by folding connected beats into fuller paragraphs.",
-          }
-        : {
-            rule: "连续短段",
-            severity: "warning",
-            description: `连续出现${shape.maxConsecutiveShort}个不足${shape.shortThreshold}字的短段，容易形成短句堆砌。`,
-            suggestion: "把连续的碎动作重新编组，至少让一个段落承载完整的动作链或情绪推进。",
-          },
-    );
+    violations.push(localizeConsecutiveShortParagraphWarning(language, shape));
   }
+}
+
+function localizeParagraphFragmentationWarning(
+  language: WritingLanguage,
+  shape: ParagraphShape,
+): PostWriteViolation {
+  if (language === "en") {
+    return {
+      rule: "Paragraph fragmentation",
+      severity: "warning",
+      description: `${shape.shortParagraphs.length} of ${shape.paragraphs.length} paragraphs are shorter than ${shape.shortThreshold} characters.`,
+      suggestion: "Merge adjacent action, observation, and reaction beats so the chapter does not collapse into one-line paragraphs.",
+    };
+  }
+
+  if (language === "ko") {
+    return {
+      rule: "문단 과분할",
+      severity: "warning",
+      description: `${shape.paragraphs.length}개 문단 중 ${shape.shortParagraphs.length}개가 ${shape.shortThreshold}자 미만이라 문단이 지나치게 잘게 끊겼습니다.`,
+      suggestion: "인접한 행동, 관찰, 반응은 적절히 한 문단으로 묶어 모든 문장이 따로 떨어지지 않게 하세요.",
+    };
+  }
+
+  return {
+    rule: "段落过碎",
+    severity: "warning",
+    description: `${shape.paragraphs.length}个段落里有${shape.shortParagraphs.length}个不足${shape.shortThreshold}字，段落被切得过碎。`,
+    suggestion: "把相邻的动作、观察、反应适当并段，不要每句话都单独起段。",
+  };
+}
+
+function localizeConsecutiveShortParagraphWarning(
+  language: WritingLanguage,
+  shape: ParagraphShape,
+): PostWriteViolation {
+  if (language === "en") {
+    return {
+      rule: "Consecutive short paragraphs",
+      severity: "warning",
+      description: `${shape.maxConsecutiveShort} short paragraphs appear back to back.`,
+      suggestion: "Break the one-beat-per-paragraph rhythm by folding connected beats into fuller paragraphs.",
+    };
+  }
+
+  if (language === "ko") {
+    return {
+      rule: "연속 짧은 문단",
+      severity: "warning",
+      description: `${shape.shortThreshold}자 미만의 짧은 문단이 연속으로 ${shape.maxConsecutiveShort}개 나와 짧은 문장만 쌓인 느낌을 줄 수 있습니다.`,
+      suggestion: "이어지는 잘게 끊긴 동작을 다시 묶어, 적어도 한 문단은 완성된 행동 흐름이나 감정 진행을 담게 하세요.",
+    };
+  }
+
+  return {
+    rule: "连续短段",
+    severity: "warning",
+    description: `连续出现${shape.maxConsecutiveShort}个不足${shape.shortThreshold}字的短段，容易形成短句堆砌。`,
+    suggestion: "把连续的碎动作重新编组，至少让一个段落承载完整的动作链或情绪推进。",
+  };
 }
 
 export function detectParagraphShapeWarnings(

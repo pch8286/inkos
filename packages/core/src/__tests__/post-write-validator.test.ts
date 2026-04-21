@@ -288,6 +288,43 @@ describe("validatePostWrite", () => {
     expect(findRule(result, "连续短段")).toBeDefined();
   });
 
+  it("localizes paragraph shape warnings to Korean by default", () => {
+    const current = [
+      "그가 멈췄다.",
+      "문을 봤다.",
+      "창을 봤다.",
+      "아무도 말하지 않았다.",
+      "그제야 안으로 들어갔다.",
+      "방 안은 차가웠다.",
+    ].join("\n\n");
+
+    const result = detectParagraphShapeWarnings(current);
+
+    expect(findRule(result, "문단 과분할")?.description).toContain("문단 중");
+    expect(findRule(result, "연속 짧은 문단")?.description).toContain("짧은 문단이 연속으로");
+  });
+
+  it("localizes paragraph density drift warnings to Korean", () => {
+    const recent = [
+      "밖의 비는 이미 거세져서 천장을 불규칙하게 두드렸다. 그는 바로 내려가지 않고 먼저 창문을 조금 열어 방 안에 고여 있던 답답한 공기를 천천히 빼냈다.",
+      "계단 아래에서는 낮은 말소리가 이어졌고, 누구도 이름을 크게 부르지 않았다. 그는 난간을 짚은 채 숨을 고르며 어느 발소리가 익숙한지 먼저 가려 들었다.",
+      "등불은 복도 끝에서 흔들렸다. 젖은 신발 자국이 문턱을 지나 안쪽으로 이어졌지만, 물기는 방 가운데까지 닿기 전에 끊겨 있었다.",
+      "그는 그 끊긴 자리를 오래 보았다. 누군가 들어왔다면 멈춘 이유가 있고, 멈췄다면 본 것이 있다는 뜻이었다.",
+    ].join("\n\n");
+    const current = [
+      "그가 멈췄다.",
+      "문을 봤다.",
+      "창을 봤다.",
+      "아무도 말하지 않았다.",
+      "그제야 안으로 들어갔다.",
+      "방 안은 차가웠다.",
+    ].join("\n\n");
+
+    const result = detectParagraphLengthDrift(current, recent, "ko");
+
+    expect(findRule(result, "문단 밀도 변화")?.description).toContain("현재 장의 평균 문단 길이");
+  });
+
   it("detects duplicate chapter titles", () => {
     const result = detectDuplicateTitle("回声", ["旧路", "回声"]);
     expect(findRule(result, "duplicate-title")).toBeDefined();
