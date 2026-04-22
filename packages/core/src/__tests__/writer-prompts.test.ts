@@ -180,6 +180,13 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("속도를 올리는 구간에서는 동작, 선택, 대사를 앞세우고");
     expect(prompt).toContain("독자가 장면에서 바로 읽을 수 있는 감정과 의도는 행동, 표정, 대사, 감각의 증거로 먼저 전달한다");
     expect(prompt).toContain("행동과 표정이 이미 전달한 감정은 다음 설명문 대신 다음 반응이나 선택으로 이어 준다");
+    expect(prompt).toContain("한국어는 주어를 자연스럽게 생략할 수 있다");
+    expect(prompt).toContain("이름, 직함, 무주어 문장, 직접 행동문으로 분산한다");
+    expect(prompt).toContain("한 문단 안에서 같은 인물 주어를 반복하지 않는다");
+    expect(prompt).toContain("감각으로 시작할 때는 어떤 감각을 먼저 쓸지 의식적으로 선택한다");
+    expect(prompt).toContain("냄새가 먼저 들어왔다");
+    expect(prompt).toContain("감각 자체를 주어로 세우는 문장을 반복하지 않는다");
+    expect(prompt).toContain("자신이 누워 있지 않다는 것을 알았다");
     expect(prompt).not.toContain("## 금지사항");
     expect(prompt).not.toContain("## Input Governance Contract");
     expect(prompt).not.toContain("## Length Guidance");

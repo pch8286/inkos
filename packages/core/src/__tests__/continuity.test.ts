@@ -252,6 +252,9 @@ describe("ContinuityAuditor", () => {
       expect(systemPrompt).toContain("인물의 멈춤, 손짓, 시선, 접근 같은 행동도 그 행동을 부른 자극과 함께 읽히는지");
       expect(systemPrompt).toContain("묘사가 핵심 대상에 집중되며 강약을 가지는지");
       expect(systemPrompt).toContain("평문 연결 문장이 읽기 속도를 안정적으로 받치는지도 함께 점검하세요");
+      expect(systemPrompt).toContain("그는/그녀는 같은 3인칭 대명사 주어가 영어 번역투처럼 반복되는지");
+      expect(systemPrompt).toContain("감각 자체가 주어가 되는 도입문이 반복되는지");
+      expect(systemPrompt).toContain("비문처럼 걸리는 인식 문장");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

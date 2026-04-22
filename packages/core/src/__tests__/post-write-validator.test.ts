@@ -217,6 +217,58 @@ describe("validatePostWrite", () => {
     expect(result.issues.some((issue) => issue.category === "감정 직설")).toBe(true);
   });
 
+  it("warns when Korean prose repeats third-person pronoun subjects", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = [
+      "그는 숨을 멈췄다.",
+      "그는 손끝에 닿은 돌바닥을 더듬었다.",
+      "그는 자신이 아직 사람의 몸이 아니라는 사실을 깨달았다.",
+      "그는 고개를 들었다.",
+    ].join("\n\n");
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "대명사 주어 반복")).toBeDefined();
+    expect(findRule(result, "대명사 주어 반복")?.severity).toBe("warning");
+  });
+
+  it("warns when Korean prose starts with a sensory-subject cliche", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = [
+      "피 냄새가 먼저 들어왔다.",
+      "코 안쪽을 긁는 쇠맛이었다.",
+      "축축한 냄새도 뒤따라 들어왔다.",
+      "그제야 검은 천장이 눈에 들어왔다.",
+    ].join("\n\n");
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "감각 도입 클리셰")).toBeDefined();
+    expect(findRule(result, "감각 도입 클리셰")?.suggestion).toContain("시점 인물");
+  });
+
+  it("flags the reported Korean prose failure modes in a representative opening", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = [
+      "피 냄새가 먼저 들어왔다.",
+      "",
+      "코 안쪽을 긁는 쇠맛이었다. 지하실처럼 축축한 냄새도 섞여 있었다. 눈을 뜨기 전부터, 그는 자신이 누워 있지 않다는 것을 알았다.",
+      "",
+      "몸이 너무 컸다.",
+      "",
+      "등 아래에는 침대가 아니라 차가운 돌이 닿아 있었다. 허리를 조금 움직이자 바닥 깊은 곳에서 긁히는 소리가 올라왔다. 무엇인가 길고 단단한 것이 그의 뒤에서 끌렸다.",
+      "",
+      "꼬리였다.",
+      "",
+      "그는 숨을 멈췄다.",
+    ].join("\n");
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "감각 도입 클리셰")).toBeDefined();
+    expect(findRule(result, "대명사 주어 반복")).toBeDefined();
+  });
+
   it("warns when a Korean sentence carries too many visual units at once", () => {
     const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
     const content = "사람 손으로는 닿지 않을 만큼 높은 아치가 검은 돌결 사이로 겹겹이 올라가 있었고 그 사이를 메운 붉은 유리창에는 잔불 같은 빛이 걸려 있었고 시선이 아래로 내려오자 왕좌실의 윤곽이 늦게 잡혔고 넓은 계단과 반원으로 선 무장들과 피가 마르다 만 바닥이 한꺼번에 눈에 들어왔다.";

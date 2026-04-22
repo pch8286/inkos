@@ -60,6 +60,9 @@ const COLLECTIVE_SHOCK_PATTERNS = [
 const KOREAN_DIRECT_EXCHANGE_VERBS = ["말", "묻", "답", "웃", "소리", "속삭", "쏘아붙", "내뱉"];
 const KOREAN_DEPENDENT_CLAUSE_MARKERS = /(?:면서|며|다가|지만|는데|더니|고서|자마자|자|고)/g;
 const KOREAN_VISUAL_LOAD_MARKERS = /(?:과|와|및|그리고)/g;
+const KOREAN_THIRD_PERSON_SUBJECT_PATTERN = /(?:^|[\n.!?。！？,，]\s*)(그는|그가|그녀는|그녀가|자신은|자신이)(?=\s|[,，])/g;
+const KOREAN_SENSORY_SUBJECT_OPENING_PATTERN = /(?:[가-힣]{1,8}\s+)?(?:냄새|악취|향|쇠맛|맛|소리|울림|감촉|냉기|한기|열기|빛|어둠|시야|천장|바닥|공기)(?:이|가|은|는)?\s*(?:먼저\s*)?(?:들어왔|밀려왔|느껴졌|들렸|보였|눈에\s+들어왔)/;
+const KOREAN_SENSORY_CLICHE_OPENING_PATTERN = /(?:[가-힣]{1,8}\s+)?(?:냄새|악취|향|쇠맛|맛|소리|울림|감촉|냉기|한기|열기|빛|어둠|시야|천장|바닥|공기)(?:이|가|은|는)?\s*먼저\s*(?:들어왔|밀려왔|느껴졌|들렸|보였|눈에\s+들어왔)/;
 const CHINESE_DEPENDENT_CLAUSE_MARKERS = /(?:然后|接着|随后|同时|而且|并且|却|才|再|又)/g;
 const ENGLISH_DEPENDENT_CLAUSE_MARKERS = /\b(?:as|while|when|after|before|because|although|though|which|that)\b/gi;
 
@@ -263,6 +266,7 @@ export function validatePostWrite(
 
   violations.push(...detectParagraphShapeWarnings(content, resolvedLanguage));
   violations.push(...detectMobileReadabilityWarnings(content, resolvedLanguage));
+  violations.push(...detectKoreanStylePatternWarnings(content, resolvedLanguage));
 
   const dialoguePressureViolation = detectDialoguePressureWarning(content, resolvedLanguage);
   if (dialoguePressureViolation) {
@@ -283,6 +287,51 @@ export function validatePostWrite(
         });
       }
     }
+  }
+
+  return violations;
+}
+
+function detectKoreanStylePatternWarnings(
+  content: string,
+  language: WritingLanguage,
+): ReadonlyArray<PostWriteViolation> {
+  if (language !== "ko") return [];
+
+  const violations: PostWriteViolation[] = [];
+  const thirdPersonSubjects = [...content.matchAll(KOREAN_THIRD_PERSON_SUBJECT_PATTERN)].map((match) => match[1] ?? "");
+  const uniqueThirdPersonSubjects = [...new Set(thirdPersonSubjects)];
+  const openingThirdPersonSubjects = [
+    ...extractNarrativeSentences(content).slice(0, 8).join(". ").matchAll(KOREAN_THIRD_PERSON_SUBJECT_PATTERN),
+  ].map((match) => match[1] ?? "");
+  if (thirdPersonSubjects.length >= 3 || openingThirdPersonSubjects.length >= 2 || (thirdPersonSubjects.length >= 2 && content.length <= 1500)) {
+    violations.push({
+      rule: "대명사 주어 반복",
+      severity: "warning",
+      description: `3인칭 대명사 주어가 ${thirdPersonSubjects.length}회 반복되어 영어 번역투처럼 보일 수 있습니다: ${uniqueThirdPersonSubjects.join(", ")}`,
+      suggestion: "주인공 이름이나 직함이 있으면 다시 고정하고, 없으면 주어를 생략한 행동문·감각 반응·직접 판단문으로 분산하세요.",
+    });
+  }
+
+  const openingSentences = extractNarrativeSentences(content).slice(0, 5);
+  const sensoryClicheOpening = openingSentences.slice(0, 2).find((sentence) => KOREAN_SENSORY_CLICHE_OPENING_PATTERN.test(sentence));
+  if (sensoryClicheOpening) {
+    violations.push({
+      rule: "감각 도입 클리셰",
+      severity: "warning",
+      description: `첫머리가 감각 자체를 주어로 세우는 익숙한 패턴입니다: "${summarizeSentenceSample(sensoryClicheOpening)}"`,
+      suggestion: "시점 인물의 자세, 공간의 큰 윤곽, 감각의 원인 이미지를 먼저 세우고 감각은 다음 비트로 붙이세요.",
+    });
+  }
+
+  const sensoryOpenings = openingSentences.filter((sentence) => KOREAN_SENSORY_SUBJECT_OPENING_PATTERN.test(sentence));
+  if (sensoryOpenings.length >= 2 && !sensoryClicheOpening) {
+    violations.push({
+      rule: "감각 스타팅 반복",
+      severity: "warning",
+      description: `도입부에서 감각 자체를 주어로 세우는 문장이 반복됩니다: "${summarizeSentenceSample(sensoryOpenings.join(" / "))}"`,
+      suggestion: "시점 인물의 몸 위치, 공간 앵커, 눈에 보이는 원인 이미지를 먼저 세우고 감각은 그 뒤에 붙이세요.",
+    });
   }
 
   return violations;

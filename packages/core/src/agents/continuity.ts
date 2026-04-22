@@ -257,7 +257,7 @@ function buildDimensionNote(
       return language === "en"
         ? "Audit as a diagnostic reader, not a rewriter: identify where the prose becomes hard to picture or parse on first read. Check whether key emotional, relational, and payoff beats are dramatized in scene instead of only being reported after the fact. Flag chapters where the narrator explains motives, stakes, or meaning that the scene already makes inferable. Also flag paragraphs that jump to isolated micro-detail or abstract verdict before the reader can picture the physical setup."
         : language === "ko"
-          ? "리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요. 핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지 보고, 행동·표정·대사·감각의 증거만으로도 감정과 의도가 읽히는지 살피세요. 공간과 형상이 먼저 세워지고 그 위에 세부 디테일과 판단이 놓이는지, 묘사가 핵심 대상에 집중되며 강약을 가지는지, 그리고 평문 연결 문장이 읽기 속도를 안정적으로 받치는지도 함께 점검하세요."
+          ? "리뷰어 시점으로 읽고, 독자가 한 번에 그림을 잡는지 확인하세요. 핵심 감정 변화, 관계 변화, 카타르시스 비트가 장면 안에서 드러나는지 보고, 행동·표정·대사·감각의 증거만으로도 감정과 의도가 읽히는지 살피세요. 공간과 형상이 먼저 세워지고 그 위에 세부 디테일과 판단이 놓이는지, 묘사가 핵심 대상에 집중되며 강약을 가지는지, 그리고 평문 연결 문장이 읽기 속도를 안정적으로 받치는지도 함께 점검하세요. 그는/그녀는 같은 3인칭 대명사 주어가 영어 번역투처럼 반복되는지, 감각 자체가 주어가 되는 도입문이 반복되는지, 비문처럼 걸리는 인식 문장이 감각 증거 없이 결론만 말하는지도 표시하세요."
           : "用诊断型读者视角审阅，指出哪些地方读者无法一遍看清、需要回读。检查关键情绪、关系变化和回收段落是否只是事后摘要；如果场景已经足够明显，就不要再让叙述者重复解释动机、风险或意义。同时标记那些在读者还没看清空间与轮廓前，就先跳到孤立细节或抽象判断的段落。";
     case 19:
       return language === "en"
