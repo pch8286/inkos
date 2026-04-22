@@ -304,13 +304,13 @@ function buildCoreRules(lengthSpec: LengthSpec, language: WritingLanguage): stri
 - 【铁律】正文中严禁出现分析报告式语言：禁止"核心动机""信息边界""信息落差""核心风险""利益最大化""当前处境"等推理框架术语。人物内心独白必须口语化、直觉化。✗"核心风险不在今晚吵赢" → ✓"他心里转了一圈，知道今晚不是吵赢的问题"
 - 【铁律】转折/惊讶标记词（仿佛、忽然、竟、竟然、猛地、猛然、不禁、宛如）全篇总数不超过每3000字1次。超出时改用具体动作或感官描写传递突然性
 - 【铁律】同一体感/意象禁止连续渲染超过两轮。第三次出现相同意象域（如"火在体内流动"）时必须切换到新信息或新动作，避免原地打转
-- 【铁律】六步走心理分析是写作推导工具，其中的术语（"当前处境""核心动机""信息边界""性格过滤"等）只用于PRE_WRITE_CHECK内部推理，绝不可出现在正文叙事中
+- 【铁律】六步走心理分析是上游规划工具，其中的术语（"当前处境""核心动机""信息边界""性格过滤"等）只用于规划材料，绝不可出现在正文叙事中
 
 ## 硬性禁令
 
 - 【硬性禁令】全文严禁出现"不是……而是……""不是……，是……""不是A，是B"句式，出现即判定违规。改用直述句
 - 【硬性禁令】全文严禁出现破折号"——"，用逗号或句号断句
-- 正文中禁止出现hook_id/账本式数据（如"余量由X%降到Y%"），数值结算只放POST_SETTLEMENT`;
+- 正文中禁止出现hook_id/账本式数据（如"余量由X%降到Y%"），数值结算只交给后续状态结算阶段`;
 }
 
 function buildKoreanStyleRules(): string {
@@ -664,25 +664,9 @@ function buildPreWriteChecklist(book: BookConfig, gp: GenreProfile): string {
 // ---------------------------------------------------------------------------
 
 function buildCreativeOutputFormat(book: BookConfig, gp: GenreProfile, lengthSpec: LengthSpec): string {
-  const resourceRow = gp.numericalSystem
-    ? "| 当前资源总量 | X | 与账本一致 |\n| 本章预计增量 | +X（来源） | 无增量写+0 |"
-    : "";
-
-  const preWriteTable = `=== PRE_WRITE_CHECK ===
-（必须输出Markdown表格）
-| 检查项 | 本章记录 | 备注 |
-|--------|----------|------|
-| 大纲锚定 | 当前卷名/阶段 + 本章应推进的具体节点 | 严禁跳过节点或提前消耗后续剧情 |
-| 上下文范围 | 第X章至第Y章 / 状态卡 / 设定文件 | |
-| 当前锚点 | 地点 / 对手 / 收益目标 | 锚点必须具体 |
-${resourceRow}| 待回收伏笔 | 用真实 hook_id 填写（无则写 none） | 与伏笔池一致 |
-| 本章冲突 | 一句话概括 | |
-| 章节类型 | ${gp.chapterTypes.join("/")} | |
-| 风险扫描 | OOC/信息越界/设定冲突${gp.powerScaling ? "/战力崩坏" : ""}/节奏/词汇疲劳 | |`;
-
   return `## 输出格式（严格遵守）
 
-${preWriteTable}
+Planner/Composer 已经负责章节意图、上下文选择、规则栈和风险扫描。Writer 只负责把这些输入落实为可读正文，不输出计划、检查表、审稿意见或状态结算。
 
 === CHAPTER_TITLE ===
 (章节标题，不含"第X章"。标题必须与已有章节标题不同，不要重复使用相同或相似的标题；若提供了 recent title history 或高频标题词，必须主动避开重复词根和高频意象)
@@ -690,8 +674,8 @@ ${preWriteTable}
 === CHAPTER_CONTENT ===
 (正文内容，目标${lengthSpec.target}字，允许区间${lengthSpec.softMin}-${lengthSpec.softMax}字)
 
-【重要】本次只需输出以上三个区块（PRE_WRITE_CHECK、CHAPTER_TITLE、CHAPTER_CONTENT）。
-状态卡、伏笔池、摘要等追踪文件将由后续结算阶段处理，请勿输出。`;
+【重要】本次只输出 CHAPTER_TITLE 和 CHAPTER_CONTENT 两个区块。
+检查表、状态卡、伏笔池、摘要等追踪文件由 Planner/Composer、Observer/Settler、Auditor/Reviser 处理，请勿输出。`;
 }
 
 // ---------------------------------------------------------------------------

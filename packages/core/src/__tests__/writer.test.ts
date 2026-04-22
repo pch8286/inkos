@@ -1284,6 +1284,9 @@ describe("WriterAgent", () => {
       expect(creativePrompt).toContain("세계관 설명으로 시작하지 않는다.");
       expect(creativePrompt).toContain("## 선택된 컨텍스트");
       expect(creativePrompt).toContain("요구 사항:");
+      expect(creativePrompt).toContain("계획과 검수는 Planner/Composer/Auditor가 담당한다");
+      expect(creativePrompt).toContain("CHAPTER_TITLE, CHAPTER_CONTENT 두 구역만 출력한다");
+      expect(creativePrompt).not.toContain("PRE_WRITE_CHECK");
       expect(creativePrompt).not.toContain("请续写第1章");
       expect(creativePrompt).not.toContain("要求：");
     } finally {
@@ -1701,7 +1704,10 @@ describe("WriterAgent", () => {
       const creativePrompt = (chatSpy.mock.calls[0]?.[0] as ReadonlyArray<{ content: string }> | undefined)?.[1]?.content ?? "";
 
       expect(systemPrompt).not.toContain("Hook-A / Hook-B");
-      expect(systemPrompt).toContain("真实 hook_id");
+      expect(systemPrompt).not.toContain("真实 hook_id");
+      expect(systemPrompt).not.toContain("=== PRE_WRITE_CHECK ===");
+      expect(systemPrompt).toContain("Planner/Composer");
+      expect(systemPrompt).toContain("只输出 CHAPTER_TITLE 和 CHAPTER_CONTENT");
       expect(creativePrompt).toContain("## Explicit Hook Agenda");
       expect(creativePrompt).toContain("mentor-oath");
       expect(creativePrompt).toContain("ledger-fragment");

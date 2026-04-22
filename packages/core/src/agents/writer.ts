@@ -827,15 +827,15 @@ ${params.storyBible}
 ## Volume Outline (Hard Constraint — Must Follow)
 ${params.volumeOutline}
 
-[Outline Rules]
-- This chapter must advance the plot points assigned to it in the volume outline. Do not skip ahead or consume future plot points.
-- If the outline specifies an event for chapter N, do not resolve it early.
-- Pacing must match the outline's chapter span: if 5 chapters are planned for an arc, do not compress into 1-2.
-- PRE_WRITE_CHECK must identify which outline node this chapter covers.
+[Role Boundary]
+- This chapter must advance the plot points assigned to it in the supplied volume outline. Do not skip ahead or resolve future nodes early.
+- Pacing must match the outline's chapter span: if an arc is planned across several chapters, do not compress it into this chapter.
+- Planning, context selection, and audit are handled by Planner/Composer/Auditor.
+- Writer must only turn the supplied intent, outline, and context into prose.
+- Do not output planning checklists, audit notes, state cards, hooks tables, or settlement notes.
 
 ${lengthRequirementBlock}
-- Output PRE_WRITE_CHECK first, then the chapter
-- Output only PRE_WRITE_CHECK, CHAPTER_TITLE, and CHAPTER_CONTENT blocks`;
+- Output only CHAPTER_TITLE and CHAPTER_CONTENT blocks`;
     }
 
     return `请续写第${params.chapterNumber}章。
@@ -855,15 +855,16 @@ ${params.storyBible}
 ## 卷纲（硬约束——必须遵守）
 ${params.volumeOutline}
 
-【卷纲遵守规则】
+【角色边界】
 - 本章内容必须对应卷纲中当前章节范围内的剧情节点，严禁跳过或提前消耗后续节点
 - 如果卷纲指定了某个事件/转折发生在第N章，不得提前到本章完成
 - 剧情推进速度必须与卷纲规划的章节跨度匹配：如果卷纲规划某段剧情跨5章，不得在1-2章内讲完
-- PRE_WRITE_CHECK中必须明确标注本章对应的卷纲节点
+- 规划、上下文选择、检视由 Planner/Composer/Auditor 负责
+- Writer 只把已给定的意图、卷纲和上下文落实成正文
+- 不输出规划检查表、审稿意见、状态卡、伏笔表或结算说明
 
 ${lengthRequirementBlock}
-- 先输出写作自检表，再写正文
-      - 只需输出 PRE_WRITE_CHECK、CHAPTER_TITLE、CHAPTER_CONTENT 三个区块`;
+- 只输出 CHAPTER_TITLE、CHAPTER_CONTENT 两个区块`;
   }
 
   private buildGovernedUserPrompt(params: {
@@ -950,8 +951,10 @@ ${traceNotes}
 
 ${varianceBlock}
 ${lengthRequirementBlock}
-- Output PRE_WRITE_CHECK first, then the chapter
-- Output only PRE_WRITE_CHECK, CHAPTER_TITLE, and CHAPTER_CONTENT blocks`;
+- Planning and review belong to Planner/Composer/Auditor.
+- Writer only turns the supplied intent, context, and rule stack into prose.
+- Do not output planning checklists, audit notes, state cards, hook tables, or settlement notes.
+- Output only CHAPTER_TITLE and CHAPTER_CONTENT blocks`;
     }
 
     if (params.language === "ko") {
@@ -979,8 +982,10 @@ ${traceNotes}
 
 ${varianceBlock}
 ${lengthRequirementBlock}
-- 먼저 PRE_WRITE_CHECK 를 출력한 다음 본문을 쓴다
-- PRE_WRITE_CHECK, CHAPTER_TITLE, CHAPTER_CONTENT 세 구역만 출력한다`;
+- 계획과 검수는 Planner/Composer/Auditor가 담당한다
+- Writer는 제공된 의도, 컨텍스트, 규칙 스택을 제목과 본문으로만 구현한다
+- 계획 체크리스트, 검수 의견, 상태 카드, 복선 표, 정산 메모는 출력하지 않는다
+- CHAPTER_TITLE, CHAPTER_CONTENT 두 구역만 출력한다`;
     }
 
     return `请续写第${params.chapterNumber}章。
@@ -1007,8 +1012,10 @@ ${traceNotes}
 
 ${varianceBlock}
 ${lengthRequirementBlock}
-- 先输出写作自检表，再写正文
-- 只需输出 PRE_WRITE_CHECK、CHAPTER_TITLE、CHAPTER_CONTENT 三个区块`;
+- 规划和审稿由 Planner/Composer/Auditor 负责
+- Writer 只把给定意图、上下文和规则栈落实为标题与正文
+- 不输出规划检查表、审稿意见、状态卡、伏笔表或结算说明
+- 只输出 CHAPTER_TITLE、CHAPTER_CONTENT 两个区块`;
   }
 
   private joinGovernedEvidenceBlocks(blocks: ReturnType<typeof buildGovernedMemoryEvidenceBlocks> | undefined): string | undefined {

@@ -86,6 +86,30 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).not.toContain("正文不少于2200字");
   });
 
+  it("keeps creative writer output focused on title and prose only", () => {
+    const prompt = buildWriterSystemPrompt(
+      BOOK,
+      GENRE,
+      null,
+      "# Book Rules",
+      "# Genre Body",
+      "# Style Guide\n\nKeep the prose restrained.",
+      undefined,
+      3,
+      "creative",
+      undefined,
+      "zh",
+      "governed",
+    );
+
+    expect(prompt).toContain("=== CHAPTER_TITLE ===");
+    expect(prompt).toContain("=== CHAPTER_CONTENT ===");
+    expect(prompt).not.toContain("=== PRE_WRITE_CHECK ===");
+    expect(prompt).not.toContain("POST_SETTLEMENT");
+    expect(prompt).toContain("Planner/Composer");
+    expect(prompt).toContain("只输出 CHAPTER_TITLE 和 CHAPTER_CONTENT");
+  });
+
   it("keeps hard guardrails and book/style constraints in governed mode", () => {
     const prompt = buildWriterSystemPrompt(
       BOOK,
