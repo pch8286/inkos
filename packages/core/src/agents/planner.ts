@@ -230,6 +230,10 @@ export class PlannerAgent extends BaseAgent {
       "禁止",
       "避免",
       "避雷",
+      "피할 것",
+      "금지",
+      "하지 말 것",
+      "주의",
     ]);
     const focusAvoids = avoidSection
       ? this.extractListItems(avoidSection, 10)
@@ -238,7 +242,7 @@ export class PlannerAgent extends BaseAgent {
         .map((line) => line.trim())
         .filter((line) =>
           line.startsWith("-") &&
-          /avoid|don't|do not|不要|别|禁止/i.test(line),
+          /avoid|don't|do not|不要|别|禁止|피하|하지 말|금지|쓰지 않|시작하지 않/i.test(line),
         )
         .map((line) => this.cleanListItem(line))
         .filter((line): line is string => Boolean(line));
@@ -287,7 +291,7 @@ export class PlannerAgent extends BaseAgent {
     const outlineText = outlineNode ?? volumeOutline;
     if (!outlineText || outlineText === "(文件尚未创建)") return [];
     if (externalContext) {
-      const indicatesOverride = /ignore|skip|defer|instead|不要|别|先别|暂停/i.test(externalContext);
+      const indicatesOverride = /ignore|skip|defer|instead|不要|别|先别|暂停|무시|건너뛰|미루|대신|하지 말|중단|보류/i.test(externalContext);
       if (!indicatesOverride && this.hasKeywordOverlap(externalContext, outlineText)) return [];
 
       return [
@@ -343,6 +347,10 @@ export class PlannerAgent extends BaseAgent {
       "当前聚焦",
       "当前焦点",
       "近期聚焦",
+      "현재 중점",
+      "현재 초점",
+      "이번 화 방향성",
+      "이번 화 중점",
     ]) ?? currentFocus;
     const directives = this.extractFocusStyleItems(focusSection, 3);
     if (directives.length === 0) {
@@ -361,6 +369,10 @@ export class PlannerAgent extends BaseAgent {
       "本章覆盖",
       "临时覆盖",
       "当前覆盖",
+      "로컬 오버라이드",
+      "명시적 오버라이드",
+      "이번 화 오버라이드",
+      "이번 화 예외",
     ]);
     if (!overrideSection) {
       return undefined;
@@ -381,6 +393,10 @@ export class PlannerAgent extends BaseAgent {
       "当前聚焦",
       "当前焦点",
       "近期聚焦",
+      "현재 중점",
+      "현재 초점",
+      "이번 화 방향성",
+      "이번 화 중점",
     ]) ?? currentFocus;
     return this.extractListItems(focusSection, limit);
   }
@@ -549,12 +565,157 @@ export class PlannerAgent extends BaseAgent {
     if (activeCount < 10) {
       return language === "en"
         ? `### Hook Budget\n- ${activeCount} active hooks (capacity: ${cap})`
+        : language === "ko"
+          ? `### 떡밥 예산\n- 현재 활성 떡밥 ${activeCount}개 (한도: ${cap})`
         : `### 伏笔预算\n- 当前 ${activeCount} 条活跃伏笔（容量：${cap}）`;
     }
     const remaining = Math.max(0, cap - activeCount);
     return language === "en"
       ? `### Hook Budget\n- ${activeCount} active hooks — approaching capacity (${cap}). Only ${remaining} new hook(s) allowed. Prioritize resolving existing debt over opening new threads.`
+      : language === "ko"
+        ? `### 떡밥 예산\n- 현재 활성 떡밥 ${activeCount}개로 한도(${cap})에 가깝습니다. 새 떡밥은 ${remaining}개까지만 허용하고, 새 줄을 열기보다 기존 떡밥 회수를 우선하세요.`
       : `### 伏笔预算\n- 当前 ${activeCount} 条活跃伏笔——接近容量上限（${cap}）。仅剩 ${remaining} 个新坑位。优先回收旧债，不要轻易开新线。`;
+  }
+
+  private renderEpisodeContract(language: WritingLanguage): string {
+    if (language === "en") {
+      return [
+        "## Episode Contract",
+        "- Close at least one small reward: answer, win, cost paid, relationship movement, or concrete progress.",
+        "- Open one next-episode question: reveal, threat, decision, deadline, or unresolved pressure.",
+        "- Give the protagonist one active choice that changes the situation.",
+        "- Attach a cost to that choice: lost option, exposed secret, new enemy, debt, injury, or harder constraint.",
+      ].join("\n");
+    }
+
+    if (language === "ko") {
+      return [
+        "## 회차 계약",
+        "- 작은 보상 1개를 닫는다: 답, 승리, 대가 지불, 관계 이동, 구체적 진전 중 하나.",
+        "- 다음 화를 여는 질문 1개를 남긴다: 폭로, 위협, 선택, 마감, 미해결 압박 중 하나.",
+        "- 주인공의 능동적 선택이 상황을 바꾸게 한다.",
+        "- 선택의 대가를 붙인다: 선택지 상실, 비밀 노출, 새 적, 빚, 부상, 더 좁아진 제약 중 하나.",
+      ].join("\n");
+    }
+
+    return [
+      "## 单章契约",
+      "- 收束 1 个小回报：答案、胜利、付出代价、关系推进或具体进展。",
+      "- 留下 1 个下一章问题：揭示、威胁、选择、期限或未解压力。",
+      "- 让主角做出 1 个主动选择，并改变局面。",
+      "- 给这个选择附上代价：失去选项、秘密暴露、新敌人、债务、受伤或更窄的限制。",
+    ].join("\n");
+  }
+
+  private renderSceneDesignContract(language: WritingLanguage): string {
+    if (language === "en") {
+      return [
+        "## Scene Design Contract",
+        "- Each major scene must show want / action / shift.",
+        "- Before drafting a scene, know the immediate goal / obstacle / turn.",
+        "- Dialogue should work as pressure, evasion, bargaining, concealment, or challenge before it works as exposition.",
+        "- Do not summarize decisive emotional, relational, or payoff beats when they need to be felt as scene.",
+      ].join("\n");
+    }
+
+    if (language === "ko") {
+      return [
+        "## 장면 설계 계약",
+        "- 주요 장면은 욕망 / 행동 / 변화가 보이게 설계한다.",
+        "- 장면에 들어가기 전 즉시 목표 / 방해 / 전환을 분명히 한다.",
+        "- 대사는 설명보다 압박, 회피, 협상, 은폐, 도전의 행위로 먼저 작동해야 한다.",
+        "- 감정, 관계, 회수의 결정적 비트는 요약으로 넘기지 말고 장면으로 체감되게 한다.",
+      ].join("\n");
+    }
+
+    return [
+      "## 场景设计契约",
+      "- 主要场景必须具备 欲望 / 行动 / 变化。",
+      "- 写场景前先明确 即时目标 / 阻碍 / 转折。",
+      "- 对话先承担施压、回避、谈判、隐瞒或挑战，再承担说明信息。",
+      "- 情绪、关系和回收的关键拍不要压成摘要，必须落成可感场景。",
+    ].join("\n");
+  }
+
+  private renderNarrativeManagementContract(language: WritingLanguage): string {
+    if (language === "en") {
+      return [
+        "## Narrative Management Contract",
+        "- Meaning/arc: make the episode test a belief or value through choice; leave traces in consequences, not moral commentary.",
+        "- Scene causality: each scene ending must feed the next scene. Transitions should move cause -> reaction -> new situation.",
+        "- Reveal budget: distinguish new information, recontextualization, and unresolved questions; reveal only what the scene needs now.",
+        "- Subplot/relationship lines: move only 1-2 live lines this episode and mark the rest as maintain, defer, or compress.",
+        "- Sequence pressure: narrow or raise the cost of one axis: goal, clock, information asymmetry, space, or power balance.",
+        "- Desire/misbelief: separate the protagonist's surface desire from the deeper misbelief or lack, and make choices test that misbelief.",
+        "- Promise-progress-payoff ladder: every promise needs visible progress, and payoff should settle that progress rather than merely close a hook.",
+        "- Sequel beat: after each major scene, leave a reaction-reflection-decision beat before moving into the next push.",
+        "- Cliffhanger integrity: do not create a final hook by hiding an answer that is already settled; carry over a real option, cost, or conflict.",
+        "- Milestones: each volume arc and short arc should leave one checkable state-changing milestone.",
+        "- Scene spine: lock each major scene into one sentence first: who wants what, what blocks it, and what choice ends it.",
+        "- Stakes clock: show one shrinking clock inside the scene: time, opportunity, stamina, trust, or pursuit.",
+        "- Conversion beat: use the last 1-2 paragraphs as the paid-episode conversion zone, leaving one reward and one reason to continue.",
+        "- Title promise: prove the emotion, event, or cost promised by the title in an actual scene.",
+        "- Novelty rotation: in long serialization, rotate place, relationship, reveal shape, combat shape, and reward shape.",
+        "- Chapter-scale causality: an episode is not a list of scenes; it must close from starting state -> accumulated pressure -> irreversible new state.",
+        "- Moral pressure: create pressure through a collision between two defensible choices, not a simple good/evil split.",
+        "- Relational triangle: important relationships should gain a third pressure axis that twists leverage, jealousy, or misreadings.",
+        "- Midpoint reversal: the midpoint should change the direction of the question rather than merely add a bigger obstacle.",
+        "- Objective layers: separate the scene objective from the superobjective behind it.",
+        "- Episodic micro-goals: each scene should carry a smaller goal than the episode goal and close one micro-reward.",
+      ].join("\n");
+    }
+
+    if (language === "ko") {
+      return [
+        "## 서사 운용 계약",
+        "- 의미/아크: 이번 화의 사건은 인물이 어떤 믿음이나 가치를 선택으로 시험받는지 남긴다. 교훈문이 아니라 선택이 남긴 흔적으로 처리한다.",
+        "- 장면 사이 인과: 각 장면 끝은 다음 장면의 입력값을 남긴다. 컷은 원인 -> 반응 -> 새 상황으로 이어진다.",
+        "- 정보 공개 예산: 새 정보, 재맥락화, 미해결 질문을 구분하고 지금 알아야 할 것만 장면 안에서 공개한다.",
+        "- 서브플롯/관계선: 이번 화에서 실제로 움직일 선은 1-2개로 제한하고, 나머지는 유지/보류/압축한다.",
+        "- 시퀀스 압력: 목표 축소, 시간 압박, 정보 비대칭, 공간 제약, 권력 균형 중 하나가 더 좁아지거나 비싸져야 한다.",
+        "- 심리 엔진: 주인공의 표면적 욕망과 그 아래의 미신념/결핍을 분리해 설계하고, 선택은 그 미신념을 시험하게 한다.",
+        "- 약속-진전-회수의 사다리: 새 약속은 구체적 진전으로 보이고, 회수는 그 진전을 결산한다.",
+        "- 후속 비트: 각 장면 뒤에는 반응-성찰-결정의 후속 비트를 남기고 다음 장면으로 넘긴다.",
+        "- 마지막 훅은 이미 답이 정해진 질문을 숨기는 방식으로 만들지 않는다. 다음 화로 넘길 압력은 실제로 남은 선택지, 대가, 충돌에서 나온다.",
+        "- 권과 소호흡마다 확인 가능한 마일스톤 하나를 세운다. 상태 변화가 남는 사건을 마일스톤으로 삼고, 같은 기능의 장면을 여러 번 소모하지 않는다.",
+        "- 장면의 척추를 한 문장으로 먼저 고정한다: 누가 무엇을 원하고, 무엇이 막고, 어떤 선택으로 끝나는지.",
+        "- 장면 안에는 줄어드는 시계가 보여야 한다: 시간, 기회, 체력, 신뢰, 추적 중 하나가 한 칸씩 깎인다.",
+        "- 마지막 1-2문단은 결제 전환 구간으로 쓰고, 보상 1개와 다음 화 이유 1개를 동시에 남긴다.",
+        "- 제목이 약속한 감정, 사건, 대가는 본문에서 실제 장면으로 증명한다.",
+        "- 장기 연재에서는 장소, 관계, 정보 공개, 전투 방식, 보상의 형태를 번갈아 바꾸고, 같은 감정과 같은 장면 그릇을 연속으로 쓰지 않는다.",
+        "- 한 화는 장면들의 나열이 아니라 시작 상태 -> 압력 누적 -> 되돌릴 수 없는 새 상태로 닫혀야 한다.",
+        "- 도덕적 압박은 선악이 아니라 둘 다 옳아 보이는 선택의 충돌로 만든다.",
+        "- 중요한 관계는 둘만 붙여 두지 말고, 반드시 세 번째 압력축을 세워 긴장을 비틀어라.",
+        "- 중반 전환은 답이 아니라 질문의 방향을 바꾸는 지점이다.",
+        "- 장면 목표와 슈퍼목표를 분리한다. 지금 장면에서 얻으려는 것과 긴 호흡에서 원하는 것을 따로 적는다.",
+        "- 장면마다 회차 목표보다 더 작은 미세 목표를 하나 세우고, 장면마다 1개의 미세 목표와 1개의 미세 보상을 닫는다.",
+      ].join("\n");
+    }
+
+    return [
+      "## 叙事运营契约",
+      "- 意义/弧线：本章事件必须通过选择检验人物的信念或价值，不写成说教，而是留下后果痕迹。",
+      "- 场景因果：每个场景结尾都要成为下一场景的输入。转场按原因 -> 反应 -> 新局面推进。",
+      "- 信息公开预算：区分新信息、重新语境化和未解问题，只公开当前场景必须知道的内容。",
+      "- 支线/关系线：本章实际推进 1-2 条线，其余标记为维持、延后或压缩。",
+      "- 序列压力：目标、时间、信息差、空间限制、权力平衡中至少一项要变得更窄或更昂贵。",
+      "- 心理引擎：区分主角表层欲望和更深层的错误信念/缺失，让选择去检验这个错误信念。",
+      "- 承诺-进展-回收阶梯：新承诺必须带来可见进展，回收要结算这份进展。",
+      "- 后续拍：每个主要场景之后留下反应-反思-决定，再推入下一场景。",
+      "- 结尾钩子不能靠隐藏已经确定的答案制造，必须来自真实剩余的选项、代价或冲突。",
+      "- 每个卷线和小弧线都要留下一个可检查的状态变化里程碑，避免重复消耗同一功能的场景。",
+      "- 场景脊柱：先用一句话锁定谁想要什么、什么阻挡、以什么选择结束。",
+      "- 利害倒计时：场景内必须看见时间、机会、体力、信任或追踪至少一项在减少。",
+      "- 付费转化拍：最后 1-2 段同时留下一个回报和一个继续读下一章的理由。",
+      "- 标题承诺：标题承诺的情绪、事件或代价必须在正文场景中兑现。",
+      "- 长线新鲜度：长篇连载要轮换地点、关系、信息公开方式、战斗形态和回报形态。",
+      "- 单章因果：单章不是场景罗列，必须从起始状态 -> 压力累积 -> 不可逆新状态收束。",
+      "- 道德压力：用两个看似都成立的选择相撞，而不是简单善恶对立。",
+      "- 关系三角：重要关系必须加入第三个压力轴，扭转筹码、嫉妒或误读。",
+      "- 中点转向：中段转折不是给答案，而是改变问题的方向。",
+      "- 目标层级：区分场景目标和背后的超目标。",
+      "- 微目标：每个场景都要有比单章目标更小的微目标，并收束一个微回报。",
+    ].join("\n");
   }
 
   private extractSection(content: string, headings: ReadonlyArray<string>): string | undefined {
@@ -799,7 +960,8 @@ export class PlannerAgent extends BaseAgent {
   private extractKeywords(content: string): string[] {
     const english = content.match(/[a-z]{4,}/gi) ?? [];
     const chinese = content.match(/[\u4e00-\u9fff]{2,4}/g) ?? [];
-    return this.unique([...english, ...chinese]);
+    const korean = content.match(/[가-힣]{2,}/g) ?? [];
+    return this.unique([...english, ...chinese, ...korean]);
   }
 
   private renderIntentMarkdown(
@@ -865,6 +1027,12 @@ export class PlannerAgent extends BaseAgent {
       "",
       "## Narrative Engine",
       engineDirectives,
+      "",
+      this.renderEpisodeContract(language),
+      "",
+      this.renderSceneDesignContract(language),
+      "",
+      this.renderNarrativeManagementContract(language),
       "",
       "## Outline Node",
       intent.outlineNode ?? "(not found)",

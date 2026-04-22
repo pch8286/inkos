@@ -276,11 +276,93 @@ describe("ChapterAnalyzerAgent", () => {
       const userPrompt = messages[1]?.content ?? "";
 
       expect(systemPrompt).toContain("한국어로");
+      expect(systemPrompt).toContain("본문에 명시된 사실과 추정한 동기를 구분");
+      expect(systemPrompt).toContain("가능성이나 암시는 확정 사실이 아니라");
+      expect(systemPrompt).toContain("상태 카드에 보충하지 마세요");
       expect(systemPrompt).not.toContain("请分析");
       expect(userPrompt).toContain("제1화를 분석해 추적 파일을 갱신하세요.");
       expect(userPrompt).toContain("## 챕터 본문");
       expect(userPrompt).toContain("## 현재 상태 카드");
       expect(userPrompt).not.toContain("请严格按照 === TAG === 格式输出分析结果");
+    } finally {
+      await rm(bookDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the supplied Korean chapter title instead of accepting an inferred title", async () => {
+    const bookDir = await mkdtemp(join(tmpdir(), "inkos-chapter-analyzer-ko-title-"));
+    const koreanContent = "그는 문 앞에서 멈췄다.";
+    const agent = new ChapterAnalyzerAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: process.cwd(),
+    });
+
+    const book: BookConfig = {
+      id: "korean-book",
+      title: "한국 웹소설",
+      platform: "other",
+      genre: "other",
+      status: "active",
+      targetChapters: 10,
+      chapterWordCount: 1800,
+      language: "ko" as const,
+      createdAt: "2026-03-22T00:00:00.000Z",
+      updatedAt: "2026-03-22T00:00:00.000Z",
+    };
+
+    vi.spyOn(agent as unknown as { chat: (...args: unknown[]) => Promise<unknown> }, "chat")
+      .mockResolvedValue({
+        content: [
+          "=== CHAPTER_TITLE ===",
+          "모델이 새로 붙인 제목",
+          "",
+          "=== CHAPTER_CONTENT ===",
+          koreanContent,
+          "",
+          "=== PRE_WRITE_CHECK ===",
+          "",
+          "=== POST_SETTLEMENT ===",
+          "",
+          "=== UPDATED_STATE ===",
+          "",
+          "=== UPDATED_LEDGER ===",
+          "",
+          "=== UPDATED_HOOKS ===",
+          "",
+          "=== CHAPTER_SUMMARY ===",
+          "| 1 | 모델이 새로 붙인 제목 |",
+          "",
+          "=== UPDATED_SUBPLOTS ===",
+          "",
+          "=== UPDATED_EMOTIONAL_ARCS ===",
+          "",
+          "=== UPDATED_CHARACTER_MATRIX ===",
+          "",
+        ].join("\n"),
+        usage: ZERO_USAGE,
+      });
+
+    try {
+      const output = await agent.analyzeChapter({
+        book,
+        bookDir,
+        chapterNumber: 1,
+        chapterContent: koreanContent,
+        chapterTitle: "원본 제목",
+      });
+
+      expect(output.title).toBe("원본 제목");
     } finally {
       await rm(bookDir, { recursive: true, force: true });
     }

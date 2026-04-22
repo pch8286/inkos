@@ -477,7 +477,10 @@ describe("ComposerAgent", () => {
     });
 
     const result = await composer.composeChapter({
-      book,
+      book: {
+        ...book,
+        language: "zh",
+      },
       bookDir,
       chapterNumber: 10,
       plan: {
@@ -684,7 +687,10 @@ describe("ComposerAgent", () => {
     });
 
     const result = await composer.composeChapter({
-      book,
+      book: {
+        ...book,
+        language: "zh",
+      },
       bookDir,
       chapterNumber: 10,
       plan: {
@@ -720,5 +726,83 @@ describe("ComposerAgent", () => {
     expect(hookDebtEntry?.excerpt).toContain("读者承诺");
     expect(hookDebtEntry?.excerpt).toContain("River Camp");
     expect(hookDebtEntry?.excerpt).toContain("Trial Echo");
+  });
+
+  it("localizes hook debt briefs for Korean governed context", async () => {
+    await Promise.all([
+      writeFile(
+        join(storyDir, "pending_hooks.md"),
+        [
+          "# Pending Hooks",
+          "",
+          "| hook_id | 시작 화 | 유형 | 상태 | 최근 진행 | 예상 회수 | 회수 리듬 | 비고 |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          "| mentor-oath | 8 | relationship | progressing | 9 | 사제의 빚이 왜 끊겼는지 드러낸다 | slow | 오래 밀린 관계 부채 |",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "chapter_summaries.md"),
+        [
+          "# Chapter Summaries",
+          "",
+          "| 8 | 강가 야영 | 리엔 | 스승의 빚이 개인적 문제가 된다 | 리엔이 물러서지 못한다 | mentor-oath advanced | raw | confrontation |",
+          "| 9 | 재판의 메아리 | 리엔 | 스승이 말없이 떠난 이유가 다시 걸린다 | 맹세패가 다시 중요해진다 | mentor-oath advanced | aching | fallout |",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+    ]);
+
+    const composer = new ComposerAgent({
+      client: {} as ConstructorParameters<typeof ComposerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await composer.composeChapter({
+      book: {
+        ...book,
+        language: "ko",
+      },
+      bookDir,
+      chapterNumber: 10,
+      plan: {
+        ...plan,
+        intent: {
+          ...plan.intent,
+          chapter: 10,
+          goal: "스승의 빚 갈등을 다시 전면에 놓는다.",
+          hookAgenda: {
+            pressureMap: [{
+              hookId: "mentor-oath",
+              type: "relationship",
+              payoffTiming: "slow-burn",
+              phase: "middle",
+              pressure: "high",
+              movement: "partial-payoff",
+              reason: "stale-promise",
+              blockSiblingHooks: true,
+            }],
+            mustAdvance: ["mentor-oath"],
+            eligibleResolve: [],
+            staleDebt: [],
+            avoidNewHookFamilies: ["relationship"],
+          },
+        },
+      },
+    });
+
+    const hookDebtEntry = result.contextPackage.selectedContext.find((entry) => entry.source === "runtime/hook_debt#mentor-oath");
+    expect(hookDebtEntry).toBeDefined();
+    expect(hookDebtEntry?.reason).toContain("복선 부채 브리프");
+    expect(hookDebtEntry?.excerpt).toContain("주요 부채");
+    expect(hookDebtEntry?.excerpt).toContain("독자 약속");
+    expect(hookDebtEntry?.excerpt).toContain("처음 심은 장면");
+    expect(hookDebtEntry?.excerpt).toContain("최근 진전");
+    expect(hookDebtEntry?.excerpt).not.toContain("读者承诺");
+    expect(hookDebtEntry?.excerpt).not.toContain("主要旧债");
   });
 });

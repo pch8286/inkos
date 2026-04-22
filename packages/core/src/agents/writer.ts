@@ -615,6 +615,7 @@ export class WriterAgent extends BaseAgent {
       selectedEvidenceBlock: params.selectedEvidenceBlock,
       governedControlBlock,
       validationFeedback: params.validationFeedback,
+      language: resolvedLang,
     });
 
     // Settler outputs all truth files — scale with content size
@@ -985,7 +986,15 @@ ${lengthRequirementBlock}
 - 계획과 검수는 Planner/Composer/Auditor가 담당한다
 - Writer는 제공된 의도, 컨텍스트, 규칙 스택을 제목과 본문으로만 구현한다
 - 계획 체크리스트, 검수 의견, 상태 카드, 복선 표, 정산 메모는 출력하지 않는다
-- CHAPTER_TITLE, CHAPTER_CONTENT 두 구역만 출력한다`;
+- CHAPTER_TITLE, CHAPTER_CONTENT 두 구역만 출력한다
+
+## 출력 형식
+
+=== CHAPTER_TITLE ===
+(장 제목. "제X화"를 붙이지 않는다.)
+
+=== CHAPTER_CONTENT ===
+(본문)`;
     }
 
     return `请续写第${params.chapterNumber}章。

@@ -89,6 +89,124 @@ describe("analyzeAITells", () => {
     expect(listIssues.length).toBeGreaterThan(0);
   });
 
+  it("detects Korean abstract triad cadence", () => {
+    const content = [
+      "죽었거나, 들어왔거나, 빙의했거나.",
+      "",
+      "발화, 기록, 집행.",
+      "",
+      "그 세 가지가 맞물리면 현실이 된다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const triadIssues = result.issues.filter((i) => i.category === "추상 삼단 리듬");
+    expect(triadIssues.length).toBeGreaterThan(0);
+    expect(triadIssues[0]!.suggestion).toContain("인물의 행동");
+  });
+
+  it("detects repeated Korean negative abstraction", () => {
+    const content = [
+      "이 몸은 그냥 강한 몸이 아니다.",
+      "그 반응은 착각이 아니었다.",
+      "그건 선택이 아니라 판결이었다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const negativeIssues = result.issues.filter((i) => i.category === "부정 병렬 추상화");
+    expect(negativeIssues.length).toBeGreaterThan(0);
+    expect(negativeIssues[0]!.suggestion).toContain("눈에 보이는 차이");
+  });
+
+  it("detects Korean scene-note fragments leaking into prose", () => {
+    const content = [
+      "몸.",
+      "장소.",
+      "주변 반응.",
+      "적대 여부.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const checklistIssues = result.issues.filter((i) => i.category === "메모식 장면 체크리스트");
+    expect(checklistIssues.length).toBeGreaterThan(0);
+    expect(checklistIssues[0]!.suggestion).toContain("작법 메모처럼 나누지 말고");
+  });
+
+  it("detects dense Korean adverb stacking", () => {
+    const content = [
+      "그는 갑자기 빠르게 고개를 들고 조용히 뒤로 물러났다.",
+      "그녀는 천천히 조심스럽게 문을 열고 완전히 안쪽으로 들어갔다.",
+      "병사는 분명히 크게 놀라며 바로 검을 뽑았다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const adverbIssues = result.issues.filter((i) => i.category === "부사 과밀");
+    expect(adverbIssues.length).toBeGreaterThan(0);
+    expect(adverbIssues[0]!.suggestion).toContain("부사를 먼저 지우고");
+  });
+
+  it("detects retrospective Korean closing declarations", () => {
+    const content = [
+      "카르세리온은 왕좌 아래 선 신하들을 내려다보았다.",
+      "그리고 나는 방금, 마왕의 이름으로 첫 수를 두었다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const closingIssues = result.issues.filter((i) => i.category === "선언형 클로징");
+    expect(closingIssues.length).toBeGreaterThan(0);
+    expect(closingIssues[0]!.suggestion).toContain("마지막 행동");
+  });
+
+  it("detects AI-like Korean stock sensory metaphors", () => {
+    const content = [
+      "문틈 너머에서 누군가 웃었다.",
+      "어린아이처럼 얇은 소리였는데, 그 안에 쇠 긁는 울림이 섞여 있었다.",
+      "도윤은 문고리에서 손을 떼지 못했다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const sensoryIssues = result.issues.filter((i) => i.category === "AI식 감각 비유");
+    expect(sensoryIssues.length).toBeGreaterThan(0);
+    expect(sensoryIssues[0]!.description).toContain("쇠 긁는 울림");
+    expect(sensoryIssues[0]!.suggestion).toContain("장면 안 원인");
+  });
+
+  it("detects Korean one-beat paragraph fragmentation", () => {
+    const content = [
+      "도윤은 구조 요청 버튼 위에 엄지를 올렸다.",
+      "",
+      "03:58.",
+      "",
+      "임시 파티장 권한.",
+      "",
+      "대답은 없었다.",
+      "",
+      "낡은 사진이었다.",
+      "",
+      "서도윤.",
+      "",
+      "문 너머에서 손잡이가 내려갔다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const paragraphIssues = result.issues.filter((i) => i.category === "문단 과분할");
+    expect(paragraphIssues.length).toBeGreaterThan(0);
+    expect(paragraphIssues[0]!.suggestion).toContain("행동-관찰-반응");
+  });
+
+  it("detects Korean prop meaning exposition", () => {
+    const content = [
+      "도윤은 호출 버튼에서 손을 뗐다.",
+      "허리춤의 접이식 단검을 펴자, 손잡이의 낡은 고무가 손바닥에 달라붙었다.",
+      "훈련장 지급품이었다. 몬스터를 베기보다, 겁먹은 사람 앞에서 헌터처럼 보이게 만드는 물건.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const propIssues = result.issues.filter((i) => i.category === "소품 의미 해설");
+    expect(propIssues.length).toBeGreaterThan(0);
+    expect(propIssues[0]!.suggestion).toContain("사용 방식");
+    expect(propIssues[0]!.suggestion).toContain("상대 반응");
+  });
+
   it("returns no issues for content with fewer than 3 paragraphs", () => {
     const content = "只有一段话。";
     const result = analyzeAITells(content);

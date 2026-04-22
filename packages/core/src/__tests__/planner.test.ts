@@ -1310,6 +1310,55 @@ describe("PlannerAgent", () => {
     await expect(readFile(result.runtimePath, "utf-8")).resolves.toContain("## Narrative Engine");
   });
 
+  it("derives Korean current focus sections without leaking avoid items into the goal", async () => {
+    book = {
+      ...book,
+      genre: "other",
+      language: "ko",
+    };
+
+    await Promise.all([
+      writeFile(
+        join(storyDir, "current_focus.md"),
+        [
+          "# 현재 포커스",
+          "",
+          "## 현재 중점",
+          "",
+          "- 조사 장면은 행동으로 밀고 간다.",
+          "- 빚 독촉자를 직접 만나 단서를 얻는다.",
+          "",
+          "## 피할 것",
+          "",
+          "- 세계관 설명으로 시작하지 않는다.",
+          "- 감각만 나열하는 도입을 쓰지 않는다.",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "volume_outline.md"), "# 볼륨 아웃라인\n", "utf-8"),
+    ]);
+
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await planner.planChapter({
+      book,
+      bookDir,
+      chapterNumber: 3,
+    });
+
+    expect(result.intent.goal).toContain("조사 장면은 행동으로 밀고 간다");
+    expect(result.intent.goal).toContain("빚 독촉자를 직접 만나");
+    expect(result.intent.goal).not.toContain("세계관 설명");
+    expect(result.intent.mustAvoid).toContain("세계관 설명으로 시작하지 않는다.");
+    expect(result.intent.mustAvoid).toContain("감각만 나열하는 도입을 쓰지 않는다.");
+  });
+
   it("extracts chapter-one directives from markdown tables instead of falling back to header rows", async () => {
     book = {
       ...book,
@@ -1613,5 +1662,77 @@ describe("PlannerAgent", () => {
     expect(directives.sceneDirective).toContain("이번 화는 장면 그릇");
     expect(directives.moodDirective).toContain("독자가 숨 돌릴 틈");
     expect(directives.titleDirective).toContain("제목을 또");
+  });
+
+  it("renders hook budget guidance in Korean for Korean intent files", () => {
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const hookBudget = (planner as unknown as {
+      renderHookBudget: (activeCount: number, language: string) => string;
+    }).renderHookBudget(11, "ko");
+
+    expect(hookBudget).toContain("### 떡밥 예산");
+    expect(hookBudget).toContain("기존 떡밥 회수");
+    expect(hookBudget).not.toContain("伏笔预算");
+  });
+
+  it("renders a Korean episode contract for reward, question, choice, and scene turns", async () => {
+    book = {
+      ...book,
+      genre: "modern-fantasy",
+      language: "ko",
+      platform: "naver-series",
+    };
+
+    const planner = new PlannerAgent({
+      client: {} as ConstructorParameters<typeof PlannerAgent>[0]["client"],
+      model: "test-model",
+      projectRoot: root,
+      bookId: book.id,
+    });
+
+    const result = await planner.planChapter({
+      book,
+      bookDir,
+      chapterNumber: 3,
+    });
+
+    const intentMarkdown = await readFile(result.runtimePath, "utf-8");
+
+    expect(intentMarkdown).toContain("## 회차 계약");
+    expect(intentMarkdown).toContain("작은 보상 1개");
+    expect(intentMarkdown).toContain("다음 화를 여는 질문 1개");
+    expect(intentMarkdown).toContain("주인공의 능동적 선택");
+    expect(intentMarkdown).toContain("선택의 대가");
+    expect(intentMarkdown).toContain("## 장면 설계 계약");
+    expect(intentMarkdown).toContain("욕망 / 행동 / 변화");
+    expect(intentMarkdown).toContain("목표 / 방해 / 전환");
+    expect(intentMarkdown).toContain("## 서사 운용 계약");
+    expect(intentMarkdown).toContain("의미/아크");
+    expect(intentMarkdown).toContain("정보 공개 예산");
+    expect(intentMarkdown).toContain("서브플롯/관계선");
+    expect(intentMarkdown).toContain("시퀀스 압력");
+    expect(intentMarkdown).toContain("주인공의 표면적 욕망과 그 아래의 미신념/결핍");
+    expect(intentMarkdown).toContain("약속-진전-회수의 사다리");
+    expect(intentMarkdown).toContain("각 장면 뒤에는 반응-성찰-결정의 후속 비트");
+    expect(intentMarkdown).toContain("마지막 훅은 이미 답이 정해진 질문을 숨기는 방식으로 만들지 않는다");
+    expect(intentMarkdown).toContain("권과 소호흡마다 확인 가능한 마일스톤");
+    expect(intentMarkdown).toContain("장면의 척추를 한 문장으로 먼저 고정한다");
+    expect(intentMarkdown).toContain("장면 안에는 줄어드는 시계가 보여야 한다");
+    expect(intentMarkdown).toContain("마지막 1-2문단은 결제 전환 구간");
+    expect(intentMarkdown).toContain("제목이 약속한 감정, 사건, 대가는 본문에서 실제 장면으로 증명한다");
+    expect(intentMarkdown).toContain("장기 연재에서는 장소, 관계, 정보 공개, 전투 방식, 보상의 형태");
+    expect(intentMarkdown).toContain("한 화는 장면들의 나열이 아니라 시작 상태 -> 압력 누적 -> 되돌릴 수 없는 새 상태");
+    expect(intentMarkdown).toContain("도덕적 압박은 선악이 아니라 둘 다 옳아 보이는 선택의 충돌");
+    expect(intentMarkdown).toContain("중요한 관계는 둘만 붙여 두지 말고, 반드시 세 번째 압력축");
+    expect(intentMarkdown).toContain("중반 전환은 답이 아니라 질문의 방향을 바꾸는 지점이다");
+    expect(intentMarkdown).toContain("장면 목표와 슈퍼목표를 분리한다");
+    expect(intentMarkdown).toContain("장면마다 회차 목표보다 더 작은 미세 목표");
+    expect(intentMarkdown).not.toContain("Episode Contract");
   });
 });

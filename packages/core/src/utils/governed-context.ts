@@ -44,43 +44,71 @@ export function buildGovernedMemoryEvidenceBlocks(
   return {
     hookDebtBlock: hookDebtEntries.length > 0
       ? renderHookDebtBlock(
-          resolvedLanguage === "en" ? "Hook Debt Briefs" : "Hook Debt Briefs",
+          localizedHeading(resolvedLanguage, {
+            en: "Hook Debt Briefs",
+            ko: "복선 부채 브리프",
+            zh: "Hook Debt Briefs",
+          }),
           hookDebtEntries,
         )
       : undefined,
     hooksBlock: hookEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Selected Hook Evidence" : "已选伏笔证据",
+          localizedHeading(resolvedLanguage, {
+            en: "Selected Hook Evidence",
+            ko: "선택된 복선 근거",
+            zh: "已选伏笔证据",
+          }),
           hookEntries,
         )
       : undefined,
     summariesBlock: summaryEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Selected Chapter Summary Evidence" : "已选章节摘要证据",
+          localizedHeading(resolvedLanguage, {
+            en: "Selected Chapter Summary Evidence",
+            ko: "선택된 회차 요약 근거",
+            zh: "已选章节摘要证据",
+          }),
           summaryEntries,
         )
       : undefined,
     volumeSummariesBlock: volumeSummaryEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Selected Volume Summary Evidence" : "已选卷级摘要证据",
+          localizedHeading(resolvedLanguage, {
+            en: "Selected Volume Summary Evidence",
+            ko: "선택된 권 요약 근거",
+            zh: "已选卷级摘要证据",
+          }),
           volumeSummaryEntries,
         )
       : undefined,
     titleHistoryBlock: titleHistoryEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Recent Title History" : "近期标题历史",
+          localizedHeading(resolvedLanguage, {
+            en: "Recent Title History",
+            ko: "최근 제목 기록",
+            zh: "近期标题历史",
+          }),
           titleHistoryEntries,
         )
       : undefined,
     moodTrailBlock: moodTrailEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Recent Mood / Chapter Type Trail" : "近期情绪/章节类型轨迹",
+          localizedHeading(resolvedLanguage, {
+            en: "Recent Mood / Chapter Type Trail",
+            ko: "최근 감정선 / 회차 유형 흐름",
+            zh: "近期情绪/章节类型轨迹",
+          }),
           moodTrailEntries,
         )
       : undefined,
     canonBlock: canonEntries.length > 0
       ? renderEvidenceBlock(
-          resolvedLanguage === "en" ? "Canon Evidence" : "正典约束证据",
+          localizedHeading(resolvedLanguage, {
+            en: "Canon Evidence",
+            ko: "원작/정전 근거",
+            zh: "正典约束证据",
+          }),
           canonEntries,
         )
       : undefined,
@@ -95,6 +123,15 @@ export function buildGovernedMemoryEvidenceBlocks(
         )
       : undefined,
   };
+}
+
+function localizedHeading(
+  language: WritingLanguage,
+  headings: { readonly en: string; readonly ko: string; readonly zh: string },
+): string {
+  if (language === "en") return headings.en;
+  if (language === "ko") return headings.ko;
+  return headings.zh;
 }
 
 function renderHookDebtBlock(

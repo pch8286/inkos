@@ -211,6 +211,13 @@ describe("ArchitectAgent", () => {
     expect(messages[0]?.content).toContain("## 이전 검토 피드백");
     expect(messages[0]?.content).toContain("## 01_세계관");
     expect(messages[0]?.content).toContain("## 서사 시점");
+    expect(messages[0]?.content).toContain("독립 목표");
+    expect(messages[0]?.content).toContain("인물의 욕망과 방해");
+    expect(messages[0]?.content).toContain("정보 경계");
+    expect(messages[0]?.content).toContain("1화는 충돌");
+    expect(messages[0]?.content).toContain("2화는 보상/레버리지");
+    expect(messages[0]?.content).toContain("3화는 단기 목표와 시리즈를 계속 팔로우할 이유");
+    expect(messages[0]?.content).not.toContain("독자 목표");
     expect(messages[0]?.content).not.toContain("## 叙事视角");
     expect(messages[0]?.content).not.toContain("### 黄金三章法则");
     expect(messages[1]?.content).toContain("모든 출력은 한국어로 작성하세요");
@@ -279,6 +286,8 @@ describe("ArchitectAgent", () => {
     expect(messages[0]?.content).toContain("## 작업 모드");
     expect(messages[0]?.content).toContain("## 작품 정보");
     expect(messages[0]?.content).toContain("## 01_세계관");
+    expect(messages[0]?.content).toContain("본문에 명시된 사실과 추론한 내용을 구분");
+    expect(messages[0]?.content).toContain("인물의 욕망과 방해");
     expect(messages[0]?.content).not.toContain("## 工作模式");
     expect(messages[0]?.content).not.toContain("## 关键原则");
     expect(messages[1]?.content).toContain("한국어로 역설계하세요");

@@ -43,9 +43,42 @@ export class StateValidatorAgent extends BaseAgent {
 
     const langInstruction = language === "en"
       ? "Respond in English."
-      : "用中文回答。";
+      : language === "ko"
+        ? "한국어로 답하세요."
+        : "用中文回答。";
 
-    const systemPrompt = `You are a continuity validator for a novel writing system. ${langInstruction}
+    const systemPrompt = language === "ko"
+      ? `당신은 소설 작성 시스템의 연속성 검증자입니다. ${langInstruction}
+
+회차 본문과 truth files(상태 카드 + 훅 풀)에 적용된 변경 사항을 비교해 모순을 점검하세요:
+
+1. 본문에 근거 없는 상태 변화 — truth file은 바뀌었다고 하지만 본문이 그 변화를 묘사하지 않음
+2. 누락된 상태 변화 — 본문에는 사건이 있는데 truth file이 반영하지 않음
+3. 시간상 불가능한 변화 — 이동 전환 없이 장소가 바뀌거나, 시간 경과 없이 부상이 회복됨
+4. 훅 이상 — 훅이 회수 표시 없이 사라지거나, 새 훅이 본문 근거 없이 생김
+5. 소급 편집 — truth file 변경이 이번 화가 아니라 이전 화에서 일어난 일처럼 처리됨
+
+출력 형식(JSON 아님):
+- 첫 줄: PASS 또는 FAIL만 출력
+- 다음 줄: 경고를 한 줄에 하나씩 쓰고, 필요하면 [category] 접두사를 붙임
+- 문제가 전혀 없으면 PASS만 출력
+
+예:
+PASS
+[unsupported_change] 상태 카드가 숲으로 이동했다고 하지만 본문은 이동 의도만 보여 줌
+[minor] H03 훅은 언급이 짧지만 진행으로 볼 여지가 있음
+
+하드 모순이 있으면:
+FAIL
+[contradiction] 상태에는 인물이 사망했다고 되어 있지만 본문에서는 말하고 있음
+[unsupported_change] 새 장소가 본문 어디에도 언급되지 않음
+
+중요: FAIL은 본문과 직접 충돌하는 하드 모순에만 사용하세요. 다음은 FAIL이 아니라 PASS와 경고로 처리합니다:
+- 본문보다 약간 앞선 추정
+- 상태 카드가 포착하지 못한 누락 세부사항
+- 본문에서 합리적으로 추론 가능한 내용
+- 본문과 충돌하지 않는 훅 관리 차이`
+      : `You are a continuity validator for a novel writing system. ${langInstruction}
 
 Given the chapter text and the CHANGES made to truth files (state card + hooks pool), check for contradictions:
 
@@ -77,7 +110,18 @@ IMPORTANT: Output FAIL ONLY for hard contradictions — facts that directly conf
 - Hook management differences that don't contradict text
 These should be warnings with PASS, not FAIL.`;
 
-    const userPrompt = `Chapter ${chapterNumber} validation:
+    const userPrompt = language === "ko"
+      ? `제${chapterNumber}화 검증:
+
+## 상태 카드 변경
+${stateDiff || "(변경 없음)"}
+
+## 훅 풀 변경
+${hooksDiff || "(변경 없음)"}
+
+## 회차 본문 참고
+${chapterContent.slice(0, 6000)}`
+      : `Chapter ${chapterNumber} validation:
 
 ## State Card Changes
 ${stateDiff || "(no changes)"}

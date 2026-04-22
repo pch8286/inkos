@@ -247,6 +247,36 @@ describe("validatePostWrite", () => {
     expect(findRule(result, "감각 도입 클리셰")?.suggestion).toContain("시점 인물");
   });
 
+  it("warns when Korean prose uses the inverted 'first came in' sensory opening", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = [
+      "왕좌실은 너무 넓어서 숨소리까지 울렸다.",
+      "먼저 들어온 건 발밑의 냉기와, 손등을 스친 단단한 감촉이었다.",
+      "카르세리온은 손을 내려 바닥을 짚었다.",
+    ].join("\n\n");
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "감각 도입 클리셰")).toBeDefined();
+    expect(findRule(result, "감각 도입 클리셰")?.description).toContain("먼저 들어온 건");
+    expect(findRule(result, "감각 도입 클리셰")?.suggestion).toContain("원인");
+  });
+
+  it("warns when Korean prose uses stock sensory metaphors without a scene cause", () => {
+    const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
+    const content = [
+      "문틈 너머에서 누군가 웃었다.",
+      "어린아이처럼 얇은 소리였는데, 그 안에 쇠 긁는 울림이 섞여 있었다.",
+      "도윤은 문고리에서 손을 떼지 못했다.",
+    ].join("\n\n");
+
+    const result = validatePostWrite(content, profile, null, "ko");
+
+    expect(findRule(result, "상투적 감각 비유")).toBeDefined();
+    expect(findRule(result, "상투적 감각 비유")?.description).toContain("쇠 긁는 울림");
+    expect(findRule(result, "상투적 감각 비유")?.suggestion).toContain("장면 안 원인");
+  });
+
   it("flags the reported Korean prose failure modes in a representative opening", () => {
     const profile = { ...baseProfile, language: "ko" as const, name: "현대판타지" };
     const content = [

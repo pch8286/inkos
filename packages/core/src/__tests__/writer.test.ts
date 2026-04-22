@@ -1285,10 +1285,16 @@ describe("WriterAgent", () => {
       expect(creativePrompt).toContain("## 선택된 컨텍스트");
       expect(creativePrompt).toContain("요구 사항:");
       expect(creativePrompt).toContain("계획과 검수는 Planner/Composer/Auditor가 담당한다");
+      expect(creativePrompt).toContain("## 출력 형식");
+      expect(creativePrompt).toContain("장 제목");
+      expect(creativePrompt).toContain("본문");
       expect(creativePrompt).toContain("CHAPTER_TITLE, CHAPTER_CONTENT 두 구역만 출력한다");
       expect(creativePrompt).not.toContain("PRE_WRITE_CHECK");
       expect(creativePrompt).not.toContain("请续写第1章");
       expect(creativePrompt).not.toContain("要求：");
+      expect(creativePrompt).not.toContain("## 输出格式");
+      expect(creativePrompt).not.toContain("章节标题");
+      expect(creativePrompt).not.toContain("正文内容");
     } finally {
       chatSpy.mockRestore();
       await rm(root, { recursive: true, force: true });
@@ -1707,7 +1713,7 @@ describe("WriterAgent", () => {
       expect(systemPrompt).not.toContain("真实 hook_id");
       expect(systemPrompt).not.toContain("=== PRE_WRITE_CHECK ===");
       expect(systemPrompt).toContain("Planner/Composer");
-      expect(systemPrompt).toContain("只输出 CHAPTER_TITLE 和 CHAPTER_CONTENT");
+      expect(systemPrompt).toContain("Output only CHAPTER_TITLE and CHAPTER_CONTENT");
       expect(creativePrompt).toContain("## Explicit Hook Agenda");
       expect(creativePrompt).toContain("mentor-oath");
       expect(creativePrompt).toContain("ledger-fragment");

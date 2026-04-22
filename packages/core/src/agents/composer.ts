@@ -334,7 +334,9 @@ export class ComposerAgent extends BaseAgent {
       const seedSummary = this.findHookSummary(summaries, hook.hookId, hook.startChapter, "seed");
       const latestSummary = this.findHookSummary(summaries, hook.hookId, hook.lastAdvancedChapter, "latest");
       const role = this.describeHookAgendaRole(plan, hook.hookId, language);
-      const promise = hook.expectedPayoff || (language === "en" ? "(unspecified)" : "（未写明）");
+      const promise = hook.expectedPayoff || (
+        language === "en" ? "(unspecified)" : language === "ko" ? "(미지정)" : "（未写明）"
+      );
       const seedBeat = seedSummary
         ? this.renderHookDebtBeat(seedSummary)
         : (hook.notes || promise);
@@ -347,22 +349,61 @@ export class ComposerAgent extends BaseAgent {
         source: `runtime/hook_debt#${hook.hookId}`,
         reason: language === "en"
           ? "Narrative debt brief with original seed text for this hook agenda target."
-          : "含原始种子文本的叙事债务简报。",
-        excerpt: language === "en"
-          ? [
-              `${hook.hookId} (${hook.type}, ${role}, open ${age} chapters)`,
-              `reader promise: ${promise}`,
-              `original seed (ch${hook.startChapter}): ${seedBeat}`,
-              latestBeat ? `latest turn (ch${hook.lastAdvancedChapter}): ${latestBeat}` : undefined,
-            ].filter(Boolean).join(" | ")
-          : [
-              `${hook.hookId}（${hook.type}，${role}，已开${age}章）`,
-              `读者承诺：${promise}`,
-              `种于第${hook.startChapter}章：${seedBeat}`,
-              latestBeat ? `推进于第${hook.lastAdvancedChapter}章：${latestBeat}` : undefined,
-            ].filter(Boolean).join(" | "),
+          : language === "ko"
+            ? "원문 씨앗을 포함한 복선 부채 브리프."
+            : "含原始种子文本的叙事债务简报。",
+        excerpt: this.renderHookDebtEntry({
+          hook,
+          role,
+          age,
+          promise,
+          seedBeat,
+          latestBeat,
+          language,
+        }),
       }];
     });
+  }
+
+  private renderHookDebtEntry(params: {
+    readonly hook: {
+      readonly hookId: string;
+      readonly startChapter: number;
+      readonly type: string;
+      readonly lastAdvancedChapter: number;
+    };
+    readonly role: string;
+    readonly age: number;
+    readonly promise: string;
+    readonly seedBeat: string;
+    readonly latestBeat?: string;
+    readonly language: WritingLanguage;
+  }): string {
+    const { hook, role, age, promise, seedBeat, latestBeat, language } = params;
+    if (language === "en") {
+      return [
+        `${hook.hookId} (${hook.type}, ${role}, open ${age} chapters)`,
+        `reader promise: ${promise}`,
+        `original seed (ch${hook.startChapter}): ${seedBeat}`,
+        latestBeat ? `latest turn (ch${hook.lastAdvancedChapter}): ${latestBeat}` : undefined,
+      ].filter(Boolean).join(" | ");
+    }
+
+    if (language === "ko") {
+      return [
+        `${hook.hookId} (${hook.type}, ${role}, 열린 지 ${age}화)`,
+        `독자 약속: ${promise}`,
+        `처음 심은 장면(제${hook.startChapter}화): ${seedBeat}`,
+        latestBeat ? `최근 진전(제${hook.lastAdvancedChapter}화): ${latestBeat}` : undefined,
+      ].filter(Boolean).join(" | ");
+    }
+
+    return [
+      `${hook.hookId}（${hook.type}，${role}，已开${age}章）`,
+      `读者承诺：${promise}`,
+      `种于第${hook.startChapter}章：${seedBeat}`,
+      latestBeat ? `推进于第${hook.lastAdvancedChapter}章：${latestBeat}` : undefined,
+    ].filter(Boolean).join(" | ");
   }
 
   private async maybeContextSource(
@@ -565,12 +606,12 @@ export class ComposerAgent extends BaseAgent {
     language: WritingLanguage,
   ): string {
     if (plan.intent.hookAgenda.eligibleResolve.includes(hookId)) {
-      return language === "en" ? "payoff-ready debt" : "可兑现旧债";
+      return language === "en" ? "payoff-ready debt" : language === "ko" ? "회수 가능 부채" : "可兑现旧债";
     }
     if (plan.intent.hookAgenda.staleDebt.includes(hookId)) {
-      return language === "en" ? "high-pressure debt" : "高压旧债";
+      return language === "en" ? "high-pressure debt" : language === "ko" ? "고압 부채" : "高压旧债";
     }
-    return language === "en" ? "mainline debt" : "主要旧债";
+    return language === "en" ? "mainline debt" : language === "ko" ? "주요 부채" : "主要旧债";
   }
 
   private findHookSummary(

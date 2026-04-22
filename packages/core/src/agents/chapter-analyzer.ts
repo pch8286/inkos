@@ -192,11 +192,8 @@ export class ChapterAnalyzerAgent extends BaseAgent {
     const canonicalContent = chapterContent;
     const canonicalWordCount = countChapterLength(canonicalContent, countingMode);
 
-    // If LLM didn't return a title, use the one from input or derive from chapter number
-    if (
-      chapterTitle
-      && output.title === this.defaultChapterTitle(chapterNumber, resolvedLanguage)
-    ) {
+    // Imported chapters already have a canonical title; analysis must not rename them.
+    if (chapterTitle) {
       return {
         ...output,
         title: chapterTitle,
@@ -406,7 +403,10 @@ ${bookRulesBody ? `## 책 규칙\n\n${bookRulesBody}` : ""}
 1. UPDATED_STATE와 UPDATED_HOOKS는 현재 추적 파일 기준으로 증분 갱신해야 합니다.
 2. 본문에서 생긴 모든 사실적 변화는 대응하는 추적 파일에 반영돼야 합니다.
 3. 자원, 이동, 관계, 정보 변경 같은 핵심 항목을 누락하지 마세요.
-4. 캐릭터 상호작용 매트릭스의 정보 경계는 정확해야 하며, 캐릭터는 직접 목격/학습한 정보만 알게 되어야 합니다.`;
+4. 캐릭터 상호작용 매트릭스의 정보 경계는 정확해야 하며, 캐릭터는 직접 목격/학습한 정보만 알게 되어야 합니다.
+5. 본문에 명시된 사실과 추정한 동기를 구분하세요. 본문에 드러난 목적만 확정 사실로 기록합니다.
+6. 가능성이나 암시는 확정 사실이 아니라 미해결 훅 후보로 분류합니다.
+7. 장르 가이드, 권차 개요, 기존 설정에서 본문이 아직 도달하지 않은 내용을 상태 카드에 보충하지 마세요.`;
     }
 
     const numericalBlock = genreProfile.numericalSystem

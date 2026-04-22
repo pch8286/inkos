@@ -295,12 +295,49 @@ describe("ReviserAgent", () => {
       const systemPrompt = messages?.[0]?.content ?? "";
 
       expect(systemPrompt).toContain("독자가 걸린 지점을 최소 수정으로 통과 가능하게 바꾸는 것");
-      expect(systemPrompt).toContain("중요한 감정 변화는 감정 이름보다 행동, 감각, 말투 변화로 먼저 드러낸다");
+      expect(systemPrompt).toContain("중요한 감정 변화는 감정 이름보다 손이 멈추는지, 말끝이 흐려지는지, 시선이 피하는지 같은 변화로 먼저 드러낸다");
       expect(systemPrompt).toContain("장면의 큰 형상과 위치 관계를 먼저 세우고, 세부는 그다음에 둔다");
       expect(systemPrompt).toContain("인물의 자세 변화와 손동작은 왜 그렇게 움직이는지 보이도록 직전 시각 정보와 연결한다");
       expect(systemPrompt).toContain("관계 변화는 짧은 직접 공방이나 망설임, 시선 회피 같은 장면 증거로 고친다");
       expect(systemPrompt).toContain("설명은 장면을 잇는 연결용으로 압축하고, 핵심 비트는 장면 안에서 체감되게 고친다");
       expect(systemPrompt).toContain("과밀한 문장은 앞비트와 뒷비트로 나눠");
+      expect(systemPrompt).toContain("시점 인물이 모르는 정보나 남의 속마음을 새로 해설하지 않는다");
+      expect(systemPrompt).toContain("처음 등장하는 고유명사는 관계, 기능, 위협 중 하나를 붙여 자연스럽게 고친다");
+      expect(systemPrompt).toContain("장면의 갈등은 인물의 욕망과 방해가 부딪히는 방향으로 보강한다");
+      expect(systemPrompt).toContain("대사와 지문 중 더 짧고 자연스러운 쪽으로 정보 전달 방식을 고른다");
+      expect(systemPrompt).toContain("감각을 항목처럼 요약한 문장은 움직임, 접촉 지점, 시선 이동에 붙인다");
+      expect(systemPrompt).toContain("장면 안 원인 없이 떠 있는 감각 비유");
+      expect(systemPrompt).toContain("더 예쁜 비유로 바꾸지 말고 감각의 원인, 물리적 변화, 인물 반응으로 고친다");
+      expect(systemPrompt).toContain("서술 시간이 장면 중요도와 어긋나면 선택, 대가, 폭로, 관계 변화, 위협 신호는 확대하고");
+      expect(systemPrompt).toContain("이동, 반복 절차, 이미 이해된 정보는 압축한다");
+      expect(systemPrompt).toContain("짧은 문단이 연속되면 효과 비트만 남기고 인접한 행동-관찰-반응은 한 문단으로 묶는다");
+      expect(systemPrompt).toContain("소품의 의미 해설은 사용 방식, 실패, 손에 익은 정도, 상대 반응으로 바꾼다");
+      expect(systemPrompt).toContain("회차 끝의 회고형 선언이나 판세 비유는 마지막 행동, 되돌릴 수 없는 결과, 상대 반응으로 바꾼다");
+      expect(systemPrompt).toContain("수정 우선순위는 구조 -> 인물/갈등 -> 장면 -> 문장 순서로 판단한다");
+      expect(systemPrompt).toContain("회차의 작은 보상과 다음 질문이 사라진 경우");
+      expect(systemPrompt).toContain("주인공의 능동적 선택과 그 대가");
+      expect(systemPrompt).toContain("장면의 욕망 / 행동 / 변화가 빠진 문제");
+      expect(systemPrompt).toContain("문장 윤문보다 장면 재배치나 rewrite/rework가 필요한지 먼저 판단한다");
+      expect(systemPrompt).toContain("spot-fix는 단일 원인, 국소 수정, 사건 순서 불변일 때만 선택한다");
+      expect(systemPrompt).toContain("polish는 사실과 구조는 맞고 문장만 거슬릴 때 선택한다");
+      expect(systemPrompt).toContain("rewrite는 장면 배열이나 인과 재배치가 필요할 때 선택한다");
+      expect(systemPrompt).toContain("rework는 갈등 구조 자체가 흔들릴 때 선택한다");
+      expect(systemPrompt).toContain("핵심 앵커 장면, 고유명사, 대사 한 비트는 반드시 유지한다");
+      expect(systemPrompt).toContain("한 단계 낮은 모드로 해결 가능하면 더 큰 모드를 쓰지 말고");
+      expect(systemPrompt).toContain("독자가 먼저 잃는 것은 사실 -> 순서 -> 공간 -> 관계 -> 원인 -> 감정 순서로 판단하세요");
+      expect(systemPrompt).toContain("문체 보존과 연속성 수정이 충돌하면 연속성을 우선하고");
+      expect(systemPrompt).toContain("각 이슈마다 수정 전 실패 조건과 수정 후 통과 조건을 한 쌍으로 확인한 뒤");
+      expect(systemPrompt).toContain("수정 후에는 원래 문제를 다시 확인하고, 새 모순·새 고유명사·새 훅·새 정보 누출");
+      expect(systemPrompt).toContain("수정 전 실패 조건과 수정 후 통과 조건을 관찰 가능한 문장으로 한 쌍씩 적는다");
+      expect(systemPrompt).toContain("모드별 편집 거리 예산을 지킨다");
+      expect(systemPrompt).toContain("보이지 않는 가정부터 점검하고, 본문에 없는 전제는 사실처럼 쓰지 않는다");
+      expect(systemPrompt).toContain("회차마다 독자가 품게 될 질문을 해결됨/보류/새로 열린 질문으로 나눠 정리한다");
+      expect(systemPrompt).toContain("각 수정은 이슈 → 근거 → 패치 → 보존 항목 순서로 추적 가능해야 한다");
+      expect(systemPrompt).toContain("수정 큐는 하드 모순 → 인과 붕괴 → 정보 누락 → 장면 구조 → 문장/리듬 순서");
+      expect(systemPrompt).toContain("수정 결과가 원래 문제를 가리거나 새 모순을 만들면 즉시 롤백한다");
+      expect(systemPrompt).toContain("장면이 이미 독해를 막지 않으면 굳이 손대지 않는다");
+      expect(systemPrompt).toContain("author_intent.md와 current_focus.md는 사실 충돌이 없는 한 최우선으로 보존한다");
+      expect(systemPrompt).toContain("수정이 끝나면 변경 전/후 diff의 고친 구간만 다시 읽고");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -671,6 +708,127 @@ describe("ReviserAgent", () => {
       expect(userPrompt).toContain("## 심사 이슈");
       expect(userPrompt).toContain("## 수정 대상 원문");
       expect(userPrompt).not.toContain("## 审稿问题");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("renders Korean governed control inputs without Chinese headings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-reviser-governed-ko-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "korean-book",
+          title: "Korean Book",
+          genre: "other",
+          platform: "naver-series",
+          chapterWordCount: 2200,
+          targetChapters: 60,
+          status: "active",
+          language: "ko",
+          createdAt: "2026-03-23T00:00:00.000Z",
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# 현재 상태\n\n- 마왕의 몸에 빙의했다.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# 복선\n\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# 회차 요약\n\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# 권별 아웃라인\n\n## 5화\n왕좌의 오해를 유지한다.\n", "utf-8"),
+      writeFile(join(storyDir, "story_bible.md"), "# 설정\n\n- 옥새는 부서지지 않는다.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# 스타일\n\n- 절제된 문장.\n", "utf-8"),
+    ]);
+
+    const agent = new ReviserAgent({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    const chatSpy = vi.spyOn(ReviserAgent.prototype as never, "chat" as never).mockResolvedValue({
+      content: [
+        "=== FIXED_ISSUES ===",
+        "- repaired",
+        "",
+        "=== PATCHES ===",
+        "--- PATCH 1 ---",
+        "TARGET_TEXT:",
+        "원문.",
+        "REPLACEMENT_TEXT:",
+        "수정문.",
+        "--- END PATCH ---",
+        "",
+        "=== UPDATED_STATE ===",
+        "상태",
+        "",
+        "=== UPDATED_HOOKS ===",
+        "복선",
+      ].join("\n"),
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      await agent.reviseChapter(
+        bookDir,
+        "원문.",
+        5,
+        [CRITICAL_ISSUE],
+        "spot-fix",
+        "other",
+        {
+          chapterIntent: "# 본장 의도\n\n## 목표\n왕좌의 오해를 유지한다.\n",
+          contextPackage: {
+            chapter: 5,
+            selectedContext: [{
+              source: "story/volume_outline.md",
+              reason: "이번 화 기본 노드",
+              excerpt: "왕좌의 오해를 유지한다.",
+            }],
+          },
+          ruleStack: {
+            layers: [{ id: "L4", name: "current_task", precedence: 70, scope: "local" }],
+            sections: {
+              hard: ["current_state"],
+              soft: ["current_focus"],
+              diagnostic: ["continuity_audit"],
+            },
+            overrideEdges: [],
+            activeOverrides: [],
+          },
+          lengthSpec: buildLengthSpec(2200, "ko"),
+        },
+      );
+
+      const messages = chatSpy.mock.calls[0]?.[0] as
+        | ReadonlyArray<{ content: string }>
+        | undefined;
+      const userPrompt = messages?.[1]?.content ?? "";
+
+      expect(userPrompt).toContain("## 본장 제어 입력");
+      expect(userPrompt).toContain("### 선택된 컨텍스트");
+      expect(userPrompt).toContain("### 규칙 스택");
+      expect(userPrompt).toContain("- 하드 가드레일:");
+      expect(userPrompt).toContain("- 소프트 제약:");
+      expect(userPrompt).toContain("- 진단 규칙:");
+      expect(userPrompt).toContain("### 현재 오버라이드");
+      expect(userPrompt).not.toContain("## 本章控制输入");
+      expect(userPrompt).not.toContain("### 已选上下文");
+      expect(userPrompt).not.toContain("- 硬护栏：");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

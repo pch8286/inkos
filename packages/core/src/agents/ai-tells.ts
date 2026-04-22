@@ -41,6 +41,25 @@ const EMOTION_LABEL_PATTERNS: Record<AITellLanguage, ReadonlyArray<RegExp>> = {
   en: [],
 };
 
+const KOREAN_ADVERB_PATTERN =
+  /(?:갑자기|문득|천천히|빠르게|조용히|조심스럽게|분명히|확실히|완전히|바로|크게|작게|심하게|가볍게|무겁게|강하게|약하게|몹시|매우|아주|너무|정말|굉장히|무척)/g;
+
+const KOREAN_RETROSPECTIVE_CLOSING_PATTERN =
+  /(?:그리고\s*)?(?:나는|우리는|그는|그녀는|이제)\s*(?:방금|마침내|드디어)?[\s,]*(?:[^.!?\n]{0,18})?(?:이름으로|첫\s*수|첫걸음|막을\s*올렸|시작(?:했|이었다)|판(?:을)?\s*움직였|수를\s*두었|수\s*를\s*두었)/;
+const KOREAN_STOCK_SENSORY_METAPHOR_PATTERNS = [
+  /쇠\s*긁는\s*(?:소리|울림)/,
+  /금속성\s*(?:소리|울림|마찰음)/,
+  /공기가\s*(?:얼어붙|굳어지|무거워지|가라앉)/,
+  /칼날\s*같은\s*(?:시선|눈빛|목소리|말투)/,
+  /등골(?:이)?\s*서늘/,
+  /짐승\s*같은\s*(?:웃음|울음|소리|숨소리)/,
+];
+const KOREAN_PROP_MEANING_EXPOSITION_PATTERNS = [
+  /(?:훈련장|협회|군용|보급|지급)\s*(?:지급품|보급품|장비)(?:이었|였)다/,
+  /(?:베기보다|싸우기보다|죽이기보다|막기보다)[^.!?。！？\n]{0,60}(?:보이게|느끼게|만드는)\s*(?:물건|도구|장비|장치)/,
+  /(?:헌터|기사|군인|마법사|영웅)처럼\s*보이게\s*만드는\s*(?:물건|도구|장비|장치)/,
+];
+
 /**
  * Analyze text content for structural AI-tell patterns.
  * Returns issues that can be merged into audit results.
@@ -56,6 +75,30 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
+
+  const narrativeParagraphs = paragraphs.filter((p) => !/^[“"'「『].+[”"'」』]$/.test(p));
+  const shortThreshold = isEnglish ? 45 : isKorean ? 35 : 25;
+  const shortParagraphs = narrativeParagraphs.filter((p) => p.length < shortThreshold);
+  if (
+    paragraphs.length >= 6
+    && shortParagraphs.length >= 4
+    && shortParagraphs.length / Math.max(1, narrativeParagraphs.length) >= 0.6
+  ) {
+    issues.push({
+      severity: "warning",
+      category: isEnglish ? "Paragraph fragmentation" : isKorean ? "문단 과분할" : "段落过碎",
+      description: isEnglish
+        ? `${shortParagraphs.length} of ${paragraphs.length} paragraphs are very short, creating a one-beat-per-paragraph cadence.`
+        : isKorean
+          ? `${paragraphs.length}개 문단 중 ${shortParagraphs.length}개가 ${shortThreshold}자 미만이라 한 비트마다 줄을 끊는 리듬으로 보입니다.`
+          : `${paragraphs.length}个段落里有${shortParagraphs.length}个过短，形成一句一段的机械节奏。`,
+      suggestion: isEnglish
+        ? "Reserve short paragraphs for impact beats; merge adjacent action-observation-reaction beats into fuller paragraphs."
+        : isKorean
+          ? "짧은 문단은 결정타와 전환에 남기고, 인접한 행동-관찰-반응은 한 문단으로 묶어 리듬을 회복하세요."
+          : "短段落留给重击和转折；相邻的动作-观察-反应合并成更完整的段落。",
+    });
+  }
 
   // dim 20: Paragraph length uniformity (needs ≥3 paragraphs)
   if (paragraphs.length >= 3) {
@@ -155,14 +198,119 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
         severity: "warning",
         category: "감정 직설",
         description: "감정 이름을 직접 붙이는 문장이 짧은 구간에 반복됩니다.",
-        suggestion: "감정 이름을 줄이고 몸의 반응, 멈칫함, 말투, 시선 변화 같은 장면 증거로 바꾸세요.",
+        suggestion: "감정 이름을 줄이고 손이 멈추는지, 말끝이 흐려지는지, 시선이 피하는지 같은 장면 증거로 바꾸세요.",
+      });
+    }
+
+    const koreanLines = content
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const sceneNoteFragments = koreanLines.filter((line) => {
+      const normalized = line.replace(/[.!?。！？]/g, "").trim();
+      return /^(몸|장소|주변\s*반응|적대\s*여부|상태|목표|갈등|정보)$/.test(normalized);
+    });
+    if (new Set(sceneNoteFragments).size >= 3) {
+      issues.push({
+        severity: "warning",
+        category: "메모식 장면 체크리스트",
+        description: `작법 메모처럼 보이는 짧은 명사 파편이 본문에 섞였습니다: ${sceneNoteFragments.slice(0, 4).join(" / ")}`,
+        suggestion: "작법 메모처럼 나누지 말고 손이 닿는 표면, 눈앞 구조, 상대가 물러서거나 무기를 잡는 행동처럼 장면 안 사건으로 흡수하세요.",
+      });
+    }
+
+    const koreanAdverbs = [...content.matchAll(KOREAN_ADVERB_PATTERN)].map((match) => match[0]);
+    const uniqueAdverbs = [...new Set(koreanAdverbs)];
+    const adverbDensity = koreanAdverbs.length / Math.max(1, content.length / 1000);
+    if (koreanAdverbs.length >= 6 || (koreanAdverbs.length >= 4 && adverbDensity >= 8)) {
+      issues.push({
+        severity: "warning",
+        category: "부사 과밀",
+        description: `부사가 짧은 구간에 몰려 동사와 장면 비트가 약해 보입니다: ${uniqueAdverbs.slice(0, 8).join(", ")}`,
+        suggestion: "부사를 먼저 지우고, 걷다/비틀거리다/멈춰 서다처럼 동사를 바꾸거나 행동 결과로 속도와 감정을 보여 주세요.",
+      });
+    }
+
+    const closingSentences = content
+      .split(/[.!?。！？\n]/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0)
+      .slice(-4);
+    const retrospectiveClosing = closingSentences.find((sentence) =>
+      KOREAN_RETROSPECTIVE_CLOSING_PATTERN.test(sentence)
+    );
+    if (retrospectiveClosing) {
+      issues.push({
+        severity: "warning",
+        category: "선언형 클로징",
+        description: `회차 끝이 장면 결과보다 회고형 선언이나 판세 비유로 닫힙니다: ${retrospectiveClosing}`,
+        suggestion: "마지막 행동, 되돌릴 수 없는 결과, 상대가 보인 즉각 반응 중 하나로 닫아 다음 화의 압력을 장면 안에 남기세요.",
+      });
+    }
+
+    const koreanSentences = content
+      .split(/[.!?。！？\n]/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0);
+    const stockSensoryMetaphor = koreanSentences.find((sentence) =>
+      KOREAN_STOCK_SENSORY_METAPHOR_PATTERNS.some((pattern) => pattern.test(sentence))
+    );
+    if (stockSensoryMetaphor) {
+      issues.push({
+        severity: "warning",
+        category: "AI식 감각 비유",
+        description: `장면 안 원인 없이 떠 있는 상투적 감각 비유처럼 보입니다: ${stockSensoryMetaphor}`,
+        suggestion: "비유를 더 예쁘게 바꾸지 말고, 장면 안 원인, 물리적 변화, 시점 인물의 반응 순서로 감각을 다시 고정하세요.",
+      });
+    }
+
+    const propMeaningExposition = koreanSentences.find((sentence) =>
+      KOREAN_PROP_MEANING_EXPOSITION_PATTERNS.some((pattern) => pattern.test(sentence))
+    );
+    if (propMeaningExposition) {
+      issues.push({
+        severity: "warning",
+        category: "소품 의미 해설",
+        description: `소품의 설정이나 의미를 장면 밖에서 바로 해설하는 문장처럼 보입니다: ${propMeaningExposition}`,
+        suggestion: "소품의 의미를 설명하지 말고 사용 방식, 실패, 손에 익은 정도, 상대 반응으로 독자가 기능과 위상을 추론하게 하세요.",
+      });
+    }
+
+    const abstractTriadLines = koreanLines.filter((line) => {
+      const normalized = line.replace(/[.!?。！？]/g, "");
+      const parts = normalized.split(/[，,]/).map((part) => part.trim()).filter(Boolean);
+      if (parts.length !== 3) return false;
+      const optionTriad = parts.every((part) => /^[가-힣]{1,10}거나$/.test(part));
+      const terseNounTriad = parts.every((part) => /^[가-힣]{1,4}$/.test(part));
+      return optionTriad || terseNounTriad;
+    });
+    const resolvesTriadAsPrinciple = /그\s*세\s*가지|세\s*가지가|세\s*가지로/.test(content);
+    if (abstractTriadLines.length >= 2 || (abstractTriadLines.length >= 1 && resolvesTriadAsPrinciple)) {
+      issues.push({
+        severity: "warning",
+        category: "추상 삼단 리듬",
+        description: `짧은 추상어 또는 선택지 3개를 독립 리듬으로 세우는 문단이 감지됐습니다: ${abstractTriadLines.slice(0, 2).join(" / ")}`,
+        suggestion: "세 요소를 따로 선언하지 말고 인물의 행동, 상대가 받아치는 움직임, 그 결과 생긴 선택 안에 묻어 두세요.",
+      });
+    }
+
+    const negativeAbstractions = koreanSentences.filter((sentence) =>
+      /(?:은|는|이|가|그건|그것은|이건|이것은)\s*(?:그냥\s*)?[가-힣\s]{1,18}(?:이|가)?\s*아니(?:다|었다)/.test(sentence)
+      || /아니라\s*[가-힣\s]{1,18}(?:이었)?다/.test(sentence)
+    );
+    if (negativeAbstractions.length >= 2) {
+      issues.push({
+        severity: "warning",
+        category: "부정 병렬 추상화",
+        description: `부정형 판정문이 짧은 구간에 반복됩니다: ${negativeAbstractions.slice(0, 2).join(" / ")}`,
+        suggestion: "아니라고 선언하기보다 눈에 보이는 차이, 실패한 행동, 타인의 반응으로 무엇이 달라졌는지 먼저 보여 주세요.",
       });
     }
   }
 
   // dim 23: List-like structure (consecutive sentences with same prefix pattern)
   const sentences = content
-    .split(isEnglish ? /[.!?\n]/ : /[。！？\n]/)
+    .split(isEnglish || isKorean ? /[.!?。！？\n]/ : /[。！？\n]/)
     .map((s) => s.trim())
     .filter((s) => s.length > 2);
 

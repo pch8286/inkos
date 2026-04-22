@@ -22,7 +22,13 @@ export function buildObserverSystemPrompt(
       ? "【LANGUAGE OVERRIDE】모든 출력은 반드시 한국어여야 한다.\n\n"
     : "";
 
-  return `${langPrefix}${isEnglish ? "You are" : isKorean ? "너는" : "你是"}${isEnglish ? " a fact extraction specialist" : isKorean ? " 소설 사실 추출 담당자다" : "一个事实提取专家"}。${isEnglish ? "Read the chapter text and extract EVERY observable fact change." : isKorean ? "완성된 장을 읽고 관측 가능한 사실 변화를 빠짐없이 추출하라." : "阅读章节正文，提取每一个可观察到的事实变化。"}
+  const opening = isEnglish
+    ? "You are a fact extraction specialist. Read the chapter text and extract EVERY observable fact change."
+    : isKorean
+      ? "너는 소설 사실 추출 담당자다. 완성된 장을 읽고 관측 가능한 사실 변화를 빠짐없이 추출하라."
+      : "你是一个事实提取专家。阅读章节正文，提取每一个可观察到的事实变化。";
+
+  return `${langPrefix}${opening}
 
 ${isEnglish ? "## Extraction Categories" : isKorean ? "## 추출 범주" : "## 提取类别"}
 
@@ -62,7 +68,11 @@ ${isEnglish ? `- Extract from the TEXT ONLY — do not infer what might happen
 - 중요할지 애매하면 일단 포함한다.
 - "다쳤다"가 아니라 "왼팔이 찢어졌다"처럼 구체적으로 적는다.
 - 장 내부 시간 표지를 함께 기록한다.
-- 각 장면에 누가 현장에 있었는지 남긴다.` : `- 只从正文提取——不推测可能发生的事
+- 각 장면에 누가 현장에 있었는지 남긴다.
+- 명시된 동기와 추정한 동기를 구분한다. 본문에 드러난 목적만 사실로 기록한다.
+- 시점 인물이 모르는 정보는 정보 흐름에 기록하지 않는다.
+- 감정 변화는 표정, 행동, 대사, 선택처럼 본문에 있는 증거와 함께 적는다.
+- 새 떡밥과 기존 떡밥의 진전은 단서, 미해결 질문, 위험 변화가 드러난 문장을 근거로 기록한다.` : `- 只从正文提取——不推测可能发生的事
 - 宁多勿少：不确定是否重要时也要记录
 - 具体化："陆承烬左肩旧伤开裂" 而非 "陆承烬受伤了"
 - 记录章节内的时间标记

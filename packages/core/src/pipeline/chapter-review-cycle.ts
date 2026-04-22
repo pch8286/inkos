@@ -357,9 +357,9 @@ export async function runChapterReviewCycle(params: {
       postReviseCount = normalizedRevision.wordCount;
       normalizeApplied = normalizeApplied || normalizedRevision.applied;
 
-      const preMarkers = params.analyzeAITells(finalContent);
-      const postMarkers = params.analyzeAITells(normalizedRevision.content);
-      if (postMarkers.issues.length <= preMarkers.issues.length) {
+      const preMarkers = countRevisionRegressionMarkers(params.analyzeAITells(finalContent).issues);
+      const postMarkers = countRevisionRegressionMarkers(params.analyzeAITells(normalizedRevision.content).issues);
+      if (postMarkers <= preMarkers) {
         finalContent = normalizedRevision.content;
         finalWordCount = normalizedRevision.wordCount;
         revised = true;
@@ -408,6 +408,18 @@ export async function runChapterReviewCycle(params: {
     normalizeApplied,
     structuralGate,
   };
+}
+
+function countRevisionRegressionMarkers(issues: ReadonlyArray<AuditIssue>): number {
+  return issues.filter((issue) => !isParagraphFragmentationIssue(issue)).length;
+}
+
+function isParagraphFragmentationIssue(issue: AuditIssue): boolean {
+  return [
+    "Paragraph fragmentation",
+    "문단 과분할",
+    "段落过碎",
+  ].includes(issue.category);
 }
 
 async function loadStructuralGateSource(bookDir: string): Promise<{

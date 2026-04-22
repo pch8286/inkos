@@ -63,6 +63,15 @@ const KOREAN_VISUAL_LOAD_MARKERS = /(?:과|와|및|그리고)/g;
 const KOREAN_THIRD_PERSON_SUBJECT_PATTERN = /(?:^|[\n.!?。！？,，]\s*)(그는|그가|그녀는|그녀가|자신은|자신이)(?=\s|[,，])/g;
 const KOREAN_SENSORY_SUBJECT_OPENING_PATTERN = /(?:[가-힣]{1,8}\s+)?(?:냄새|악취|향|쇠맛|맛|소리|울림|감촉|냉기|한기|열기|빛|어둠|시야|천장|바닥|공기)(?:이|가|은|는)?\s*(?:먼저\s*)?(?:들어왔|밀려왔|느껴졌|들렸|보였|눈에\s+들어왔)/;
 const KOREAN_SENSORY_CLICHE_OPENING_PATTERN = /(?:[가-힣]{1,8}\s+)?(?:냄새|악취|향|쇠맛|맛|소리|울림|감촉|냉기|한기|열기|빛|어둠|시야|천장|바닥|공기)(?:이|가|은|는)?\s*먼저\s*(?:들어왔|밀려왔|느껴졌|들렸|보였|눈에\s+들어왔)/;
+const KOREAN_INVERTED_SENSORY_CLICHE_OPENING_PATTERN = /(?:먼저|처음)\s*(?:들어온|밀려온|느껴진|들린|보인)\s*(?:건|것은|것이)\s*[^.!?。！？\n]{0,50}(?:냄새|악취|향|쇠맛|맛|소리|울림|감촉|냉기|한기|열기|빛|어둠|시야|천장|바닥|공기|통증)/;
+const KOREAN_STOCK_SENSORY_METAPHOR_PATTERNS = [
+  /쇠\s*긁는\s*(?:소리|울림)/,
+  /금속성\s*(?:소리|울림|마찰음)/,
+  /공기가\s*(?:얼어붙|굳어지|무거워지|가라앉)/,
+  /칼날\s*같은\s*(?:시선|눈빛|목소리|말투)/,
+  /등골(?:이)?\s*서늘/,
+  /짐승\s*같은\s*(?:웃음|울음|소리|숨소리)/,
+];
 const CHINESE_DEPENDENT_CLAUSE_MARKERS = /(?:然后|接着|随后|同时|而且|并且|却|才|再|又)/g;
 const ENGLISH_DEPENDENT_CLAUSE_MARKERS = /\b(?:as|while|when|after|before|because|although|though|which|that)\b/gi;
 
@@ -309,18 +318,21 @@ function detectKoreanStylePatternWarnings(
       rule: "대명사 주어 반복",
       severity: "warning",
       description: `3인칭 대명사 주어가 ${thirdPersonSubjects.length}회 반복되어 영어 번역투처럼 보일 수 있습니다: ${uniqueThirdPersonSubjects.join(", ")}`,
-      suggestion: "주인공 이름이나 직함이 있으면 다시 고정하고, 없으면 주어를 생략한 행동문·감각 반응·직접 판단문으로 분산하세요.",
+      suggestion: "주인공 이름이나 직함이 있으면 다시 고정하고, 없으면 주어를 생략한 행동문, 손끝이나 시선의 변화, 직접 판단문으로 분산하세요.",
     });
   }
 
   const openingSentences = extractNarrativeSentences(content).slice(0, 5);
-  const sensoryClicheOpening = openingSentences.slice(0, 2).find((sentence) => KOREAN_SENSORY_CLICHE_OPENING_PATTERN.test(sentence));
+  const sensoryClicheOpening = openingSentences.slice(0, 3).find((sentence) =>
+    KOREAN_SENSORY_CLICHE_OPENING_PATTERN.test(sentence)
+    || KOREAN_INVERTED_SENSORY_CLICHE_OPENING_PATTERN.test(sentence)
+  );
   if (sensoryClicheOpening) {
     violations.push({
       rule: "감각 도입 클리셰",
       severity: "warning",
       description: `첫머리가 감각 자체를 주어로 세우는 익숙한 패턴입니다: "${summarizeSentenceSample(sensoryClicheOpening)}"`,
-      suggestion: "시점 인물의 자세, 공간의 큰 윤곽, 감각의 원인 이미지를 먼저 세우고 감각은 다음 비트로 붙이세요.",
+      suggestion: "시점 인물의 자세, 공간의 큰 윤곽, 감각을 일으킨 원인을 먼저 세우고 감각은 다음 행동 비트에 붙이세요.",
     });
   }
 
@@ -330,7 +342,19 @@ function detectKoreanStylePatternWarnings(
       rule: "감각 스타팅 반복",
       severity: "warning",
       description: `도입부에서 감각 자체를 주어로 세우는 문장이 반복됩니다: "${summarizeSentenceSample(sensoryOpenings.join(" / "))}"`,
-      suggestion: "시점 인물의 몸 위치, 공간 앵커, 눈에 보이는 원인 이미지를 먼저 세우고 감각은 그 뒤에 붙이세요.",
+      suggestion: "시점 인물의 자세, 닿은 면, 눈에 보이는 원인을 먼저 세우고 감각은 그 뒤에 붙이세요.",
+    });
+  }
+
+  const stockSensoryMetaphor = extractNarrativeSentences(content).find((sentence) =>
+    KOREAN_STOCK_SENSORY_METAPHOR_PATTERNS.some((pattern) => pattern.test(sentence))
+  );
+  if (stockSensoryMetaphor) {
+    violations.push({
+      rule: "상투적 감각 비유",
+      severity: "warning",
+      description: `장면 안 원인 없이 떠 있는 상투적 감각 비유처럼 보입니다: "${summarizeSentenceSample(stockSensoryMetaphor)}"`,
+      suggestion: "비유를 더 예쁘게 바꾸지 말고, 장면 안 원인, 물리적 변화, 시점 인물의 반응 순서로 감각을 다시 고정하세요.",
     });
   }
 
@@ -674,7 +698,7 @@ function localizeReadabilityViolation(
     return {
       rule: "세부 선행",
       severity: "warning",
-      description: `세부 이미지가 먼저 나오고 공간 앵커가 뒤늦게 잡힙니다: "${sample}"`,
+      description: `세부 이미지가 먼저 나오고 큰 윤곽이 뒤늦게 잡힙니다: "${sample}"`,
       suggestion: "첫 문장에서 공간 윤곽이나 전체 배치를 세운 뒤, 다음 문장에서 눈에 걸리는 디테일로 좁혀 가세요.",
     };
   }
