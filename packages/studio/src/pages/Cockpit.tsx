@@ -1413,16 +1413,15 @@ function ActionButton({
 function MessageBubble({ message }: { readonly message: CockpitMessage }) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  const roleLabel = isUser ? "USER" : isSystem ? "SYSTEM" : "INKOS";
+
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`studio-cockpit-message max-w-[88%] px-4 py-3 text-sm leading-7 shadow-sm ${
-        isUser
-          ? "is-user"
-          : isSystem
-            ? "is-system"
-            : "is-assistant"
-      }`}>
-        <div className="whitespace-pre-wrap break-words">{message.content}</div>
+    <div className={`studio-cockpit-message ${isUser ? "is-user" : isSystem ? "is-system" : "is-assistant"}`}>
+      <div className="studio-cockpit-message-meta">
+        <span>{roleLabel}</span>
+      </div>
+      <div className="studio-cockpit-message-body whitespace-pre-wrap break-words">
+        {message.content}
       </div>
     </div>
   );

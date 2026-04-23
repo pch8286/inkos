@@ -95,6 +95,8 @@ interface CockpitMainConversationProps {
   readonly MessageBubble: (props: MessageBubbleProps) => ReactNode;
 }
 
+const COMMAND_CHIPS = ["/draft", "/propose", "/ask", "/context", "/binder", "/queue", "/diff", "/log", "/help"] as const;
+
 export function CockpitMainConversation({
   t,
   mode,
@@ -192,7 +194,7 @@ export function CockpitMainConversation({
 
       <div className="flex min-h-[clamp(22rem,50vh,30rem)] flex-col">
         <div
-          className="studio-cockpit-log min-h-[clamp(12rem,28vh,18rem)] flex-1 space-y-3 overflow-y-auto pr-1"
+          className="studio-cockpit-log studio-cockpit-work-log min-h-[clamp(12rem,28vh,18rem)] flex-1 space-y-3 overflow-y-auto pr-1"
           role="log"
           aria-live="polite"
           aria-relevant="additions text"
@@ -269,7 +271,7 @@ export function CockpitMainConversation({
             StatusPill={StatusPill}
           />
 
-          <div className="studio-cockpit-composer rounded-[1.35rem] border border-border/50 bg-background/55 p-3">
+          <div className="studio-cockpit-composer studio-cockpit-command-composer rounded-[1.35rem] border border-border/50 bg-background/55 p-3">
             <label
               htmlFor={composerInputId}
               className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
@@ -312,6 +314,14 @@ export function CockpitMainConversation({
                   </div>
                 </div>
               ) : null}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Command shortcuts">
+              {COMMAND_CHIPS.map((command) => (
+                <span key={command} className="studio-command-chip">
+                  {command}
+                </span>
+              ))}
             </div>
 
             <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

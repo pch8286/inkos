@@ -117,6 +117,66 @@ describe("summarizeQueuedComposerEntries", () => {
 });
 
 describe("CockpitMainConversation", () => {
+  it("renders the work log and command composer shortcuts", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(CockpitMainConversation, {
+        t,
+        mode: "discuss",
+        busy: false,
+        error: null,
+        input: "",
+        scopeChips: [
+          { label: "Scope", value: "Discuss" },
+          { label: "Target", value: "Novel" },
+        ],
+        hasPendingChanges: false,
+        statusPills: [{ label: "Stage", value: "Ready" }],
+        status: buildStatusStrip({
+          stage: "ready",
+          latestEvent: null,
+          latestEventIsError: false,
+          isLive: false,
+          liveStage: null,
+          liveDetail: null,
+          progressMode: "none",
+          progressValue: null,
+        }),
+        activeMessages: [],
+        quickStartPanel: null,
+        composerInputId: "composer",
+        composerHintId: "composer-hint",
+        composerHint: "Try writing a prompt",
+        canUseBinder: false,
+        canUseDraft: false,
+        hasPendingProposalChanges: false,
+        queuedComposerEntries: [],
+        onInputChange: () => undefined,
+        onQueueComposerInput: () => undefined,
+        onRestoreQueuedComposerInput: () => undefined,
+        onSubmit: () => undefined,
+        onApplyAll: () => undefined,
+        classes: { btnPrimary: "", btnSecondary: "", input: "", error: "" },
+        ActionButton,
+        ScopeChip,
+        StatusPill: BaseStatusChip,
+        MessageBubble,
+      }),
+    );
+
+    expect(markup).toContain("studio-cockpit-work-log");
+    expect(markup).toContain('role="log"');
+    expect(markup).toContain("studio-cockpit-command-composer");
+    expect(markup).toContain("studio-command-chip");
+    expect(markup).toContain("/draft");
+    expect(markup).toContain("/propose");
+    expect(markup).toContain("/ask");
+    expect(markup).toContain("/binder");
+    expect(markup).toContain("/queue");
+    expect(markup).toContain("/diff");
+    expect(markup).toContain("/log");
+    expect(markup).toContain("/help");
+  });
+
   it("renders a live status strip with determinate progress in the conversation path", () => {
     const markup = renderToStaticMarkup(
       React.createElement(CockpitMainConversation, {

@@ -792,6 +792,10 @@ h3 { font-size: 1.25rem; }
   padding: 0.5rem 0.35rem 0.35rem;
 }
 
+.studio-cockpit-work-log {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+
 .studio-cockpit-empty-state {
   display: grid;
   gap: 1rem;
@@ -815,6 +819,25 @@ h3 { font-size: 1.25rem; }
     linear-gradient(180deg, color-mix(in oklch, var(--background) 86%, transparent), color-mix(in oklch, var(--background) 74%, transparent)),
     radial-gradient(circle at top left, color-mix(in oklch, var(--studio-chip-accent) 14%, transparent), transparent 58%);
   backdrop-filter: blur(12px);
+}
+
+.studio-cockpit-command-composer {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.studio-command-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  border: 1px solid color-mix(in oklch, var(--border) 62%, transparent);
+  border-radius: 0.45rem;
+  padding: 0.22rem 0.5rem;
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  color: color-mix(in oklch, var(--foreground) 82%, var(--muted-foreground));
 }
 
 .studio-cockpit-queue-meta {
@@ -1022,28 +1045,43 @@ h3 { font-size: 1.25rem; }
 }
 
 .studio-cockpit-message {
-  border-radius: 1.35rem;
-  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
-  backdrop-filter: blur(10px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 2px solid color-mix(in oklch, var(--border) 78%, transparent);
+  background: color-mix(in oklch, var(--background) 58%, transparent);
+  color: color-mix(in oklch, var(--foreground) 86%, transparent);
+  font-size: 0.82rem;
+  line-height: 1.65;
 }
 
 .studio-cockpit-message.is-user {
-  background: linear-gradient(135deg, color-mix(in oklch, var(--studio-cta-start) 66%, transparent), color-mix(in oklch, var(--studio-cta-end) 86%, transparent));
-  color: var(--studio-cta-text);
-  border-color: color-mix(in oklch, var(--studio-cta-end) 42%, transparent);
-  box-shadow: 0 12px 28px -22px color-mix(in oklch, var(--studio-cta-text) 45%, transparent);
-  animation: msgSlideRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border-left-color: color-mix(in oklch, var(--studio-cta-end) 70%, transparent);
 }
 
 .studio-cockpit-message.is-assistant {
-  background: color-mix(in oklch, var(--card) 86%, transparent);
-  color: color-mix(in oklch, var(--foreground) 88%, transparent);
-  animation: msgSlideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border-left-color: color-mix(in oklch, var(--studio-state-text) 70%, transparent);
 }
 
 .studio-cockpit-message.is-system {
-  background: color-mix(in oklch, var(--background) 72%, transparent);
+  border-left-color: color-mix(in oklch, var(--muted-foreground) 62%, transparent);
   color: var(--muted-foreground);
+}
+
+.studio-cockpit-message-meta {
+  min-width: 4.4rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.65;
+  color: color-mix(in oklch, var(--muted-foreground) 86%, transparent);
+}
+
+.studio-cockpit-message-body {
+  min-width: 0;
+  color: inherit;
 }
 
 @media (min-width: 1024px) {
