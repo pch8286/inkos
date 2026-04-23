@@ -544,6 +544,119 @@ h3 { font-size: 1.25rem; }
   box-shadow: 0 22px 60px -34px color-mix(in oklch, var(--foreground) 20%, transparent);
 }
 
+.studio-cockpit-console-header {
+  display: grid;
+  gap: 0.85rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 0.5rem;
+  padding: clamp(1rem, 1.8vw, 1.25rem);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--card) 92%, transparent), color-mix(in oklch, var(--card) 78%, transparent)),
+    linear-gradient(90deg, color-mix(in oklch, var(--primary) 8%, transparent), transparent 38%);
+  box-shadow: 0 18px 44px -34px color-mix(in oklch, var(--foreground) 24%, transparent);
+}
+
+.studio-cockpit-console-titlebar {
+  display: grid;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.studio-console-eyebrow {
+  width: fit-content;
+  border: 1px solid color-mix(in oklch, var(--studio-chip-border) 48%, transparent);
+  border-radius: 0.375rem;
+  background: color-mix(in oklch, var(--studio-chip) 74%, transparent);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--studio-chip-text);
+}
+
+.studio-cockpit-console-title {
+  font-family: var(--font-serif);
+  font-size: clamp(1.7rem, 2.35vw, 2.35rem);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: 0;
+  color: var(--foreground);
+}
+
+.studio-cockpit-console-subtitle {
+  max-width: 48rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: color-mix(in oklch, var(--foreground) 74%, transparent);
+}
+
+.studio-cockpit-console-context {
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border) 56%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--background) 68%, transparent);
+  padding: 0.75rem 0.85rem;
+}
+
+.studio-cockpit-console-status-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.studio-cockpit-console-cell {
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border) 52%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--background) 60%, transparent);
+  padding: 0.65rem 0.75rem;
+}
+
+.studio-cockpit-console-cell span {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.studio-cockpit-console-cell strong {
+  display: block;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.studio-cockpit-console-actions,
+.studio-cockpit-console-events {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.studio-console-event {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid color-mix(in oklch, var(--border) 52%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--background) 66%, transparent);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .studio-cockpit-hero {
   position: relative;
   overflow: hidden;

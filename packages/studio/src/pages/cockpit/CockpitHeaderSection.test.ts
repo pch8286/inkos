@@ -1,0 +1,82 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import type { TFunction } from "../../hooks/use-i18n";
+import { CockpitHeaderSection } from "./CockpitHeaderSection";
+
+const t = ((key: string) => {
+  const labels: Record<string, string> = {
+    "nav.cockpit": "Cockpit",
+    "cockpit.title": "InkOS Cockpit",
+    "cockpit.subtitle": "Conversation-first writing console",
+    "cockpit.scope": "Scope",
+    "cockpit.statusStage": "Stage",
+    "cockpit.statusTarget": "Target",
+    "cockpit.selectBook": "Books",
+    "cockpit.currentContext": "Context",
+    "cockpit.openBook": "Open Book",
+    "cockpit.openBinder": "Open Binder",
+    "common.refresh": "Refresh",
+    "common.loading": "Loading",
+    "dash.createFailed": "Create Failed",
+    "dash.createRunning": "Creating",
+    "create.creatingHint": "Creating book",
+  };
+  return labels[key] ?? key;
+}) as TFunction;
+
+const baseProps = {
+  t,
+  nav: {
+    toBook: () => undefined,
+    toTruth: () => undefined,
+  },
+  booksLoading: false,
+  booksError: null,
+  createJobs: [],
+  bookCount: 3,
+  selectedBookLabel: "달빛 아래, 이야기꾼",
+  modeLabel: "Draft",
+  statusStageLabel: "Working",
+  statusTargetLabel: "Chapter 12",
+  statusModelLabel: "OpenRouter / claude-3.5-sonnet",
+  selectedBookId: "book-1",
+  onRefresh: () => undefined,
+  classes: { btnPrimary: "primary", btnSecondary: "secondary", error: "error" },
+};
+
+describe("CockpitHeaderSection", () => {
+  it("renders the compact technical-console header without hero media", () => {
+    const html = renderToStaticMarkup(React.createElement(CockpitHeaderSection, baseProps));
+
+    expect(html).toContain("studio-cockpit-console-header");
+    expect(html).toContain("studio-cockpit-console-title");
+    expect(html).toContain("studio-cockpit-console-status-grid");
+    expect(html).toContain("InkOS Cockpit");
+    expect(html).toContain("OpenRouter / claude-3.5-sonnet");
+    expect(html).toContain("달빛 아래, 이야기꾼");
+    expect(html).not.toContain("studio-cockpit-hero-media");
+    expect(html).not.toContain("cockpit-hero-v1");
+  });
+
+  it("keeps loading, error, and create job notices as compact console events", () => {
+    const html = renderToStaticMarkup(React.createElement(CockpitHeaderSection, {
+      ...baseProps,
+      booksLoading: true,
+      booksError: "Failed to load books",
+      createJobs: [{
+        bookId: "new-book",
+        title: "New Console Book",
+        status: "creating",
+        stage: "foundation",
+        message: "Writing foundation",
+      }],
+    }));
+
+    expect(html).toContain("studio-cockpit-console-events");
+    expect(html).toContain("Loading");
+    expect(html).toContain("Failed to load books");
+    expect(html).toContain("New Console Book");
+    expect(html).toContain("foundation");
+  });
+});
