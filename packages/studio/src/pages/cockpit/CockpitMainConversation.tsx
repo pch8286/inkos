@@ -95,7 +95,7 @@ interface CockpitMainConversationProps {
   readonly MessageBubble: (props: MessageBubbleProps) => ReactNode;
 }
 
-const COMMAND_CHIPS = ["/draft", "/propose", "/ask", "/context", "/binder", "/queue", "/diff", "/log", "/help"] as const;
+const COMMAND_CHIPS = ["/draft", "/propose", "/ask", "/write", "/write-next", "/create", "/discuss"] as const;
 
 export function CockpitMainConversation({
   t,
@@ -316,7 +316,7 @@ export function CockpitMainConversation({
               ) : null}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Command shortcuts">
+            <div className="mt-3 flex flex-wrap gap-1.5">
               {COMMAND_CHIPS.map((command) => (
                 <span key={command} className="studio-command-chip">
                   {command}

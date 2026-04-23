@@ -170,11 +170,15 @@ describe("CockpitMainConversation", () => {
     expect(markup).toContain("/draft");
     expect(markup).toContain("/propose");
     expect(markup).toContain("/ask");
-    expect(markup).toContain("/binder");
-    expect(markup).toContain("/queue");
-    expect(markup).toContain("/diff");
-    expect(markup).toContain("/log");
-    expect(markup).toContain("/help");
+    expect(markup).toContain("/write");
+    expect(markup).toContain("/write-next");
+    expect(markup).toContain("/create");
+    expect(markup).toContain("/discuss");
+    expect(markup).not.toContain("/binder");
+    expect(markup).not.toContain("/queue");
+    expect(markup).not.toContain("/diff");
+    expect(markup).not.toContain("/log");
+    expect(markup).not.toContain("/help");
   });
 
   it("renders a live status strip with determinate progress in the conversation path", () => {
