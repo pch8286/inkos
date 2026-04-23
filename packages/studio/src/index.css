@@ -46,60 +46,60 @@
   --shadow-3d-hover: 0 20px 40px -15px oklch(0 0 0 / 0.2), 0 8px 16px -8px oklch(0 0 0 / 0.15);
 }
 
-/* ── Light Mode: Warm Parchment & Ink ── */
+/* ── Light Mode: Graphite Console ── */
 :root {
   --radius: 0.6rem;
 
-  /* Background: Warm, aged paper with subtle radial light */
-  --background: oklch(0.985 0.005 80);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.995 0.002 85) 0%, oklch(0.985 0.005 80) 100%);
-  --foreground: oklch(0.13 0.02 60);
+  /* Background: cool graphite work surface with subtle terminal lift */
+  --background: oklch(0.965 0.006 245);
+  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.985 0.006 210) 0%, oklch(0.965 0.006 245) 100%);
+  --foreground: oklch(0.18 0.018 245);
 
-  /* Cards: Crisp sheets on paper */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.015 60);
+  /* Cards: neutral console panels */
+  --card: oklch(0.99 0.003 240);
+  --card-foreground: oklch(0.17 0.016 245);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.015 60);
+  --popover: oklch(0.99 0.003 240);
+  --popover-foreground: oklch(0.17 0.016 245);
 
-  /* Primary: Deep Oxblood / Ink */
-  --primary: oklch(0.45 0.12 25);
-  --primary-foreground: oklch(0.98 0.006 76);
+  /* Primary: cyan command signal */
+  --primary: oklch(0.55 0.13 205);
+  --primary-foreground: oklch(0.98 0.006 210);
 
-  /* Brand CTA: Warm honey / apricot */
-  --brand: oklch(0.82 0.14 72);
-  --brand-foreground: oklch(0.22 0.03 45);
+  /* Brand CTA: green execution signal */
+  --brand: oklch(0.62 0.15 155);
+  --brand-foreground: oklch(0.12 0.02 170);
 
-  /* Secondary: Soft paper shadow */
-  --secondary: oklch(0.94 0.01 76);
-  --secondary-foreground: oklch(0.25 0.015 60);
+  /* Secondary: graphite rail */
+  --secondary: oklch(0.92 0.008 245);
+  --secondary-foreground: oklch(0.27 0.018 245);
 
-  /* Muted: Faded ink */
-  --muted: oklch(0.94 0.008 76);
-  --muted-foreground: oklch(0.38 0.02 60);
+  /* Muted: subdued console text */
+  --muted: oklch(0.93 0.006 245);
+  --muted-foreground: oklch(0.43 0.018 245);
 
-  /* Accent: Subtle gold leaf */
-  --accent: oklch(0.92 0.02 85);
-  --accent-foreground: oklch(0.25 0.05 60);
+  /* Accent: pale cyan command surface */
+  --accent: oklch(0.91 0.035 195);
+  --accent-foreground: oklch(0.23 0.045 205);
 
-  --destructive: oklch(0.55 0.18 25);
+  --destructive: oklch(0.56 0.15 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --studio-cta-start: oklch(0.95 0.08 82);
-  --studio-cta-end: oklch(0.91 0.11 74);
-  --studio-cta-text: oklch(0.25 0.03 60);
-  --studio-chip: oklch(0.93 0.02 82);
-  --studio-chip-border: oklch(0.77 0.03 82);
-  --studio-chip-text: oklch(0.32 0.03 60);
-  --studio-chip-accent: oklch(0.9 0.08 76);
-  --studio-chip-accent-text: oklch(0.28 0.05 60);
-  --studio-state-ok: oklch(0.58 0.14 151);
+  --studio-cta-start: oklch(0.71 0.12 195);
+  --studio-cta-end: oklch(0.66 0.14 165);
+  --studio-cta-text: oklch(0.13 0.026 210);
+  --studio-chip: oklch(0.92 0.009 245);
+  --studio-chip-border: oklch(0.76 0.018 235);
+  --studio-chip-text: oklch(0.28 0.018 245);
+  --studio-chip-accent: oklch(0.88 0.045 190);
+  --studio-chip-accent-text: oklch(0.24 0.055 205);
+  --studio-state-ok: oklch(0.62 0.15 155);
   --studio-state-warn: oklch(0.73 0.15 82);
-  --studio-state-text: oklch(0.24 0.02 60);
+  --studio-state-text: oklch(0.43 0.12 200);
 
-  --border: oklch(0.84 0.01 76);
-  --input: oklch(0.92 0.005 76);
-  --ring: oklch(0.45 0.12 25);
+  --border: oklch(0.82 0.012 240);
+  --input: oklch(0.91 0.008 245);
+  --ring: oklch(0.55 0.13 205);
 }
 
 html:lang(ko) {
@@ -108,58 +108,58 @@ html:lang(ko) {
   --font-mono: 'D2Coding', 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
-/* ── Dark Mode: Obsidian & Candlelight ── */
+/* ── Dark Mode: Charcoal Console ── */
 .dark {
-  /* Background: Deep obsidian with soft top glow */
-  --background: oklch(0.12 0.01 250);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.16 0.015 250) 0%, oklch(0.12 0.01 250) 100%);
-  --foreground: oklch(0.97 0.005 250);
+  /* Background: dark graphite with a restrained cyan lift */
+  --background: oklch(0.135 0.012 245);
+  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.18 0.018 230) 0%, oklch(0.135 0.012 245) 100%);
+  --foreground: oklch(0.94 0.006 230);
 
-  /* Cards: Floating graphite */
-  --card: oklch(0.18 0.015 250);
-  --card-foreground: oklch(0.95 0.005 250);
+  /* Cards: charcoal panels */
+  --card: oklch(0.18 0.014 245);
+  --card-foreground: oklch(0.93 0.006 230);
 
-  --popover: oklch(0.18 0.015 250);
-  --popover-foreground: oklch(0.95 0.005 250);
+  --popover: oklch(0.18 0.014 245);
+  --popover-foreground: oklch(0.93 0.006 230);
 
-  /* Primary: Warm Amber / Candlelight */
-  --primary: oklch(0.78 0.14 85);
-  --primary-foreground: oklch(0.12 0.01 250);
+  /* Primary: cyan console signal */
+  --primary: oklch(0.74 0.13 200);
+  --primary-foreground: oklch(0.11 0.018 225);
 
-  /* Brand CTA: Bright ember for action surfaces */
-  --brand: oklch(0.76 0.15 76);
-  --brand-foreground: oklch(0.14 0.02 248);
+  /* Brand CTA: green execution signal */
+  --brand: oklch(0.72 0.16 155);
+  --brand-foreground: oklch(0.11 0.018 170);
 
   /* Secondary: Dark slate */
-  --secondary: oklch(0.22 0.02 250);
-  --secondary-foreground: oklch(0.92 0.005 250);
+  --secondary: oklch(0.22 0.016 245);
+  --secondary-foreground: oklch(0.9 0.006 230);
 
   /* Muted: Dimmed graphite */
-  --muted: oklch(0.22 0.015 250);
-  --muted-foreground: oklch(0.78 0.005 250);
+  --muted: oklch(0.22 0.014 245);
+  --muted-foreground: oklch(0.73 0.008 235);
 
-  /* Accent: Muted gold */
-  --accent: oklch(0.28 0.04 85);
-  --accent-foreground: oklch(0.95 0.06 85);
+  /* Accent: muted cyan command surface */
+  --accent: oklch(0.27 0.048 195);
+  --accent-foreground: oklch(0.88 0.08 195);
 
-  --destructive: oklch(0.55 0.2 25);
+  --destructive: oklch(0.58 0.18 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --studio-cta-start: oklch(0.76 0.14 82);
-  --studio-cta-end: oklch(0.68 0.16 88);
-  --studio-cta-text: oklch(0.97 0.005 95);
-  --studio-chip: oklch(0.24 0.02 250);
-  --studio-chip-border: oklch(0.36 0.03 250);
-  --studio-chip-text: oklch(0.82 0.005 250);
-  --studio-chip-accent: oklch(0.32 0.05 88);
-  --studio-chip-accent-text: oklch(0.94 0.07 90);
-  --studio-state-ok: oklch(0.7 0.16 150);
-  --studio-state-warn: oklch(0.73 0.13 85);
-  --studio-state-text: oklch(0.84 0.02 250);
+  --studio-cta-start: oklch(0.72 0.13 195);
+  --studio-cta-end: oklch(0.68 0.16 155);
+  --studio-cta-text: oklch(0.1 0.018 210);
+  --studio-chip: oklch(0.23 0.016 245);
+  --studio-chip-border: oklch(0.36 0.026 235);
+  --studio-chip-text: oklch(0.78 0.012 235);
+  --studio-chip-accent: oklch(0.30 0.06 195);
+  --studio-chip-accent-text: oklch(0.88 0.08 190);
+  --studio-state-ok: oklch(0.72 0.16 155);
+  --studio-state-warn: oklch(0.74 0.14 82);
+  --studio-state-text: oklch(0.78 0.11 195);
 
-  --border: oklch(0.30 0.02 250);
-  --input: oklch(0.25 0.02 250);
-  --ring: oklch(0.78 0.14 85);
+  --border: oklch(0.30 0.018 245);
+  --input: oklch(0.24 0.016 245);
+  --ring: oklch(0.74 0.13 200);
 }
 
 body {
@@ -309,20 +309,19 @@ h3 { font-size: 1.25rem; }
   border-color: var(--primary);
 }
 
-/* Warm utility surface that matches the paper theme */
+/* Compact console action surface */
 .studio-cta {
-  border: 1px solid color-mix(in oklch, var(--studio-cta-text) 22%, transparent);
-  background: linear-gradient(135deg, var(--studio-cta-start) 0%, var(--studio-cta-end) 100%);
+  border: 1px solid color-mix(in oklch, var(--studio-state-text) 38%, transparent);
+  background: linear-gradient(180deg, var(--studio-cta-start) 0%, var(--studio-cta-end) 100%);
   color: var(--studio-cta-text);
-  text-shadow: 0 1px 0 oklch(0.97 0.01 90 / 0.35);
-  box-shadow: 0 10px 22px -14px color-mix(in oklch, var(--studio-cta-text) 36%, transparent);
+  box-shadow: 0 6px 14px -10px color-mix(in oklch, var(--studio-state-text) 48%, transparent);
   transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
 }
 
 .studio-cta:hover {
   transform: translateY(-1px);
-  filter: brightness(1.05);
-  box-shadow: 0 16px 30px -18px color-mix(in oklch, var(--studio-cta-text) 40%, transparent);
+  filter: brightness(1.03);
+  box-shadow: 0 9px 18px -12px color-mix(in oklch, var(--studio-state-text) 52%, transparent);
 }
 
 .studio-cta:active {

@@ -40,7 +40,7 @@ interface Nav {
   toDashboard: () => void;
   toBook: (id: string) => void;
   toBookCreate: () => void;
-  toCockpit: () => void;
+  toCockpit: (bookId?: string, options?: Readonly<{ readonly newSetup?: boolean }>) => void;
   toConfig: () => void;
   toDaemon: () => void;
   toLogs: () => void;
@@ -87,7 +87,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
-      <aside className={`fixed inset-y-0 left-0 z-50 flex h-full w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-border bg-background/92 backdrop-blur-md select-none transition-transform duration-300 md:static md:z-auto md:w-[260px] md:max-w-none md:translate-x-0 ${
+      <aside className={`fixed inset-y-0 left-0 z-50 flex h-full w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-border bg-background/96 backdrop-blur-md select-none transition-transform duration-300 md:static md:z-auto md:w-[260px] md:max-w-none md:translate-x-0 ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
       {/* Logo Area */}
@@ -96,7 +96,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
           onClick={nav.toDashboard}
           className="group flex items-center gap-2 hover:opacity-80 transition-all duration-300"
         >
-          <div className="w-8 h-8 rounded-lg studio-chip-accent flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--studio-state-text)]/40 bg-[color:var(--studio-state-text)]/12 text-[color:var(--studio-state-text)] transition-transform group-hover:scale-105">
             <ScrollText size={18} />
           </div>
           <div className="flex flex-col">
@@ -123,7 +123,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
               {t("nav.books")}
             </span>
             <button
-              onClick={nav.toCockpit}
+              onClick={() => nav.toCockpit(undefined, { newSetup: true })}
               className="p-1 rounded-md studio-icon-btn transition-all group"
               title={t("nav.openCockpit")}
             >
@@ -284,7 +284,7 @@ function SidebarItem({ label, icon, active, onClick, badge, badgeColor }: {
   return (
     <button
       onClick={onClick}
-      className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
+      className={`w-full group flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-200 ${
         active
           ? "studio-chip-accent text-foreground font-semibold shadow-sm"
           : "text-foreground font-medium studio-chip"
