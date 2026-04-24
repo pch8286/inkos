@@ -36,9 +36,20 @@ export interface ChapterReviewCycleResult {
   };
 }
 
+const ACTIONABLE_STYLE_CATEGORIES = new Set([
+  "메모식 장면 체크리스트",
+  "추상 정리문",
+  "도입부 신체 감각 과밀",
+  "장면 밖 원칙 해설",
+]);
+
 function isActionableStyleIssue(issue: AuditIssue): boolean {
   if (issue.severity !== "warning") {
     return false;
+  }
+
+  if (ACTIONABLE_STYLE_CATEGORIES.has(issue.category)) {
+    return true;
   }
 
   const text = `${issue.category} ${issue.description} ${issue.suggestion}`;

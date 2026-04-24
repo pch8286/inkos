@@ -59,6 +59,36 @@ const KOREAN_PROP_MEANING_EXPOSITION_PATTERNS = [
   /(?:베기보다|싸우기보다|죽이기보다|막기보다)[^.!?。！？\n]{0,60}(?:보이게|느끼게|만드는)\s*(?:물건|도구|장비|장치)/,
   /(?:헌터|기사|군인|마법사|영웅)처럼\s*보이게\s*만드는\s*(?:물건|도구|장비|장치)/,
 ];
+const KOREAN_SCENE_NOTE_FRAGMENT_PATTERN =
+  /^(?:몸|장소|주변(?:\s*반응)?|적대\s*여부|상태|목표|갈등|정보|탈출구)$/;
+const KOREAN_ABSTRACT_ORDER_DECLARATION_PATTERN =
+  /(?:혼란|공포|두려움|상황|생각|의식|감각)[^.!?。！？\n]{0,35}(?:붙잡|견디|버티|정리|이해)[^.!?。！？\n]{0,24}(?:순서|규칙|원칙|기준)\s*(?:뿐|밖에)/;
+const KOREAN_OPENING_BODY_INVENTORY_CATEGORIES = [
+  {
+    label: "신체 부위",
+    pattern: /(?:손톱|손등|손가락|손끝|팔|다리|어깨|가슴|목구멍|혀끝|눈|귀|뼈|근육|피부|심장|숨|호흡)/,
+  },
+  {
+    label: "변형 증거",
+    pattern: /(?:비늘|발톱|뿔|꼬리|날개|상처|흉터|균열|돋|자라|변했|뒤틀|갈라)/,
+  },
+  {
+    label: "내부 감각",
+    pattern: /(?:끓|타는\s*듯|말랐|저릿|쑤셨|아팠|통증|압박|열이|차가운\s*기운)/,
+  },
+  {
+    label: "감각 확인",
+    pattern: /(?:냄새|맛|소리|감촉|시야|혀끝|목 안쪽|숨소리)/,
+  },
+];
+const KOREAN_BROAD_SCENE_ANCHOR_PATTERN =
+  /(?:눈앞|주변|사방|정면|홀|방(?!금)|복도|천장|벽|바닥|문|창|왕좌)[^.!?。！？\n]{0,30}(?:있|보였|드러났|펼쳐졌)/;
+const KOREAN_SCENE_OUTSIDE_PRINCIPLE_PATTERNS = [
+  /(?:오래|수없이|여러\s*번|끝까지|직접|한\s*번이라도)[^.!?。！？\n]{0,16}(?:사람|자)[^.!?。！？\n]{0,12}(?:은|는)\s*안다/,
+  /(?:필요한\s*건|중요한\s*건|핵심은)[^.!?。！？\n]{0,24}(?:설명|원칙|전략|승부|권위|체면|선택지|판세)[^.!?。！？\n]{0,20}(?:아니었다|아니다|이었다|이다|된다)/,
+  /(?:권위|왕좌|복종|체면|협상|승부|전략|판세|믿음|두려움)[^.!?。！？\n]{0,45}(?:자리가\s*아니다|자리다|문제가\s*아니다|문제다|법이다|방식이다|일이다)/,
+  /(?:상대|사람|모두|누군가)[^.!?。！？\n]{0,45}(?:기대|믿|착각|두려워|원하)[^.!?。！？\n]{0,35}(?:순간|때)[^.!?。！？\n]{0,30}(?:판|상황|관계|공기|흐름|판세)[^.!?。！？\n]{0,10}(?:움직|무너|흔들|드러)/,
+];
 
 /**
  * Analyze text content for structural AI-tell patterns.
@@ -206,15 +236,18 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
       .split(/\n+/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
-    const sceneNoteFragments = koreanLines.filter((line) => {
-      const normalized = line.replace(/[.!?。！？]/g, "").trim();
-      return /^(몸|장소|주변\s*반응|적대\s*여부|상태|목표|갈등|정보)$/.test(normalized);
-    });
-    if (new Set(sceneNoteFragments).size >= 3) {
+    const sceneNoteFragments = koreanLines.flatMap((line) =>
+      line
+        .split(/[.!?。！？,，]/)
+        .map((fragment) => fragment.trim())
+        .filter((fragment) => KOREAN_SCENE_NOTE_FRAGMENT_PATTERN.test(fragment))
+    );
+    const uniqueSceneNoteFragments = [...new Set(sceneNoteFragments)];
+    if (uniqueSceneNoteFragments.length >= 3) {
       issues.push({
         severity: "warning",
         category: "메모식 장면 체크리스트",
-        description: `작법 메모처럼 보이는 짧은 명사 파편이 본문에 섞였습니다: ${sceneNoteFragments.slice(0, 4).join(" / ")}`,
+        description: `작법 메모처럼 보이는 짧은 명사 파편이 본문에 섞였습니다: ${uniqueSceneNoteFragments.slice(0, 4).join(" / ")}`,
         suggestion: "작법 메모처럼 나누지 말고 손이 닿는 표면, 눈앞 구조, 상대가 물러서거나 무기를 잡는 행동처럼 장면 안 사건으로 흡수하세요.",
       });
     }
@@ -252,6 +285,31 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
       .split(/[.!?。！？\n]/)
       .map((sentence) => sentence.trim())
       .filter((sentence) => sentence.length > 0);
+    const firstSceneAnchorIndex = koreanSentences.findIndex((sentence) =>
+      KOREAN_BROAD_SCENE_ANCHOR_PATTERN.test(sentence)
+    );
+    const openingBodyInventorySentences = koreanSentences.slice(
+      0,
+      firstSceneAnchorIndex >= 0 ? firstSceneAnchorIndex : Math.min(6, koreanSentences.length),
+    );
+    const openingBodyInventoryCategories = KOREAN_OPENING_BODY_INVENTORY_CATEGORIES.filter((category) =>
+      openingBodyInventorySentences.some((sentence) => category.pattern.test(sentence))
+    );
+    const openingBodyInventorySentenceCount = openingBodyInventorySentences.filter((sentence) =>
+      KOREAN_OPENING_BODY_INVENTORY_CATEGORIES.some((category) => category.pattern.test(sentence))
+    ).length;
+    if (
+      openingBodyInventoryCategories.length >= 3
+      && openingBodyInventorySentenceCount >= 3
+      && (firstSceneAnchorIndex === -1 || firstSceneAnchorIndex >= 4)
+    ) {
+      issues.push({
+        severity: "warning",
+        category: "도입부 신체 감각 과밀",
+        description: `공간 앵커가 늦게 나오기 전에 신체 변화와 감각 확인이 자기검사처럼 이어집니다: ${openingBodyInventoryCategories.map((category) => category.label).join(", ")}`,
+        suggestion: "첫 단락 안에서 공간 앵커와 즉시 읽어야 할 위험을 먼저 고정하고, 신체 변화는 현재 선택을 바꾸는 1-2개 증거만 남기세요.",
+      });
+    }
     const stockSensoryMetaphor = koreanSentences.find((sentence) =>
       KOREAN_STOCK_SENSORY_METAPHOR_PATTERNS.some((pattern) => pattern.test(sentence))
     );
@@ -273,6 +331,30 @@ export function analyzeAITells(content: string, language?: AITellLanguage): AITe
         category: "소품 의미 해설",
         description: `소품의 설정이나 의미를 장면 밖에서 바로 해설하는 문장처럼 보입니다: ${propMeaningExposition}`,
         suggestion: "소품의 의미를 설명하지 말고 사용 방식, 실패, 손에 익은 정도, 상대 반응으로 독자가 기능과 위상을 추론하게 하세요.",
+      });
+    }
+
+    const abstractOrderDeclaration = koreanSentences.find((sentence) =>
+      KOREAN_ABSTRACT_ORDER_DECLARATION_PATTERN.test(sentence)
+    );
+    if (abstractOrderDeclaration) {
+      issues.push({
+        severity: "warning",
+        category: "추상 정리문",
+        description: `혼란이나 판단을 추상 명제로 정리하는 문장이 장면을 보고서처럼 만듭니다: ${abstractOrderDeclaration}`,
+        suggestion: "순서나 원칙을 선언하지 말고, 인물이 먼저 무엇을 확인하고 어디로 손을 뻗는지 같은 행동 순서로 장면을 보여 주세요.",
+      });
+    }
+
+    const sceneOutsidePrinciple = koreanSentences.find((sentence) =>
+      KOREAN_SCENE_OUTSIDE_PRINCIPLE_PATTERNS.some((pattern) => pattern.test(sentence))
+    );
+    if (sceneOutsidePrinciple) {
+      issues.push({
+        severity: "warning",
+        category: "장면 밖 원칙 해설",
+        description: `경험, 권력, 전략, 감정의 의미를 장면 밖 원칙문으로 정리해 서술자 논평처럼 보입니다: ${sceneOutsidePrinciple}`,
+        suggestion: "원칙을 선언하지 말고 현재 장면의 자극, 짧은 기억 조각, 인물의 선택, 상대 반응이 이어지게 써서 독자가 원칙을 추론하게 하세요.",
       });
     }
 

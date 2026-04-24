@@ -131,6 +131,29 @@ describe("analyzeAITells", () => {
     expect(checklistIssues[0]!.suggestion).toContain("작법 메모처럼 나누지 말고");
   });
 
+  it("detects compressed Korean scene-note fragments and abstract order declarations", () => {
+    const content = [
+      "몸. 장소. 주변. 탈출구.",
+      "",
+      "혼란을 붙잡을 수 있는 건 순서뿐이었다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "메모식 장면 체크리스트",
+          description: expect.stringContaining("몸 / 장소 / 주변 / 탈출구"),
+        }),
+        expect.objectContaining({
+          category: "추상 정리문",
+          description: expect.stringContaining("혼란을 붙잡을 수 있는 건 순서뿐이었다"),
+        }),
+      ]),
+    );
+  });
+
   it("detects dense Korean adverb stacking", () => {
     const content = [
       "그는 갑자기 빠르게 고개를 들고 조용히 뒤로 물러났다.",
@@ -168,6 +191,76 @@ describe("analyzeAITells", () => {
     expect(sensoryIssues.length).toBeGreaterThan(0);
     expect(sensoryIssues[0]!.description).toContain("쇠 긁는 울림");
     expect(sensoryIssues[0]!.suggestion).toContain("장면 안 원인");
+  });
+
+  it("detects overlong Korean body-sensation inventory before the opening scene anchor", () => {
+    const content = [
+      "검은 돌 의자의 팔걸이를 움켜쥐자 손톱이 먼저 박혔다.",
+      "",
+      "손톱이라기엔 길고 단단했다. 끝이 갈고리처럼 휘어 돌결을 파고들었고, 긁힌 자리에 흰 가루가 얇게 일어났다. 손을 떼려 하자 손등 위로 검푸른 비늘이 접히듯 움직였다.",
+      "",
+      "카르세리온은 숨을 멈췄다.",
+      "",
+      "아니, 숨을 멈추려고 했다. 가슴 안쪽에서 낮은 열이 한 번 끓었다. 목구멍이 타는 듯 말랐고, 혀끝에는 쇠 냄새가 남았다. 방금까지 싸구려 캔커피 맛이 입에 남아 있었는데, 지금은 피와 재를 섞은 맛이 났다.",
+      "",
+      "눈앞에는 홀이 있었다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const openingIssues = result.issues.filter((i) => i.category === "도입부 신체 감각 과밀");
+
+    expect(openingIssues.length).toBeGreaterThan(0);
+    expect(openingIssues[0]!.description).toContain("신체 부위");
+    expect(openingIssues[0]!.description).toContain("변형 증거");
+    expect(openingIssues[0]!.description).toContain("내부 감각");
+    expect(openingIssues[0]!.suggestion).toContain("공간 앵커");
+  });
+
+  it("detects Korean scene-outside principle commentary from remembered expertise", () => {
+    const content = [
+      "그중 가장 앞에 선 거구가 머리를 숙인 채 말했다.",
+      "“폐하. 명만 내려 주십시오.”",
+      "카르세리온은 대답하지 않았다. 대답할 말이 없었다.",
+      "",
+      "예전에 탁자 위 지도와 주사위만으로 사람들을 몰아붙일 때도 그랬다.",
+      "상대가 뭘 기대하는지 먼저 보게 만들면 된다.",
+      "상대가 선택지를 착각하는 순간 판은 움직였다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const principleIssues = result.issues.filter((i) => i.category === "장면 밖 원칙 해설");
+
+    expect(principleIssues.length).toBeGreaterThan(0);
+    expect(principleIssues[0]!.description).toContain("선택지");
+    expect(principleIssues[0]!.description).toContain("판은 움직였다");
+    expect(principleIssues[0]!.suggestion).toContain("짧은 기억 조각");
+  });
+
+  it("detects Korean aphoristic narrator commentary", () => {
+    const content = [
+      "카르세리온은 그 복종이 불편했다. 불편했지만 멈추지 않았다.",
+      "이 판에서 체면을 잃으면 바로 물어뜯긴다.",
+      "오래 버틴 사람은 안다. 권위는 목소리로만 세우는 자리가 아니다. 모두가 그렇게 믿게 만드는 일이다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+    const aphorismIssues = result.issues.filter((i) => i.category === "장면 밖 원칙 해설");
+
+    expect(aphorismIssues.length).toBeGreaterThan(0);
+    expect(aphorismIssues[0]!.description).toContain("사람은 안다");
+    expect(aphorismIssues[0]!.suggestion).toContain("상대 반응");
+  });
+
+  it("does not flag concrete Korean scene reactions as scene-outside principles", () => {
+    const content = [
+      "그 사람은 안다.",
+      "문제는 문이 열리지 않는다는 것이다.",
+      "상대가 대답을 기대하는 순간 손끝이 흔들렸다.",
+    ].join("\n");
+
+    const result = analyzeAITells(content, "ko");
+
+    expect(result.issues.some((i) => i.category === "장면 밖 원칙 해설")).toBe(false);
   });
 
   it("detects Korean one-beat paragraph fragmentation", () => {

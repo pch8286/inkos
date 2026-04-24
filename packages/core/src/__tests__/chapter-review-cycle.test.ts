@@ -260,6 +260,77 @@ describe("runChapterReviewCycle", () => {
     expect(result.revised).toBe(true);
   });
 
+  it("runs one bounded spot-fix pass for Korean scene-note leakage warnings", async () => {
+    const auditChapter = vi.fn()
+      .mockResolvedValueOnce(createAuditResult())
+      .mockResolvedValueOnce(createAuditResult());
+    const reviseChapter = vi.fn().mockResolvedValue({
+      revisedContent: "scene-note-repaired draft",
+      wordCount: 25,
+      fixedIssues: ["absorbed scene notes"],
+      updatedState: "",
+      updatedLedger: "",
+      updatedHooks: "",
+      tokenUsage: ZERO_USAGE,
+    });
+    const normalizeDraftLengthIfNeeded = vi.fn()
+      .mockResolvedValueOnce({
+        content: "몸. 장소. 주변. 탈출구.\n\n혼란을 붙잡을 수 있는 건 순서뿐이었다.",
+        wordCount: 34,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "scene-note-repaired draft",
+        wordCount: 25,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      });
+    const sceneNoteIssue: AuditIssue = {
+      severity: "warning",
+      category: "메모식 장면 체크리스트",
+      description: "작법 메모처럼 보이는 짧은 명사 파편이 본문에 섞였습니다: 몸 / 장소 / 주변 / 탈출구",
+      suggestion: "작법 메모처럼 나누지 말고 장면 안 사건으로 흡수하세요.",
+    };
+
+    const result = await runChapterReviewCycle({
+      book: { genre: "modern-fantasy" },
+      bookDir: "/tmp/book",
+      chapterNumber: 1,
+      initialOutput: {
+        title: "Test Chapter",
+        content: "몸. 장소. 주변. 탈출구.\n\n혼란을 붙잡을 수 있는 건 순서뿐이었다.",
+        wordCount: 34,
+        postWriteErrors: [],
+      },
+      lengthSpec: LENGTH_SPEC,
+      reducedControlInput: undefined,
+      initialUsage: ZERO_USAGE,
+      createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
+      auditor: { auditChapter },
+      normalizeDraftLengthIfNeeded,
+      assertChapterContentNotEmpty: () => undefined,
+      addUsage: (left, right) => ({
+        promptTokens: left.promptTokens + (right?.promptTokens ?? 0),
+        completionTokens: left.completionTokens + (right?.completionTokens ?? 0),
+        totalTokens: left.totalTokens + (right?.totalTokens ?? 0),
+      }),
+      restoreLostAuditIssues: (_previous, next) => next,
+      analyzeAITells: (content) => ({
+        issues: content.includes("몸. 장소") ? [sceneNoteIssue] : [],
+      }),
+      analyzeSensitiveWords: () => ({ found: [] as Array<{ severity: "warn" | "block" }>, issues: [] as AuditIssue[] }),
+      logWarn: () => undefined,
+      logStage: () => undefined,
+    });
+
+    expect(reviseChapter).toHaveBeenCalledTimes(1);
+    expect(reviseChapter.mock.calls[0]?.[3]).toEqual([sceneNoteIssue]);
+    expect(result.finalContent).toBe("scene-note-repaired draft");
+    expect(result.revised).toBe(true);
+  });
+
   it("does not auto-fix non-actionable warnings when no critical issue exists", async () => {
     const reviseChapter = vi.fn();
     const auditChapter = vi.fn().mockResolvedValue(createAuditResult({
@@ -268,7 +339,7 @@ describe("runChapterReviewCycle", () => {
         severity: "warning",
         category: "독자 기대 관리",
         description: "장기 압박이 누적됩니다.",
-        suggestion: "후속 회차에서 해소 타이밍을 조정하세요.",
+        suggestion: "다음 생성 때 공간 앵커를 더 빨리 잡는 정도로 조정하세요.",
       }],
     }));
 

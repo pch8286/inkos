@@ -229,6 +229,8 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("목 안쪽이 긁혔다처럼 몸 안쪽 감각을 쓸 때는 감각의 원인 이미지와 확인 행동");
     expect(prompt).toContain("신체 감각은 원인, 확인 행동, 다음 선택과 이어질 때 가장 자연스럽다");
     expect(prompt).toContain("감각 단어를 나열하기보다 인물이 움직이며 닿고 보고 듣는 순서에 묻어 둔다");
+    expect(prompt).toContain("오프닝에서 공간 앵커와 즉시 읽어야 할 위험이 나오기 전에는 신체 변화나 감각 증거를 목록처럼 길게 검사하지 않는다");
+    expect(prompt).toContain("낯선 몸, 부상, 장비 이상, 상태 변화는 현재 선택을 바꾸는 1-2개 증거만 남긴다");
     expect(prompt).not.toContain("각성/빙의/낯선 몸 장면");
     expect(prompt).toContain("깨달음은 실패한 행동, 다른 인물이 물러서거나 무기를 잡는 장면, 짧은 생각 중 하나로 착지시킨다");
     expect(prompt).toContain("자극 -> 해석 -> 반응 순서를 기본값으로 둔다");
@@ -292,6 +294,15 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("좋은 비트는 구체적 행동, 소리, 즉각적인 짧은 생각으로 닫는다");
     expect(prompt).toContain("작법 메모의 재료명이나 체크 항목을 본문 문장으로 내보내지 않는다");
     expect(prompt).toContain("누가 물러서거나 무기를 잡는 행동처럼 장면 안 사건으로 흡수한다");
+    expect(prompt).toContain("몸 / 장소 / 주변 / 탈출구처럼 장면 설계용 명사를 독립 문장으로 늘어놓지 않는다");
+    expect(prompt).toContain("혼란, 판단, 전략, 감각을 추상 명제로 정리하지 않는다");
+    expect(prompt).toContain("순서나 원칙을 선언하지 말고 실제 확인 행동과 그 결과가 이어지는 순서로 보여 준다");
+    expect(prompt).toContain("과거 경험이나 전문성은 이력 나열이 아니라 현재 장면의 자극이 불러낸 짧은 기억 조각으로 쓴다");
+    expect(prompt).toContain("기억 조각은 장소, 물건, 상대 반응, 실패 결과 중 하나가 있어야 하며 현재 선택을 바로 바꿔야 한다");
+    expect(prompt).toContain("장면 중간에 원칙문이나 격언으로 의미를 정리하지 않는다");
+    expect(prompt).toContain("권력, 전략, 감정, 직업 지식의 의미는 인물의 침묵, 지연, 질문, 명령, 상대 반응이 증명하게 한다");
+    expect(prompt).toContain("전문 지식과 과거 경험은 설명 압축문이 아니라 극화된 증거로 연결한다");
+    expect(prompt).toContain("손으로 적은 문장, 지운 표시, 멈춘 손, 말문이 막힌 상대처럼 한 컷으로 보이는 기억만 현재 판단에 붙인다");
     expect(prompt).toContain("부사가 눈에 띄면 먼저 동사가 약한지 확인한다");
     expect(prompt).toContain("걷는지, 비틀거리는지, 미끄러지는지, 멈춰 서는지처럼 움직임 자체를 바꾼다");
     expect(prompt).toContain("회차 끝을 선언문으로 닫지 않는다");
