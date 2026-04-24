@@ -321,10 +321,10 @@ function buildDimensionNote(
           : "检查番外是否越权回收正传伏笔（warning级别）";
     case 32:
       return language === "en"
-        ? "Check whether the ending renews curiosity, whether promised payoffs are landing on the cadence their hooks imply, whether pressure gets any release, and whether reader expectation gaps are accumulating faster than they are being satisfied."
+        ? "Check whether the chapter shows promise -> progress -> payoff, delivers a micro-reward, and leaves one real unresolved pressure. The ending should renew curiosity without withholding an answer the scene has already settled. Distinguish intentional ambiguity from unclear scene facts."
         : language === "ko"
-          ? "클로징이 독자 호기심을 다시 자극하는지, 약속한 카타르시스가 후크의 템포대로 회수되는지, 압박이 해소되는지, 독자 기대 간극이 누적되는지 확인하세요."
-          : "检查：章尾是否重新点燃好奇心，已经承诺的回收是否按伏笔自身节奏落地，压力是否得到释放，读者期待缺口是在持续累积还是在被满足。";
+          ? "회차 안에 약속 -> 진전 -> 보상/회수가 보이는지, 마이크로 보상이 실제 장면으로 전달되는지, 다음 화로 넘길 압력이 진짜로 남아 있는지 확인하세요. 이미 장면에서 해결된 답을 숨겨 훅처럼 쓰지 않는지 보고, 의도적 모호함과 장면 사실 불명확을 구분하세요."
+          : "检查本章是否呈现 承诺 -> 进展 -> 回收，是否交付一个微回报，并留下真实未解压力。章尾不能靠隐藏场景已经解决的答案制造钩子；区分有意留白和场景事实不清。";
     case 33:
       return language === "en"
         ? "Cross-check volume_outline: does this chapter match the planned beat for the current chapter range? Did it skip planned nodes or consume later nodes too early? Does actual pacing match the planned chapter span? If a beat planned for N chapters is consumed in 1-2 chapters -> critical."
@@ -576,6 +576,7 @@ ${dimList}
 - 이슈는 증상 -> 본문 근거 -> 독자 영향 -> 최소 수정 -> 보존할 부분 순서로 압축해서 쓰세요.
 - 문제 설명에는 증상과 본문 근거만 쓰고, 수정 처방은 suggestion에만 적으세요.
 - 같은 원인을 여러 이슈로 쪼개지 말고, 독자 혼란의 대표 원인 하나만 먼저 제시하세요.
+- 회차 안에 약속 -> 진전 -> 보상/회수의 가시 단계가 있고, 독자가 가져갈 마이크로 보상이 장면으로 전달되는지 확인하세요.
 - 한 화마다 독자 약속은 최소 하나는 진전시킨다. 완전 회수가 어렵다면 약속의 방향과 압력은 반드시 바뀌어야 하고, 같은 약속을 같은 모양으로만 미루지 않는지 확인하세요.
 - 마지막 훅은 이미 답이 정해진 질문을 숨기는 방식으로 만들지 않는다. 다음 화로 넘길 압력은 실제로 남은 선택지, 대가, 충돌에서 나오는지 확인하세요.
 - 권과 소호흡마다 확인 가능한 마일스톤 하나가 있는지 보고, 상태 변화 없이 같은 기능의 장면만 반복되면 표시하세요.
@@ -583,7 +584,7 @@ ${dimList}
 - 각 이슈에는 근거 강도에 따른 신뢰도(높음/중간/낮음)를 함께 적는다.
 - 겉으로 다른 이슈라도 같은 원인에서 나오면 하나로 묶고 중복 보고하지 않는다.
 - 각 비트는 새로운 정보, 감정 방향 전환, 관계 우위 변화 중 하나를 반드시 남긴다.
-- 의도된 모호함은 허용하되 장면 사실은 선명해야 한다. 감정과 의미의 결론은 늦출 수 있어도, 누가 무엇을 했는지는 흐리게 두지 않는다.
+- 의도된 모호함은 허용하되 장면 사실은 선명해야 한다. 의도적 모호함과 장면 사실 불명확을 구분하고, 감정과 의미의 결론은 늦출 수 있어도 누가 무엇을 했는지는 흐리게 두지 않는다.
 - 한 화가 시작 상태 -> 압력 누적 -> 되돌릴 수 없는 새 상태로 닫히는지 확인하세요.
 - 한 비트에서 독자가 스스로 추론해야 할 축이 둘 이상이면, 장소·관계·동기·원인 중 무엇을 고정해야 하는지 표시하세요.
 - 보이는 것과 의미가 어긋나게 배치되었는지 보고, 그 어긋남이 독자에게 읽히는 장면 근거가 있는지 확인하세요.

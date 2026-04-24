@@ -585,6 +585,9 @@ export class PlannerAgent extends BaseAgent {
         "- Open one next-episode question: reveal, threat, decision, deadline, or unresolved pressure.",
         "- Give the protagonist one active choice that changes the situation.",
         "- Attach a cost to that choice: lost option, exposed secret, new enemy, debt, injury, or harder constraint.",
+        "- Include a one-sentence scene spine: who wants what, what blocks it, and what choice changes the scene.",
+        "- Show at least one visible promise -> progress -> payoff step inside the episode, even when the larger hook remains open.",
+        "- After a major reversal, bridge into the next push with reaction -> dilemma -> decision.",
       ].join("\n");
     }
 
@@ -595,6 +598,9 @@ export class PlannerAgent extends BaseAgent {
         "- 다음 화를 여는 질문 1개를 남긴다: 폭로, 위협, 선택, 마감, 미해결 압박 중 하나.",
         "- 주인공의 능동적 선택이 상황을 바꾸게 한다.",
         "- 선택의 대가를 붙인다: 선택지 상실, 비밀 노출, 새 적, 빚, 부상, 더 좁아진 제약 중 하나.",
+        "- 장면 척추 한 문장을 포함한다: 누가 무엇을 원하고, 무엇이 막고, 어떤 선택으로 장면이 바뀌는지.",
+        "- 큰 떡밥이 남아 있어도 회차 안에서 약속 -> 진전 -> 보상/회수 단계가 최소 1번은 눈에 보여야 한다.",
+        "- 큰 반전이나 패배 뒤에는 반응 -> 난점 -> 결정의 다리로 다음 추진력을 만든다.",
       ].join("\n");
     }
 
@@ -604,6 +610,9 @@ export class PlannerAgent extends BaseAgent {
       "- 留下 1 个下一章问题：揭示、威胁、选择、期限或未解压力。",
       "- 让主角做出 1 个主动选择，并改变局面。",
       "- 给这个选择附上代价：失去选项、秘密暴露、新敌人、债务、受伤或更窄的限制。",
+      "- 写出一句场景脊柱：谁想要什么、什么阻挡、以什么选择改变场景。",
+      "- 即使长线伏笔未回收，本章内也至少要有一次可见的承诺 -> 进展 -> 回报。",
+      "- 重大反转或失败之后，用反应 -> 困境 -> 决定衔接到下一次推进。",
     ].join("\n");
   }
 
@@ -648,7 +657,7 @@ export class PlannerAgent extends BaseAgent {
         "- Sequence pressure: narrow or raise the cost of one axis: goal, clock, information asymmetry, space, or power balance.",
         "- Desire/misbelief: separate the protagonist's surface desire from the deeper misbelief or lack, and make choices test that misbelief.",
         "- Promise-progress-payoff ladder: every promise needs visible progress, and payoff should settle that progress rather than merely close a hook.",
-        "- Sequel beat: after each major scene, leave a reaction-reflection-decision beat before moving into the next push.",
+        "- Sequel beat: after each major reversal, leave a reaction-dilemma-decision bridge before moving into the next push.",
         "- Cliffhanger integrity: do not create a final hook by hiding an answer that is already settled; carry over a real option, cost, or conflict.",
         "- Milestones: each volume arc and short arc should leave one checkable state-changing milestone.",
         "- Scene spine: lock each major scene into one sentence first: who wants what, what blocks it, and what choice ends it.",
@@ -675,7 +684,7 @@ export class PlannerAgent extends BaseAgent {
         "- 시퀀스 압력: 목표 축소, 시간 압박, 정보 비대칭, 공간 제약, 권력 균형 중 하나가 더 좁아지거나 비싸져야 한다.",
         "- 심리 엔진: 주인공의 표면적 욕망과 그 아래의 미신념/결핍을 분리해 설계하고, 선택은 그 미신념을 시험하게 한다.",
         "- 약속-진전-회수의 사다리: 새 약속은 구체적 진전으로 보이고, 회수는 그 진전을 결산한다.",
-        "- 후속 비트: 각 장면 뒤에는 반응-성찰-결정의 후속 비트를 남기고 다음 장면으로 넘긴다.",
+        "- 후속 비트: 각 주요 반전 뒤에는 반응-난점-결정의 후속 비트를 남기고 다음 장면으로 넘긴다.",
         "- 마지막 훅은 이미 답이 정해진 질문을 숨기는 방식으로 만들지 않는다. 다음 화로 넘길 압력은 실제로 남은 선택지, 대가, 충돌에서 나온다.",
         "- 권과 소호흡마다 확인 가능한 마일스톤 하나를 세운다. 상태 변화가 남는 사건을 마일스톤으로 삼고, 같은 기능의 장면을 여러 번 소모하지 않는다.",
         "- 장면의 척추를 한 문장으로 먼저 고정한다: 누가 무엇을 원하고, 무엇이 막고, 어떤 선택으로 끝나는지.",
@@ -701,7 +710,7 @@ export class PlannerAgent extends BaseAgent {
       "- 序列压力：目标、时间、信息差、空间限制、权力平衡中至少一项要变得更窄或更昂贵。",
       "- 心理引擎：区分主角表层欲望和更深层的错误信念/缺失，让选择去检验这个错误信念。",
       "- 承诺-进展-回收阶梯：新承诺必须带来可见进展，回收要结算这份进展。",
-      "- 后续拍：每个主要场景之后留下反应-反思-决定，再推入下一场景。",
+      "- 后续拍：每个重大反转之后留下反应-困境-决定，再推入下一场景。",
       "- 结尾钩子不能靠隐藏已经确定的答案制造，必须来自真实剩余的选项、代价或冲突。",
       "- 每个卷线和小弧线都要留下一个可检查的状态变化里程碑，避免重复消耗同一功能的场景。",
       "- 场景脊柱：先用一句话锁定谁想要什么、什么阻挡、以什么选择结束。",

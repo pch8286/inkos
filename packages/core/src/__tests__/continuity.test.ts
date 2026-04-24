@@ -586,6 +586,9 @@ describe("ContinuityAuditor", () => {
       expect(systemPrompt).toContain("검토 차원:");
       expect(systemPrompt).toContain("캐릭터 붕괴 검사");
       expect(systemPrompt).toContain("확인하세요.");
+      expect(systemPrompt).toContain("약속 -> 진전 -> 보상/회수");
+      expect(systemPrompt).toContain("마이크로 보상");
+      expect(systemPrompt).toContain("의도적 모호함과 장면 사실 불명확");
       expect(systemPrompt).not.toContain("Hook Check");
       expect(systemPrompt).not.toContain("伏笔检查");
 

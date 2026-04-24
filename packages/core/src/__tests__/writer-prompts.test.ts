@@ -246,6 +246,8 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("장면의 갈등은 인물의 욕망과 방해가 부딪히는 지점에서 시작한다");
     expect(prompt).toContain("Planner의 회차 계약을 본문으로 구현한다");
     expect(prompt).toContain("작은 보상 1개와 다음 화를 여는 질문 1개");
+    expect(prompt).toContain("보상, 다음 질문, 능동 선택, 대가, 장면 척추, 약속-진전-보상/회수, 반응-난점-결정을 작법 용어가 아니라 사건으로 보이게 쓴다");
+    expect(prompt).toContain("이미 답이 정해진 질문을 숨기는 방식으로 마지막 훅을 만들지 않는다");
     expect(prompt).toContain("장면은 욕망 / 행동 / 변화가 보이게 쓴다");
     expect(prompt).toContain("목표 / 방해 / 전환");
     expect(prompt).toContain("주인공의 능동적 선택과 그 대가");

@@ -1709,6 +1709,9 @@ describe("PlannerAgent", () => {
     expect(intentMarkdown).toContain("다음 화를 여는 질문 1개");
     expect(intentMarkdown).toContain("주인공의 능동적 선택");
     expect(intentMarkdown).toContain("선택의 대가");
+    expect(intentMarkdown).toContain("장면 척추 한 문장");
+    expect(intentMarkdown).toContain("약속 -> 진전 -> 보상/회수");
+    expect(intentMarkdown).toContain("반응 -> 난점 -> 결정");
     expect(intentMarkdown).toContain("## 장면 설계 계약");
     expect(intentMarkdown).toContain("욕망 / 행동 / 변화");
     expect(intentMarkdown).toContain("목표 / 방해 / 전환");
@@ -1719,7 +1722,7 @@ describe("PlannerAgent", () => {
     expect(intentMarkdown).toContain("시퀀스 압력");
     expect(intentMarkdown).toContain("주인공의 표면적 욕망과 그 아래의 미신념/결핍");
     expect(intentMarkdown).toContain("약속-진전-회수의 사다리");
-    expect(intentMarkdown).toContain("각 장면 뒤에는 반응-성찰-결정의 후속 비트");
+    expect(intentMarkdown).toContain("각 주요 반전 뒤에는 반응-난점-결정의 후속 비트");
     expect(intentMarkdown).toContain("마지막 훅은 이미 답이 정해진 질문을 숨기는 방식으로 만들지 않는다");
     expect(intentMarkdown).toContain("권과 소호흡마다 확인 가능한 마일스톤");
     expect(intentMarkdown).toContain("장면의 척추를 한 문장으로 먼저 고정한다");
