@@ -87,11 +87,11 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
-      <aside className={`fixed inset-y-0 left-0 z-50 flex h-full w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-border bg-background/96 backdrop-blur-md select-none transition-transform duration-300 md:static md:z-auto md:w-[260px] md:max-w-none md:translate-x-0 ${
+      <aside className={`studio-sidebar fixed inset-y-0 left-0 z-50 flex h-full w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-border bg-background/96 backdrop-blur-md select-none transition-transform duration-300 md:static md:z-auto md:w-[260px] md:max-w-none md:translate-x-0 ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
       {/* Logo Area */}
-      <div className="flex items-center justify-between px-5 py-6 md:px-6 md:py-8">
+      <div className="studio-sidebar-brand flex items-center justify-between px-5 py-6 md:px-6 md:py-8">
         <button
           onClick={nav.toDashboard}
           className="group flex items-center gap-2 hover:opacity-80 transition-all duration-300"
@@ -115,7 +115,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
       </div>
 
       {/* Main Navigation */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
+      <div className="studio-sidebar-scroll flex-1 overflow-y-auto px-4 py-2 space-y-6">
         {/* Books Section */}
         <div>
           <div className="px-3 mb-3 flex items-center justify-between">
@@ -260,7 +260,7 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
       </div>
 
       {/* Footer / Status Area */}
-      <div className="p-4 border-t border-border bg-secondary/40">
+      <div className="studio-sidebar-footer p-4 border-t border-border bg-secondary/40">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-card border border-border shadow-sm">
           <div className={`w-2 h-2 rounded-full ${daemon?.running ? "studio-status-dot-ok" : "bg-muted-foreground/40"}`} />
           <span className="text-[11px] font-semibold text-foreground/80 uppercase tracking-wider">

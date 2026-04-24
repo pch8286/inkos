@@ -668,6 +668,15 @@ const strings = {
   "reader.manuscriptPage": { zh: "书稿页", en: "Manuscript Page", ko: "원고 페이지" },
   "reader.minRead": { zh: "分钟阅读", en: "min read", ko: "분 읽기" },
   "reader.endOfChapter": { zh: "本章完", en: "End of Chapter", ko: "이 장 끝" },
+  "reader.openFullReader": { zh: "打开完整阅读器", en: "Open Full Reader", ko: "전체 리더 열기" },
+  "reader.editReviewInReader": { zh: "在阅读器中编辑/审核", en: "Edit / Review in Reader", ko: "리더에서 편집/검토" },
+  "reader.feedbackLocalOnly": {
+    zh: "此反馈草稿仅保存在当前界面，若要正式审核请打开完整阅读器。",
+    en: "This feedback draft stays on this screen; open the full reader for saved review actions.",
+    ko: "이 피드백 메모는 현재 화면용 임시 메모입니다. 저장되는 검토 작업은 전체 리더에서 진행하세요.",
+  },
+  "book.workspace": { zh: "书籍工作区", en: "Book Workspace", ko: "북 워크스페이스" },
+  "book.workspace.manuscript": { zh: "书稿", en: "Manuscript", ko: "원고" },
 
   // Daemon Control
   "daemon.title": { zh: "守护进程控制", en: "Daemon Control" },

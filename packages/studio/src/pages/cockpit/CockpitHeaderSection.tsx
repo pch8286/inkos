@@ -1,5 +1,14 @@
 import type { TFunction } from "../../hooks/use-i18n";
-import { BookOpen, FileText, Loader2, MessageSquareText, RefreshCcw } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  FileText,
+  Loader2,
+  MessageSquareText,
+  Play,
+  RefreshCcw,
+  Search,
+} from "lucide-react";
 
 interface Nav {
   readonly toBook: (id: string) => void;
@@ -57,37 +66,67 @@ export function CockpitHeaderSection({
   return (
     <section className="studio-cockpit-console-header">
       <div className="studio-cockpit-console-titlebar">
-        <div className="min-w-0 space-y-3">
-          <div className="inline-flex items-center gap-2 studio-console-eyebrow">
-            <MessageSquareText size={14} />
-            {t("nav.cockpit")}
-          </div>
-
+        <div className="studio-cockpit-console-brand">
+          <span className="studio-cockpit-console-kicker">InkOS Studio / {t("nav.cockpit")}</span>
           <h1 className="studio-cockpit-console-title">{t("cockpit.title")}</h1>
-          <p className="studio-cockpit-console-subtitle">{t("cockpit.subtitle")}</p>
+          <div className="studio-cockpit-console-subtitle">{t("cockpit.subtitle")}</div>
         </div>
 
-        <div className="studio-cockpit-console-context" aria-label={t("cockpit.currentContext")}>
-          <div className="text-[11px] font-bold uppercase text-muted-foreground">
-            {t("cockpit.currentContext")}
+        <div className="studio-cockpit-top-controls">
+          <div className="studio-cockpit-select-chip">
+            <span>Workspace</span>
+            <strong>{selectedBookLabel}</strong>
+            <ChevronDown size={13} />
           </div>
-          <div className="mt-1 truncate text-sm font-semibold text-foreground">{selectedBookLabel}</div>
-          <div className="mt-1 truncate text-xs text-foreground/70">{statusModelLabel}</div>
+          <div className="studio-cockpit-select-chip">
+            <span>Environment</span>
+            <i />
+            <strong>Production</strong>
+            <ChevronDown size={13} />
+          </div>
+          <div className="studio-cockpit-search" aria-label="Search">
+            <Search size={14} />
+            <span>Search</span>
+          </div>
         </div>
       </div>
 
-      <div className="studio-cockpit-console-status-grid">
+      <div className="studio-cockpit-commandline">
+        <div className="studio-cockpit-commandline-input">
+          <MessageSquareText size={15} />
+          <span>&gt;</span>
+          <strong>{statusTargetLabel || selectedBookLabel || t("cockpit.currentContext")}</strong>
+          <span className="studio-cockpit-commandline-muted">{modeLabel} · {statusStageLabel}</span>
+        </div>
+        <button
+          onClick={onRefresh}
+          className={`studio-cockpit-launch-button ${classes.btnPrimary}`}
+        >
+          <Play size={15} />
+          Run
+        </button>
+      </div>
+
+      <div className="studio-cockpit-console-status-grid" aria-label={t("cockpit.currentContext")}>
         <div className="studio-cockpit-console-cell">
-          <span>{t("cockpit.scope")}</span>
+          <span>Model</span>
+          <strong>{statusModelLabel}</strong>
+        </div>
+        <div className="studio-cockpit-console-cell">
+          <span>Agents</span>
+          <strong>4</strong>
+        </div>
+        <div className="studio-cockpit-console-cell">
+          <span>Mode</span>
           <strong>{modeLabel}</strong>
         </div>
         <div className="studio-cockpit-console-cell">
-          <span>{t("cockpit.statusStage")}</span>
+          <span>Max Steps</span>
           <strong>{statusStageLabel}</strong>
         </div>
         <div className="studio-cockpit-console-cell">
-          <span>{t("cockpit.statusTarget")}</span>
-          <strong>{statusTargetLabel}</strong>
+          <span>Context</span>
+          <strong>85%</strong>
         </div>
         <div className="studio-cockpit-console-cell">
           <span>{t("cockpit.selectBook")}</span>

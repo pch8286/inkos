@@ -3,7 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TFunction } from "../hooks/use-i18n";
 import type { BookDetailPayload } from "../shared/contracts";
-import { BookDetail } from "./BookDetail";
+import {
+  BookDetail,
+  getBookWorkspaceRowActionsClassName,
+  getInitialBookWorkspaceReaderView,
+  getInitialBookWorkspaceTab,
+} from "./BookDetail";
 
 const useApiMock = vi.fn();
 const fetchJsonMock = vi.fn();
@@ -99,6 +104,23 @@ const sampleData: BookDetailPayload = {
   activeRun: null,
 };
 
+function mockBookDetailApi(data: BookDetailPayload = sampleData) {
+  useApiMock.mockImplementation((path: string) => ({
+    data: path.includes("/chapters/")
+      ? {
+          chapterNumber: 1,
+          filename: "0001_gate.md",
+          content: "# 입궁\n\n문이 닫혔다.\n\n독자는 첫 장면의 호흡을 바로 확인한다.",
+          language: "ko",
+          readerSettings: data.book.readerSettings,
+        }
+      : data,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }));
+}
+
 describe("BookDetail", () => {
   beforeEach(() => {
     useApiMock.mockReset();
@@ -110,12 +132,7 @@ describe("BookDetail", () => {
   });
 
   it("renders pending blocked structural gate status and chapter soft findings", () => {
-    useApiMock.mockReturnValue({
-      data: sampleData,
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+    mockBookDetailApi();
 
     const html = renderToStaticMarkup(
       createElement(BookDetail, {
@@ -136,8 +153,7 @@ describe("BookDetail", () => {
   });
 
   it("renders episode starter controls above the chapter tools", () => {
-    useApiMock.mockReturnValue({
-      data: {
+    mockBookDetailApi({
         ...sampleData,
         episodeStarter: {
           direction: "첫 화는 선택을 강요받는 장면에서 시작한다.",
@@ -147,10 +163,6 @@ describe("BookDetail", () => {
           exists: true,
           warnings: [],
         },
-      },
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
     });
 
     const html = renderToStaticMarkup(
@@ -170,13 +182,52 @@ describe("BookDetail", () => {
     expect(html).not.toContain("초고 쓰기");
   });
 
+  it("keeps the book workspace reader preview available with mobile as the default view", () => {
+    mockBookDetailApi();
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: { messages: [] },
+      }),
+    );
+
+    expect(getInitialBookWorkspaceTab()).toBe("reader-preview");
+    expect(getInitialBookWorkspaceReaderView()).toBe("mobile");
+    expect(html).toContain("book.workspace.manuscript");
+    expect(html).toContain("reader.preview");
+    expect(html).toContain("reader.mobileView");
+    expect(html).toContain("reader.desktopView");
+    expect(html).toContain("reader.openFullReader");
+    expect(html).toContain("reader.editReviewInReader");
+    expect(html).toContain("reader.feedbackLocalOnly");
+  });
+
+  it("keeps dense chapter row actions visible without requiring hover discovery", () => {
+    expect(getBookWorkspaceRowActionsClassName()).toBe("book-workspace-row-actions");
+    expect(getBookWorkspaceRowActionsClassName()).not.toContain("opacity-0");
+    expect(getBookWorkspaceRowActionsClassName()).not.toContain("group-hover");
+
+    mockBookDetailApi();
+
+    const html = renderToStaticMarkup(
+      createElement(BookDetail, {
+        bookId: "gate-book",
+        nav,
+        theme: "light",
+        t,
+        sse: { messages: [] },
+      }),
+    );
+
+    expect(html).not.toContain("opacity-0 group-hover:opacity-100");
+  });
+
   it("renders a live rework banner when revise activity is running for a rejected chapter", () => {
-    useApiMock.mockReturnValue({
-      data: sampleData,
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+    mockBookDetailApi();
 
     const html = renderToStaticMarkup(
       createElement(BookDetail, {
@@ -201,12 +252,7 @@ describe("BookDetail", () => {
   });
 
   it("disables top-level mutating actions while rework is running", () => {
-    useApiMock.mockReturnValue({
-      data: sampleData,
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+    mockBookDetailApi();
 
     const html = renderToStaticMarkup(
       createElement(BookDetail, {
@@ -228,8 +274,7 @@ describe("BookDetail", () => {
   });
 
   it("renders a live banner from persisted active run state after refresh", () => {
-    useApiMock.mockReturnValue({
-      data: {
+    mockBookDetailApi({
         ...sampleData,
         activeRun: {
           id: "run-1",
@@ -253,10 +298,6 @@ describe("BookDetail", () => {
           elapsedMs: 5400,
           totalChars: 2048,
         },
-      },
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
     });
 
     const html = renderToStaticMarkup(

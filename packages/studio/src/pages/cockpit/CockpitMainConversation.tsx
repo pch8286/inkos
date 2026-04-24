@@ -161,7 +161,15 @@ export function CockpitMainConversation({
 
   return (
     <div className="studio-cockpit-main studio-cockpit-panel rounded-[1.9rem] p-4 md:p-5">
-      <div className="mb-4 space-y-4 border-b border-border/50 pb-4">
+      <div className="mb-3 space-y-3 border-b border-border/50 pb-3">
+        <div className="studio-cockpit-editor-tabs">
+          <span className="is-active">MANUSCRIPT</span>
+          <span>OUTLINE</span>
+          <span>DIFFS</span>
+          <span>REVIEWS</span>
+          <strong>{hasPendingChanges ? t("cockpit.pendingChanges") : status.stage}</strong>
+        </div>
+
         <div className="studio-cockpit-briefing">
           <div className="min-w-0">
             <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
@@ -193,6 +201,10 @@ export function CockpitMainConversation({
       </div>
 
       <div className="flex min-h-[clamp(22rem,50vh,30rem)] flex-col">
+        <div className="studio-cockpit-log-toolbar">
+          <span>WORK LOG</span>
+          <span>{status.latestEvent || composerHint}</span>
+        </div>
         <div
           className="studio-cockpit-log studio-cockpit-work-log min-h-[clamp(12rem,28vh,18rem)] flex-1 space-y-3 overflow-y-auto pr-1"
           role="log"

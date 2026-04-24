@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, relative } from "node:path";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(__dirname, "..");
 const studioRoot = resolve(workspaceRoot, "packages", "studio");
+const studioRequire = createRequire(join(studioRoot, "package.json"));
 const cachePath = join(studioRoot, "node_modules", ".cache", "inkos-studio-client-build.json");
 const requiredOutputs = [
   join(studioRoot, "dist", "index.html"),
@@ -95,7 +97,8 @@ async function main() {
     return;
   }
 
-  execSync("npx vite build", {
+  const viteBin = join(dirname(studioRequire.resolve("vite/package.json")), "bin", "vite.js");
+  execFileSync(process.execPath, [viteBin, "build"], {
     cwd: studioRoot,
     stdio: "inherit",
   });

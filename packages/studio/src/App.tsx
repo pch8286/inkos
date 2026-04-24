@@ -661,7 +661,7 @@ function AppShell({
   }
 
   return (
-    <div className="h-screen bg-background text-foreground flex overflow-hidden font-sans">
+    <div className="studio-shell h-screen bg-background text-foreground flex overflow-hidden font-sans">
       {/* Left Sidebar */}
       <Sidebar
         nav={nav}
@@ -673,9 +673,9 @@ function AppShell({
       />
 
       {/* Center Content */}
-      <div className="flex-1 flex flex-col min-w-0 bg-background/30 backdrop-blur-sm">
+      <div className="studio-content flex-1 flex flex-col min-w-0 bg-background/30 backdrop-blur-sm">
         {/* Header Strip */}
-        <header className="h-14 shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 border-b border-border/40">
+        <header className="studio-topbar h-14 shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 border-b border-border/40">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <button
               type="button"

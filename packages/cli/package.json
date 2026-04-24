@@ -37,7 +37,7 @@
     "prepack": "node ../../scripts/prepare-package-for-publish.mjs",
     "postpack": "node ../../scripts/restore-package-json.mjs",
     "prepublishOnly": "node ../../scripts/verify-no-workspace-protocol.mjs .",
-    "build": "tsc && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
+    "build": "node ../../scripts/build-typescript-package.mjs --config tsconfig.build.json --required dist/index.js --required dist/index.d.ts --chmod dist/index.js",
     "dev": "tsc --watch",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"

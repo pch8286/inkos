@@ -1100,7 +1100,7 @@ export function Cockpit({
     : null;
 
   return (
-    <div className="space-y-6 fade-in">
+    <div className="studio-cockpit-page space-y-6 fade-in">
       <CockpitHeaderSection
         t={t}
         nav={nav}

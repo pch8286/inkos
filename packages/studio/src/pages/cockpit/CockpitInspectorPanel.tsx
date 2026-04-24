@@ -529,7 +529,20 @@ export function CockpitInspectorPanel({
 
   return (
     <aside className="studio-cockpit-right studio-cockpit-rail xl:pr-1">
-      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+      <div className="studio-cockpit-panel rounded-lg p-3">
+        <div className="studio-cockpit-system-health">
+          <div className="studio-cockpit-system-heading">
+            <span>SYSTEM HEALTH</span>
+            <strong>Operational</strong>
+          </div>
+          <div className="studio-cockpit-system-dots">
+            <span>API<i /></span>
+            <span>DB<i /></span>
+            <span>Vector<i /></span>
+            <span>Queue<i /></span>
+          </div>
+        </div>
+
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
@@ -544,7 +557,7 @@ export function CockpitInspectorPanel({
           ) : null}
         </div>
 
-        <div className="mb-4 rounded-[1.25rem] border border-border/50 bg-background/70 px-4 py-3">
+        <div className="mb-4 rounded-md border border-border/50 bg-background/70 px-3 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             {t("cockpit.setupTitle")}
           </div>

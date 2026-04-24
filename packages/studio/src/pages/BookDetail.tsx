@@ -5,6 +5,7 @@ import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-activity";
+import { ChapterReaderPreviewFrame } from "./ChapterReader";
 import {
   ChapterRejectDialog,
   summarizeChapterRejectionInstructions,
@@ -16,6 +17,7 @@ import { localizeChapterTitle } from "../shared/chapter-title";
 import { resolveStudioLanguage } from "../shared/language";
 import { pickValidValue, platformLabelForLanguage, platformOptionsForLanguage } from "../shared/book-create-form";
 import type { BookDetailPayload, ChapterRejectionExecutionMode, ChapterRejectionInstruction } from "../shared/contracts";
+import type { ReaderDeviceScope } from "../shared/reader-settings";
 import {
   ChevronLeft,
   Zap,
@@ -35,7 +37,11 @@ import {
   Trash2,
   Save,
   AlertTriangle,
-  ClipboardList
+  ClipboardList,
+  Monitor,
+  Smartphone,
+  ExternalLink,
+  Pencil
 } from "lucide-react";
 
 type ChapterMeta = BookDetailPayload["chapters"][number];
@@ -43,6 +49,15 @@ type ChapterMeta = BookDetailPayload["chapters"][number];
 type ReviseMode = "spot-fix" | "polish" | "rewrite" | "rework" | "anti-detect";
 type ExportFormat = "txt" | "md" | "epub";
 type BookStatus = "active" | "paused" | "outlining" | "completed" | "dropped";
+type BookWorkspaceTab = "manuscript" | "reader-preview";
+
+interface BookWorkspaceChapterPreview {
+  readonly chapterNumber: number;
+  readonly filename: string;
+  readonly content: string;
+  readonly language?: "ko" | "zh" | "en";
+  readonly readerSettings?: BookDetailPayload["book"]["readerSettings"];
+}
 
 interface EpisodeStarterDraft {
   readonly direction: string;
@@ -157,6 +172,18 @@ function summarizeEpisodeStarterWarnings(warnings: ReadonlyArray<string>, langua
   return warnings.map((warning) => episodeStarterWarningLabel(warning, language)).join("\n");
 }
 
+export function getInitialBookWorkspaceReaderView(): ReaderDeviceScope {
+  return "mobile";
+}
+
+export function getInitialBookWorkspaceTab(): BookWorkspaceTab {
+  return "reader-preview";
+}
+
+export function getBookWorkspaceRowActionsClassName(): string {
+  return "book-workspace-row-actions";
+}
+
 function collectLocalEpisodeStarterWarnings(draft: EpisodeStarterDraft): string[] {
   const warnings = new Set<string>();
   const contiLines = draft.conti.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
@@ -216,6 +243,16 @@ export function BookDetail({
   const [starterAvoid, setStarterAvoid] = useState(data?.episodeStarter?.avoid ?? "");
   const [starterWarnings, setStarterWarnings] = useState<ReadonlyArray<string>>(data?.episodeStarter?.warnings ?? []);
   const [savingStarter, setSavingStarter] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<BookWorkspaceTab>(getInitialBookWorkspaceTab());
+  const [readerViewMode, setReaderViewMode] = useState<ReaderDeviceScope>(getInitialBookWorkspaceReaderView());
+  const [previewChapterNumber, setPreviewChapterNumber] = useState<number | null>(null);
+  const selectedPreviewChapterNumber = previewChapterNumber ?? data?.chapters.at(-1)?.number ?? null;
+  const previewChapterPath = selectedPreviewChapterNumber ? `/books/${bookId}/chapters/${selectedPreviewChapterNumber}` : "";
+  const {
+    data: previewChapter,
+    loading: previewChapterLoading,
+    error: previewChapterError,
+  } = useApi<BookWorkspaceChapterPreview>(previewChapterPath);
   const activity = useMemo(
     () => deriveBookActivity(sse.messages, bookId, data?.activeRun),
     [bookId, data?.activeRun, sse.messages],
@@ -265,6 +302,19 @@ export function BookDetail({
     setStarterAvoid(data.episodeStarter.avoid);
     setStarterWarnings(data.episodeStarter.warnings);
   }, [data?.episodeStarter]);
+
+  useEffect(() => {
+    const chapters = data?.chapters ?? [];
+    if (chapters.length === 0) {
+      setPreviewChapterNumber(null);
+      return;
+    }
+    setPreviewChapterNumber((current) => (
+      current && chapters.some((chapter) => chapter.number === current)
+        ? current
+        : chapters[chapters.length - 1]?.number ?? null
+    ));
+  }, [data?.chapters]);
 
   const currentEpisodeStarterDraft = (): EpisodeStarterDraft => ({
     direction: starterDirection.trim(),
@@ -586,6 +636,10 @@ export function BookDetail({
   ]);
 
   const exportHref = `/api/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
+  const openPreviewChapterInReader = () => {
+    if (selectedPreviewChapterNumber === null) return;
+    nav.toChapter(bookId, selectedPreviewChapterNumber);
+  };
 
   return (
     <div className="space-y-8 fade-in">
@@ -733,6 +787,141 @@ export function BookDetail({
       <div className={`rounded-2xl border px-4 py-3 text-sm ${c.info}`}>
         {t("book.actionGuide")}
       </div>
+
+      <section className="book-workspace-console rounded-2xl border border-border/40 bg-background/80 p-3 shadow-sm">
+        <div className="book-workspace-tabbar" role="tablist" aria-label={t("book.workspace")}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={workspaceTab === "manuscript"}
+            onClick={() => setWorkspaceTab("manuscript")}
+            className={workspaceTab === "manuscript" ? "is-active" : ""}
+          >
+            {t("book.workspace.manuscript")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={workspaceTab === "reader-preview"}
+            onClick={() => setWorkspaceTab("reader-preview")}
+            className={workspaceTab === "reader-preview" ? "is-active" : ""}
+          >
+            {t("reader.preview")}
+          </button>
+
+          <div className="book-workspace-reader-toggle" aria-label={t("reader.preview")}>
+            <button
+              type="button"
+              aria-pressed={readerViewMode === "mobile"}
+              onClick={() => setReaderViewMode("mobile")}
+              className={readerViewMode === "mobile" ? "is-active" : ""}
+            >
+              <Smartphone size={14} />
+              {t("reader.mobileView")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={readerViewMode === "desktop"}
+              onClick={() => setReaderViewMode("desktop")}
+              className={readerViewMode === "desktop" ? "is-active" : ""}
+            >
+              <Monitor size={14} />
+              {t("reader.desktopView")}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="book-workspace-preview-grid" hidden={workspaceTab !== "reader-preview"}>
+          <div className="book-workspace-preview-main rounded-2xl border border-border/40 bg-background/80 p-4">
+            <div className="mb-4 grid gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {t("reader.preview")}
+                </div>
+                <h2 className="mt-1 text-xl font-semibold text-foreground">
+                  {readerViewMode === "mobile" ? t("reader.mobileView") : t("reader.desktopView")}
+                </h2>
+              </div>
+              <div className="book-workspace-preview-actions">
+                <select
+                  value={selectedPreviewChapterNumber ?? ""}
+                  onChange={(event) => setPreviewChapterNumber(Number(event.target.value) || null)}
+                  className="rounded-lg border border-border/50 bg-secondary/30 px-3 py-2 text-sm font-semibold outline-none"
+                >
+                  {chapters.map((chapter) => (
+                    <option key={chapter.number} value={chapter.number}>
+                      {localizeChapterTitle(chapter.title, chapter.number, data.book.language as "ko" | "zh" | "en" | undefined)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={openPreviewChapterInReader}
+                  disabled={selectedPreviewChapterNumber === null}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm font-bold text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ExternalLink size={14} />
+                  {t("reader.openFullReader")}
+                </button>
+                <button
+                  type="button"
+                  onClick={openPreviewChapterInReader}
+                  disabled={selectedPreviewChapterNumber === null}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-secondary/50 px-3 py-2 text-sm font-bold text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil size={14} />
+                  {t("reader.editReviewInReader")}
+                </button>
+              </div>
+            </div>
+
+            {previewChapterLoading ? (
+              <div className="flex min-h-[28rem] items-center justify-center text-sm text-muted-foreground">
+                {t("reader.openingManuscript")}
+              </div>
+            ) : previewChapterError ? (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+                {previewChapterError}
+              </div>
+            ) : previewChapter ? (
+              <ChapterReaderPreviewFrame
+                chapter={previewChapter}
+                viewMode={readerViewMode}
+                showReaderSettings={false}
+                t={t}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
+                {t("book.noChapters")}
+              </div>
+            )}
+          </div>
+
+          <aside className="book-workspace-feedback rounded-2xl border border-border/40 bg-background/80 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              Reader Feedback
+            </div>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">Mobile-first pass</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              모바일 기본 보기에서 문단 밀도, 첫 화면 훅, 줄바꿈, 다음 화 클릭 욕구를 확인합니다.
+            </p>
+            <p className="book-workspace-feedback-note">
+              {t("reader.feedbackLocalOnly")}
+            </p>
+            <textarea
+              className="mt-4 min-h-44 w-full resize-y rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
+              placeholder="독자 체험 메모..."
+            />
+            <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">첫 화면에서 갈등이 보이는가?</span>
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">모바일 문단 길이가 부담스럽지 않은가?</span>
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">마지막 문단이 다음 화를 당기는가?</span>
+            </div>
+          </aside>
+      </section>
+
+      <div hidden={workspaceTab !== "manuscript"}>
 
       <section className="rounded-2xl border border-border/40 bg-background/80 p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1038,7 +1227,7 @@ export function BookDetail({
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className={getBookWorkspaceRowActionsClassName()}>
                       {ch.status === "ready-for-review" && (
                         <>
                           <button
@@ -1150,6 +1339,8 @@ export function BookDetail({
             </p>
           </div>
         )}
+      </div>
+
       </div>
 
       <ConfirmDialog

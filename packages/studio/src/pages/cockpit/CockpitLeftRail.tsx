@@ -76,14 +76,14 @@ export function CockpitLeftRail({
   makeTruthPreview,
 }: CockpitLeftRailProps) {
   return (
-    <aside className="studio-cockpit-left studio-cockpit-rail space-y-4 xl:pr-1">
-      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+    <aside className="studio-cockpit-left studio-cockpit-rail space-y-2 xl:pr-1">
+      <div className="studio-cockpit-panel rounded-lg p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
             <BookOpen size={14} />
             {t("cockpit.selectBook")}
           </div>
-          <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+          <span className="rounded-md studio-badge-soft px-2 py-1 text-[10px] font-semibold">
             {books.length}
           </span>
         </div>
@@ -91,7 +91,7 @@ export function CockpitLeftRail({
           <button
             type="button"
             onClick={onNewSetup}
-            className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
+            className={`w-full rounded-md px-3 py-2 text-left text-sm transition-all ${
               showNewSetup
                 ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
                 : "studio-chip studio-surface-hover"
@@ -108,7 +108,7 @@ export function CockpitLeftRail({
               key={book.id}
             type="button"
             onClick={() => onSelectBook(book.id)}
-            className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
+              className={`w-full rounded-md px-3 py-2 text-left text-sm transition-all ${
               !showNewSetup && selectedBookId === book.id
                   ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
                   : "studio-chip studio-surface-hover"
@@ -123,7 +123,7 @@ export function CockpitLeftRail({
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {book.chaptersWritten > 0 ? (
-                    <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+                    <span className="rounded-md studio-badge-soft px-2 py-1 text-[10px] font-semibold">
                       {book.chaptersWritten}
                     </span>
                   ) : null}
@@ -137,7 +137,7 @@ export function CockpitLeftRail({
         </div>
       </div>
 
-      <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+      <div className="studio-cockpit-panel rounded-lg p-3">
         <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
           <MessageSquareText size={14} />
           {t("cockpit.scope")}
@@ -164,19 +164,19 @@ export function CockpitLeftRail({
             onClick={() => onModeChange("draft")}
           />
         </div>
-        <div className="mt-3 rounded-xl border border-border/50 bg-background/72 px-3 py-3 text-xs leading-6 text-muted-foreground">
+        <div className="mt-3 rounded-md border border-border/50 bg-background/72 px-3 py-2 text-xs leading-5 text-muted-foreground">
           {t("cockpit.commandHint")}
         </div>
       </div>
 
       {railVisibility.showTruthList && selectedBookId && truthFiles.length > 0 ? (
-        <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+        <div className="studio-cockpit-panel rounded-lg p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
               <FileText size={14} />
               {t("cockpit.selectedTruth")}
             </div>
-            <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+            <span className="rounded-md studio-badge-soft px-2 py-1 text-[10px] font-semibold">
               {truthFiles.length}
             </span>
           </div>
@@ -186,7 +186,7 @@ export function CockpitLeftRail({
                 key={file.name}
                 type="button"
                 onClick={() => onSelectTruthFile(file.name)}
-                className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
+                className={`w-full rounded-md px-3 py-2 text-left text-sm transition-all ${
                   selectedTruthFile === file.name
                     ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
                     : "studio-chip studio-surface-hover"
@@ -206,13 +206,13 @@ export function CockpitLeftRail({
       ) : null}
 
       {railVisibility.showChapterList && selectedBookId && chapterItems.length > 0 ? (
-        <div className="studio-cockpit-panel rounded-[1.6rem] p-4">
+        <div className="studio-cockpit-panel rounded-lg p-3">
           <div className="mb-3 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
             <div className="flex items-center gap-2">
               <BookOpen size={14} />
               {referenceChapterLabel}
             </div>
-            <span className="rounded-full studio-badge-soft px-2 py-1 text-[10px] font-semibold">
+            <span className="rounded-md studio-badge-soft px-2 py-1 text-[10px] font-semibold">
               {chapterItems.length}
             </span>
           </div>
@@ -222,7 +222,7 @@ export function CockpitLeftRail({
                 key={chapter.number}
                 type="button"
                 onClick={() => onSelectChapter(chapter.number)}
-                className={`w-full rounded-xl px-3 py-3 text-left text-sm transition-all ${
+                className={`w-full rounded-md px-3 py-2 text-left text-sm transition-all ${
                   selectedChapterNumber === chapter.number
                     ? "studio-chip-accent studio-surface-active text-foreground font-semibold"
                     : "studio-chip studio-surface-hover"

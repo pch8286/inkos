@@ -38,7 +38,7 @@
     "prepack": "node ../../scripts/prepare-package-for-publish.mjs",
     "postpack": "node ../../scripts/restore-package-json.mjs",
     "prepublishOnly": "node ../../scripts/verify-no-workspace-protocol.mjs .",
-    "build": "tsc",
+    "build": "node ../../scripts/build-typescript-package.mjs --config tsconfig.build.json --required dist/index.js --required dist/index.d.ts",
     "dev": "tsc --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
