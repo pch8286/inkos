@@ -129,6 +129,8 @@ function buildGovernedInputContract(language: WritingLanguage, governed: boolean
 - When the runtime rule stack records an active L4 -> L3 override, follow the current task over local planning.
 - Keep hard guardrails compact: canon, continuity facts, and explicit prohibitions still win.
 - If an English Variance Brief is provided, obey it: avoid the listed phrase/opening/ending patterns and satisfy the scene obligation.
+- Implement the Planner's episode contract as prose: reward, next question, active choice, cost, scene spine, promise-progress-payoff, and reaction-dilemma-decision must appear as events, not planning terms.
+- The final hook must come from a real remaining option, cost, or conflict, not from withholding an answer the scene has already settled.
 - If Hook Debt Briefs are provided, they contain the ORIGINAL SEED TEXT from the chapter where each hook was planted. Use this text to write a continuation or payoff that feels connected to what the reader already saw — not a vague mention, but a scene that builds on the specific promise.
 - When the explicit hook agenda names an eligible resolve target, land a concrete payoff beat that answers the reader's original question from the seed chapter.
 - When stale debt is present, do not open sibling hooks casually; clear pressure from old promises before minting fresh debt.
@@ -142,6 +144,8 @@ function buildGovernedInputContract(language: WritingLanguage, governed: boolean
 - 권차 개요는 기본 계획으로 활용하고, 현재 작업 의도에 맞게 조정한다.
 - runtime rule stack 에 L4 -> L3 active override 가 기록돼 있으면 현재 작업 의도를 중심에 두고, 계획은 그 범위 안에서 정렬한다.
 - 세계관 설정, 연속성 사실, 명시적 금지사항 같은 하드 가드레일을 우선 적용한다.
+- Planner의 회차 계약을 본문으로 구현한다. 보상, 다음 질문, 능동 선택, 대가, 장면 척추, 약속-진전-보상/회수, 반응-난점-결정을 작법 용어가 아니라 사건으로 보이게 쓴다.
+- 이미 답이 정해진 질문을 숨기는 방식으로 마지막 훅을 만들지 않는다. 마지막 압력은 실제로 남은 선택지, 대가, 충돌에서 나오게 한다.
 - Hook Debt 브리프가 있으면 씨앗이 심긴 원문 장면을 바탕으로 후속 장면이나 회수 장면을 구체적으로 써서, 독자가 이미 본 약속을 자연스럽게 이어 준다.
 - 명시적 hook agenda 에 회수 가능한 대상이 있으면 이번 화 안에 독자의 질문에 답하는 구체적 보상 장면을 배치한다.
 - 오래된 hook debt 가 남아 있으면 기존 약속의 압박을 먼저 해소하고, 그 흐름 위에서 새 떡밥을 운용한다.
@@ -155,6 +159,8 @@ function buildGovernedInputContract(language: WritingLanguage, governed: boolean
 - 当 runtime rule stack 明确记录了 L4 -> L3 的 active override 时，优先执行当前任务意图，再局部调整规划层。
 - 真正不能突破的只有硬护栏：世界设定、连续性事实、显式禁令。
 - 如果提供了 English Variance Brief，必须主动避开其中列出的高频短语、重复开头和重复结尾模式，并完成 scene obligation。
+- 把 Planner 的单章契约写成正文事件：回报、下一章问题、主动选择、代价、场景脊柱、承诺-进展-回报、反应-困境-决定都必须发生在场景里，不要露出规划术语。
+- 章尾钩子必须来自真实剩余的选项、代价或冲突，不能靠隐藏已经被场景解决的答案来制造悬念。
 - 如果提供了 Hook Debt 简报，里面包含每个伏笔种下时的**原始文本片段**。用这些原文来写延续或兑现场景——不是模糊地提一嘴，而是接着读者已经看到的具体承诺来写。
 - 如果显式 hook agenda 里出现了可回收目标，本章必须写出具体兑现片段，回答种子章节中读者的原始疑问。
 - 如果存在 stale debt，先消化旧承诺的压力，再决定是否开新坑；同类 sibling hook 不得随手再开。
