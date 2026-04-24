@@ -217,12 +217,14 @@ export function Cockpit({
   t,
   sse,
   initialBookId,
+  forceNewSetup = false,
 }: {
   readonly nav: Nav;
   readonly theme: Theme;
   readonly t: TFunction;
   readonly sse: { messages: ReadonlyArray<SSEMessage> };
   readonly initialBookId?: string;
+  readonly forceNewSetup?: boolean;
 }) {
   const c = useColors(theme);
   const { data: booksData, loading: booksLoading, error: booksError, refetch: refetchBooks } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
@@ -233,15 +235,15 @@ export function Cockpit({
   const { data: createStatusData, refetch: refetchCreateStatus } = useApi<{ entries: ReadonlyArray<BookCreateJob> }>("/book-create-status");
 
   const [mode, setMode] = useState<CockpitMode>("discuss");
-  const [selectedBookId, setSelectedBookId] = useState(initialBookId ?? "");
+  const [selectedBookId, setSelectedBookId] = useState(forceNewSetup ? "" : initialBookId ?? "");
   const [selectedTruthFile, setSelectedTruthFile] = useState("");
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
-  const [showNewSetup, setShowNewSetup] = useState(!initialBookId);
+  const [showNewSetup, setShowNewSetup] = useState(forceNewSetup || !initialBookId);
   const [input, setInput] = useState("");
   const [draftInputByThread, setDraftInputByThread] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>(!initialBookId ? "setup" : "focus");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>(forceNewSetup || !initialBookId ? "setup" : "focus");
   const [queuedComposerEntries, setQueuedComposerEntries] = useState<CockpitComposerQueueState>({});
   const [cockpitPersistenceHydrated, setCockpitPersistenceHydrated] = useState(false);
   const queuedComposerEntriesRef = useRef<CockpitComposerQueueState>({});
@@ -461,40 +463,59 @@ export function Cockpit({
         return;
       }
 
+      const restoredThreads = { ...(payload.threads ?? {}) };
+      const restoredProposals = { ...(payload.proposals ?? {}) };
+      const restoredQueue = { ...(payload.queuedComposerEntries ?? {}) };
+      const restoredDraftInput = { ...(payload.draftInputByThread ?? {}) };
+      if (forceNewSetup) {
+        delete restoredThreads[setupThreadKey];
+        delete restoredProposals[setupThreadKey];
+        delete restoredQueue[setupThreadKey];
+        delete restoredDraftInput[setupThreadKey];
+      }
+
       hydrateConversationState({
-        threads: { ...(payload.threads ?? {}) },
-        proposals: { ...(payload.proposals ?? {}) },
+        threads: restoredThreads,
+        proposals: restoredProposals,
       });
 
-      const restoredQueue = payload.queuedComposerEntries ?? {};
       queuedComposerEntriesRef.current = restoredQueue;
       setQueuedComposerEntries(restoredQueue);
-      setDraftInputByThread({ ...(payload.draftInputByThread ?? {}) });
+      setDraftInputByThread(restoredDraftInput);
 
       const restoredContext = payload.uiContext;
-      if (!initialBookId && typeof restoredContext.selectedBookId === "string") {
+      if (!forceNewSetup && !initialBookId && typeof restoredContext.selectedBookId === "string") {
         setSelectedBookId(restoredContext.selectedBookId);
       }
-      if (restoredContext.mode === "discuss" || restoredContext.mode === "binder" || restoredContext.mode === "draft") {
+      if (!forceNewSetup && (restoredContext.mode === "discuss" || restoredContext.mode === "binder" || restoredContext.mode === "draft")) {
         setMode(restoredContext.mode);
       }
-      if (typeof restoredContext.selectedTruthFile === "string") {
+      if (!forceNewSetup && typeof restoredContext.selectedTruthFile === "string") {
         setSelectedTruthFile(restoredContext.selectedTruthFile);
       }
-      if (typeof restoredContext.selectedChapterNumber === "number" || restoredContext.selectedChapterNumber === null) {
+      if (!forceNewSetup && (typeof restoredContext.selectedChapterNumber === "number" || restoredContext.selectedChapterNumber === null)) {
         setSelectedChapterNumber(restoredContext.selectedChapterNumber);
       }
-      setShowNewSetup(initialBookId ? false : Boolean(restoredContext.showNewSetup));
-      if (
+      if (forceNewSetup) {
+        setMode("discuss");
+        setSelectedBookId("");
+        setSelectedTruthFile("");
+        setSelectedChapterNumber(null);
+        setShowNewSetup(true);
+        setInspectorTab("setup");
+      } else {
+        setShowNewSetup(initialBookId ? false : Boolean(restoredContext.showNewSetup));
+      }
+      if (!forceNewSetup && (
         restoredContext.inspectorTab === "focus"
         || restoredContext.inspectorTab === "changes"
         || restoredContext.inspectorTab === "setup"
         || restoredContext.inspectorTab === "activity"
-      ) {
+      )) {
         setInspectorTab(restoredContext.inspectorTab);
       }
 
-      if (payload.setupDraft) {
+      if (!forceNewSetup && payload.setupDraft) {
         setSetupTitle(payload.setupDraft.title);
         setSetupGenre(payload.setupDraft.genre);
         setSetupPlatform(payload.setupDraft.platform);
@@ -517,6 +538,7 @@ export function Cockpit({
       cancelled = true;
     };
   }, [
+    forceNewSetup,
     hydrateConversationState,
     initialBookId,
     setSelectedFoundationPreviewKey,

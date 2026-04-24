@@ -656,90 +656,6 @@ h3 { font-size: 1.25rem; }
   line-height: 1.35;
 }
 
-.studio-cockpit-hero {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--border) 54%, transparent);
-  border-radius: 1.8rem;
-  padding: 1.1rem;
-  background: color-mix(in oklch, var(--card) 72%, transparent);
-  box-shadow: 0 24px 60px -34px color-mix(in oklch, var(--foreground) 22%, transparent);
-}
-
-.studio-cockpit-hero-media,
-.studio-cockpit-hero-scrim {
-  position: absolute;
-  inset: 0;
-}
-
-.studio-cockpit-hero-media {
-  opacity: 0.28;
-}
-
-.studio-cockpit-hero-media img {
-  transform: scale(1.04);
-  filter: saturate(0.88) contrast(0.96);
-}
-
-.studio-cockpit-hero-scrim {
-  background:
-    linear-gradient(180deg, color-mix(in oklch, var(--background) 14%, transparent), color-mix(in oklch, var(--card) 82%, transparent) 48%, color-mix(in oklch, var(--card) 96%, transparent)),
-    radial-gradient(circle at top center, color-mix(in oklch, var(--studio-cta-end) 22%, transparent), transparent 56%),
-    linear-gradient(120deg, color-mix(in oklch, var(--primary) 16%, transparent), transparent 45%);
-}
-
-.studio-cockpit-hero-grid {
-  position: relative;
-  display: grid;
-  gap: 1rem;
-  align-items: end;
-}
-
-.studio-cockpit-hero-card {
-  padding: 1rem 1.05rem;
-  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
-  border-radius: 1.35rem;
-  background: color-mix(in oklch, var(--background) 76%, transparent);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 12px 28px -24px color-mix(in oklch, var(--foreground) 26%, transparent);
-}
-
-.studio-cockpit-hero-kpis {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-}
-
-.studio-cockpit-kpi {
-  min-width: 0;
-  padding: 0.8rem 0.95rem;
-  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
-  border-radius: 1.15rem;
-  background: color-mix(in oklch, var(--background) 74%, transparent);
-  backdrop-filter: blur(12px);
-}
-
-.studio-cockpit-kpi span {
-  display: block;
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1.4;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.studio-cockpit-kpi strong {
-  display: block;
-  margin-top: 0.35rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.97rem;
-  font-weight: 700;
-  color: var(--foreground);
-}
-
 .studio-cockpit-rail {
   position: static;
   top: auto;
@@ -1084,7 +1000,6 @@ h3 { font-size: 1.25rem; }
 }
 
 @media (min-width: 1024px) {
-  .studio-cockpit-hero-grid,
   .studio-cockpit-briefing {
     grid-template-columns: minmax(0, 1.45fr) minmax(18rem, 0.8fr);
   }

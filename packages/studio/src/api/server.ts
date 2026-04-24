@@ -6214,12 +6214,20 @@ export async function startStudioServer(
       }
     });
 
+    const isCockpitShellPath = (requestPath: string): boolean => {
+      if (requestPath === "/api" || requestPath.startsWith("/api/")) return false;
+      const normalizedPath = requestPath.replace(/\/+$/u, "") || "/";
+      return normalizedPath === "/cockpit" || normalizedPath.endsWith("/cockpit");
+    };
+
     const studioIndexPath = joinPath(options.staticDir!, "index.html");
     const cockpitIndexPath = joinPath(options.staticDir!, "cockpit", "index.html");
+    let cockpitIndexHtml: string | null = null;
     if (existsSync(cockpitIndexPath)) {
-      const cockpitIndexHtml = await readFileFs(cockpitIndexPath, "utf-8");
-      app.get("/cockpit", (c) => c.html(cockpitIndexHtml));
-      app.get("/cockpit/", (c) => c.html(cockpitIndexHtml));
+      const cockpitHtml = await readFileFs(cockpitIndexPath, "utf-8");
+      cockpitIndexHtml = cockpitHtml;
+      app.get("/cockpit", (c) => c.html(cockpitHtml));
+      app.get("/cockpit/", (c) => c.html(cockpitHtml));
     }
 
     // SPA fallback — serve the Studio root shell for all other non-API routes.
@@ -6227,6 +6235,7 @@ export async function startStudioServer(
       const studioIndexHtml = await readFileFs(studioIndexPath, "utf-8");
       app.get("*", (c) => {
         if (c.req.path === "/api" || c.req.path.startsWith("/api/")) return c.notFound();
+        if (cockpitIndexHtml && isCockpitShellPath(c.req.path)) return c.html(cockpitIndexHtml);
         return c.html(studioIndexHtml);
       });
     }

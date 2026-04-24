@@ -6,7 +6,7 @@ import { useSSE } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { postApi, useApi } from "./hooks/use-api";
-import { buildStudioEntrypointUrl } from "./shared/cockpit-entrypoint";
+import { buildStudioEntrypointUrl, resolveCockpitStartupFromSearch } from "./shared/cockpit-entrypoint";
 import type { BootstrapSummary } from "./shared/contracts";
 
 interface Nav {
@@ -14,10 +14,6 @@ interface Nav {
   readonly toBook: (bookId: string) => void;
   readonly toTruth: (bookId: string) => void;
   readonly toBookCreate?: () => void;
-}
-
-function resolveBookIdFromSearch(search: string): string | undefined {
-  return new URLSearchParams(search).get("bookId")?.trim() || undefined;
 }
 
 function navigateToStudioPage(
@@ -49,8 +45,10 @@ export function CockpitStandaloneApp() {
   }>("/project");
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
-  const initialBookId = useMemo(
-    () => (typeof window === "undefined" ? undefined : resolveBookIdFromSearch(window.location.search)),
+  const startup = useMemo(
+    () => (typeof window === "undefined"
+      ? { initialBookId: undefined, forceNewSetup: false }
+      : resolveCockpitStartupFromSearch(window.location.search)),
     [],
   );
 
@@ -143,7 +141,8 @@ export function CockpitStandaloneApp() {
       theme={theme}
       t={t}
       sse={sse}
-      initialBookId={initialBookId}
+      initialBookId={startup.initialBookId}
+      forceNewSetup={startup.forceNewSetup}
     />
   );
 }

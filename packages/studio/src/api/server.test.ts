@@ -5084,6 +5084,10 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(cockpitTrailingSlashResponse.status).toBe(200);
     await expect(cockpitTrailingSlashResponse.text()).resolves.toContain("cockpit-shell");
 
+    const mountedCockpitResponse = await request("/tenant-a/cockpit/");
+    expect(mountedCockpitResponse.status).toBe(200);
+    await expect(mountedCockpitResponse.text()).resolves.toContain("cockpit-shell");
+
     const apiRootResponse = await request("/api");
     expect(apiRootResponse.status).toBe(404);
   });

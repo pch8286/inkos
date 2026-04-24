@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveCockpitStartupFromSearch,
   buildStandaloneCockpitUrl,
   buildStudioEntrypointUrl,
 } from "./shared/cockpit-entrypoint";
@@ -42,5 +43,19 @@ describe("buildStandaloneCockpitUrl", () => {
   it("omits blank bookId values", () => {
     expect(buildStandaloneCockpitUrl("/tenant-a/", { bookId: "   " }))
       .toBe("/tenant-a/cockpit/");
+  });
+
+  it("can force a fresh new setup entry", () => {
+    expect(buildStandaloneCockpitUrl("/tenant-a/", { newSetup: true }))
+      .toBe("/tenant-a/cockpit/?newSetup=1");
+  });
+});
+
+describe("resolveCockpitStartupFromSearch", () => {
+  it("forces fresh setup mode instead of restoring a selected book", () => {
+    expect(resolveCockpitStartupFromSearch("?bookId=alpha&newSetup=1")).toEqual({
+      initialBookId: undefined,
+      forceNewSetup: true,
+    });
   });
 });

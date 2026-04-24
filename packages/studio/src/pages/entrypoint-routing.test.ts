@@ -24,7 +24,7 @@ describe("entrypoint wiring in source", () => {
   });
 
   it("points sidebar quick create affordance to cockpit", () => {
-    expect(sidebarSource).toContain("onClick={nav.toCockpit}");
+    expect(sidebarSource).toContain("onClick={() => nav.toCockpit(undefined, { newSetup: true })}");
     expect(sidebarSource).toContain('title={t("nav.openCockpit")}');
     expect(sidebarSource).not.toContain("onClick={nav.toBookCreate}");
     expect(sidebarSource).toContain('label={t("nav.cockpit")}');
@@ -72,10 +72,13 @@ describe("entrypoint wiring in source", () => {
   });
 
   it("wires cockpit entry to pass URL bookId into Cockpit", () => {
-    expect(cockpitStandaloneSource).toContain("resolveBookIdFromSearch");
-    expect(cockpitStandaloneSource).toContain("initialBookId={initialBookId}");
+    expect(cockpitStandaloneSource).toContain("resolveCockpitStartupFromSearch");
+    expect(cockpitStandaloneSource).toContain("initialBookId={startup.initialBookId}");
+    expect(cockpitStandaloneSource).toContain("forceNewSetup={startup.forceNewSetup}");
     expect(cockpitStandaloneSource).toContain("window.location.search");
     expect(cockpitStandaloneSource).toContain("<Cockpit");
+    expect(cockpitSource).toContain("delete restoredQueue[setupThreadKey]");
+    expect(cockpitSource).toContain("delete restoredDraftInput[setupThreadKey]");
   });
 
   it("keeps the legacy cockpit route as a redirect instead of rendering embedded cockpit UI", () => {

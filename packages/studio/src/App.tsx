@@ -207,6 +207,10 @@ interface AssistantPaneWidths {
   readonly truth: number;
 }
 
+interface CockpitNavigationOptions {
+  readonly newSetup?: boolean;
+}
+
 const ASSISTANT_PANE_WIDTH_STORAGE_KEY = "inkos:assistant-pane-width:v1";
 const DEFAULT_ASSISTANT_PANE_WIDTHS: AssistantPaneWidths = {
   general: 380,
@@ -538,10 +542,10 @@ function AppShell({
       setRoute({ page: "book-create" });
       setSidebarOpen(false);
     },
-    toCockpit: (bookId?: string) => {
+    toCockpit: (bookId?: string, options?: CockpitNavigationOptions) => {
       if (typeof window !== "undefined") {
         window.location.assign(
-          buildStandaloneCockpitUrl(window.location.pathname, bookId ? { bookId } : undefined),
+          buildStandaloneCockpitUrl(window.location.pathname, { bookId, newSetup: options?.newSetup }),
         );
         return;
       }
