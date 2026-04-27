@@ -209,8 +209,13 @@ describe("buildWriterSystemPrompt", () => {
     expect(prompt).toContain("속도를 올리는 구간에서는 동작, 선택, 대사를 앞세우고");
     expect(prompt).toContain("독자가 장면에서 바로 읽을 수 있는 감정과 의도는 행동, 표정, 대사, 감각의 증거로 먼저 전달한다");
     expect(prompt).toContain("행동과 표정이 이미 전달한 감정은 다음 설명문 대신 다음 반응이나 선택으로 이어 준다");
+    expect(prompt).toContain("## 시점 공통 규칙");
+    expect(prompt).toContain("선택된 서사 시점이 1인칭이면 화자가 직접 보고 듣고 느끼고 추론한 것만 쓴다");
+    expect(prompt).toContain("선택된 서사 시점이 3인칭 제한 시점이면 초점 인물이 알 수 있는 것만 쓴다");
+    expect(prompt).toContain("## 3인칭 제한 시점일 때만");
     expect(prompt).toContain("한국어는 주어를 자연스럽게 생략할 수 있다");
-    expect(prompt).toContain("이름, 직함, 무주어 문장, 직접 행동문으로 분산한다");
+    expect(prompt).toContain("같은 인물이나 화자를 반복해서 부르기보다");
+    expect(prompt).toContain("이름, 직함, 무주어 행동문, 직접 행동문으로 주어를 분산한다");
     expect(prompt).toContain("한 문단 안에서 같은 인물 주어를 반복하지 않는다");
     expect(prompt).toContain("감각으로 시작할 때는 어떤 감각을 먼저 쓸지 의식적으로 선택한다");
     expect(prompt).toContain("냄새가 먼저 들어왔다");

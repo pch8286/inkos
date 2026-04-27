@@ -48,9 +48,9 @@ function runStderr(args: string[], options?: CliRunOptions): { stdout: string; s
 
 const failingLlmEnv = {
   INKOS_LLM_PROVIDER: "openai",
-  INKOS_LLM_BASE_URL: "http://127.0.0.1:9/v1",
+  INKOS_LLM_BASE_URL: "https://example.invalid/v1",
   INKOS_LLM_MODEL: "test-model",
-  INKOS_LLM_API_KEY: "test-key",
+  INKOS_LLM_API_KEY: "",
 };
 
 describe("CLI integration", () => {

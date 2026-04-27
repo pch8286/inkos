@@ -46,60 +46,60 @@
   --shadow-3d-hover: 0 20px 40px -15px oklch(0 0 0 / 0.2), 0 8px 16px -8px oklch(0 0 0 / 0.15);
 }
 
-/* ── Light Mode: Graphite Console ── */
+/* ── Light Mode: Primer Workbench ── */
 :root {
   --radius: 0.6rem;
 
-  /* Background: cool graphite work surface with subtle terminal lift */
-  --background: oklch(0.965 0.006 245);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.985 0.006 210) 0%, oklch(0.965 0.006 245) 100%);
-  --foreground: oklch(0.18 0.018 245);
+  /* Background: low-glare GitHub Primer-style product surface */
+  --background: #ffffff;
+  --background-radial: linear-gradient(180deg, #ffffff 0%, #f6f8fa 100%);
+  --foreground: #1f2328;
 
-  /* Cards: neutral console panels */
-  --card: oklch(0.99 0.003 240);
-  --card-foreground: oklch(0.17 0.016 245);
+  /* Cards: quiet neutral panels */
+  --card: #ffffff;
+  --card-foreground: #1f2328;
 
-  --popover: oklch(0.99 0.003 240);
-  --popover-foreground: oklch(0.17 0.016 245);
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
 
-  /* Primary: cyan command signal */
-  --primary: oklch(0.55 0.13 205);
-  --primary-foreground: oklch(0.98 0.006 210);
+  /* Primary: restrained link blue */
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
 
-  /* Brand CTA: green execution signal */
-  --brand: oklch(0.62 0.15 155);
-  --brand-foreground: oklch(0.12 0.02 170);
+  /* Brand CTA: accessible success green */
+  --brand: #1f883d;
+  --brand-foreground: #ffffff;
 
-  /* Secondary: graphite rail */
-  --secondary: oklch(0.92 0.008 245);
-  --secondary-foreground: oklch(0.27 0.018 245);
+  /* Secondary: muted canvas */
+  --secondary: #f6f8fa;
+  --secondary-foreground: #1f2328;
 
-  /* Muted: subdued console text */
-  --muted: oklch(0.93 0.006 245);
-  --muted-foreground: oklch(0.43 0.018 245);
+  /* Muted: subdued interface text */
+  --muted: #f6f8fa;
+  --muted-foreground: #59636e;
 
-  /* Accent: pale cyan command surface */
-  --accent: oklch(0.91 0.035 195);
-  --accent-foreground: oklch(0.23 0.045 205);
+  /* Accent: soft blue command surface */
+  --accent: #ddf4ff;
+  --accent-foreground: #0969da;
 
-  --destructive: oklch(0.56 0.15 25);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: #d1242f;
+  --destructive-foreground: #ffffff;
 
-  --studio-cta-start: oklch(0.71 0.12 195);
-  --studio-cta-end: oklch(0.66 0.14 165);
-  --studio-cta-text: oklch(0.13 0.026 210);
-  --studio-chip: oklch(0.92 0.009 245);
-  --studio-chip-border: oklch(0.76 0.018 235);
-  --studio-chip-text: oklch(0.28 0.018 245);
-  --studio-chip-accent: oklch(0.88 0.045 190);
-  --studio-chip-accent-text: oklch(0.24 0.055 205);
-  --studio-state-ok: oklch(0.62 0.15 155);
-  --studio-state-warn: oklch(0.73 0.15 82);
-  --studio-state-text: oklch(0.43 0.12 200);
+  --studio-cta-start: #2da44e;
+  --studio-cta-end: #1f883d;
+  --studio-cta-text: #ffffff;
+  --studio-chip: #f6f8fa;
+  --studio-chip-border: #d0d7de;
+  --studio-chip-text: #59636e;
+  --studio-chip-accent: #ddf4ff;
+  --studio-chip-accent-text: #0969da;
+  --studio-state-ok: #1f883d;
+  --studio-state-warn: #9a6700;
+  --studio-state-text: #0969da;
 
-  --border: oklch(0.82 0.012 240);
-  --input: oklch(0.91 0.008 245);
-  --ring: oklch(0.55 0.13 205);
+  --border: #d0d7de;
+  --input: #f6f8fa;
+  --ring: #0969da;
 }
 
 html:lang(ko) {
@@ -108,58 +108,58 @@ html:lang(ko) {
   --font-mono: 'D2Coding', 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
-/* ── Dark Mode: Charcoal Console ── */
+/* ── Dark Mode: Monokai Console ── */
 .dark {
-  /* Background: dark graphite with a restrained cyan lift */
-  --background: oklch(0.135 0.012 245);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.18 0.018 230) 0%, oklch(0.135 0.012 245) 100%);
-  --foreground: oklch(0.94 0.006 230);
+  /* Background: Monokai-style editor surface */
+  --background: #1e2227;
+  --background-radial: linear-gradient(180deg, #242932 0%, #1e2227 100%);
+  --foreground: #abb2bf;
 
-  /* Cards: charcoal panels */
-  --card: oklch(0.18 0.014 245);
-  --card-foreground: oklch(0.93 0.006 230);
+  /* Cards: low-contrast raised editor panels */
+  --card: #242932;
+  --card-foreground: #c8ccd4;
 
-  --popover: oklch(0.18 0.014 245);
-  --popover-foreground: oklch(0.93 0.006 230);
+  --popover: #242932;
+  --popover-foreground: #c8ccd4;
 
-  /* Primary: cyan console signal */
-  --primary: oklch(0.74 0.13 200);
-  --primary-foreground: oklch(0.11 0.018 225);
+  /* Primary: restrained Monokai blue */
+  --primary: #61afef;
+  --primary-foreground: #1e2227;
 
-  /* Brand CTA: green execution signal */
-  --brand: oklch(0.72 0.16 155);
-  --brand-foreground: oklch(0.11 0.018 170);
+  /* Brand CTA: Monokai green */
+  --brand: #98c379;
+  --brand-foreground: #1e2227;
 
-  /* Secondary: Dark slate */
-  --secondary: oklch(0.22 0.016 245);
-  --secondary-foreground: oklch(0.9 0.006 230);
+  /* Secondary: editor chrome */
+  --secondary: #2b3038;
+  --secondary-foreground: #c8ccd4;
 
-  /* Muted: Dimmed graphite */
-  --muted: oklch(0.22 0.014 245);
-  --muted-foreground: oklch(0.73 0.008 235);
+  /* Muted: readable comments */
+  --muted: #2b3038;
+  --muted-foreground: #8b93a3;
 
-  /* Accent: muted cyan command surface */
-  --accent: oklch(0.27 0.048 195);
-  --accent-foreground: oklch(0.88 0.08 195);
+  /* Accent: cyan with limited surface area */
+  --accent: #263a42;
+  --accent-foreground: #56b6c2;
 
-  --destructive: oklch(0.58 0.18 25);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: #e06c75;
+  --destructive-foreground: #1e2227;
 
-  --studio-cta-start: oklch(0.72 0.13 195);
-  --studio-cta-end: oklch(0.68 0.16 155);
-  --studio-cta-text: oklch(0.1 0.018 210);
-  --studio-chip: oklch(0.23 0.016 245);
-  --studio-chip-border: oklch(0.36 0.026 235);
-  --studio-chip-text: oklch(0.78 0.012 235);
-  --studio-chip-accent: oklch(0.30 0.06 195);
-  --studio-chip-accent-text: oklch(0.88 0.08 190);
-  --studio-state-ok: oklch(0.72 0.16 155);
-  --studio-state-warn: oklch(0.74 0.14 82);
-  --studio-state-text: oklch(0.78 0.11 195);
+  --studio-cta-start: #3f5f4a;
+  --studio-cta-end: #2f5663;
+  --studio-cta-text: #f8f8f2;
+  --studio-chip: #2b3038;
+  --studio-chip-border: #3a414d;
+  --studio-chip-text: #abb2bf;
+  --studio-chip-accent: #343c2f;
+  --studio-chip-accent-text: #98c379;
+  --studio-state-ok: #98c379;
+  --studio-state-warn: #e5c07b;
+  --studio-state-text: #61afef;
 
-  --border: oklch(0.30 0.018 245);
-  --input: oklch(0.24 0.016 245);
-  --ring: oklch(0.74 0.13 200);
+  --border: #3a414d;
+  --input: #2b3038;
+  --ring: #61afef;
 }
 
 body {
@@ -244,41 +244,10 @@ h1 { font-size: 2.25rem; font-style: normal; line-height: 1.02; }
 h2 { font-size: 1.75rem; }
 h3 { font-size: 1.25rem; }
 
-.studio-shell,
-.studio-cockpit-page {
-  --background: oklch(0.13 0.012 245);
-  --background-radial: linear-gradient(180deg, oklch(0.16 0.015 245), oklch(0.115 0.012 245));
-  --foreground: oklch(0.94 0.006 230);
-  --card: oklch(0.18 0.014 245);
-  --card-foreground: oklch(0.93 0.006 230);
-  --popover: oklch(0.18 0.014 245);
-  --popover-foreground: oklch(0.93 0.006 230);
-  --primary: oklch(0.74 0.13 200);
-  --primary-foreground: oklch(0.11 0.018 225);
-  --brand: oklch(0.72 0.16 155);
-  --brand-foreground: oklch(0.11 0.018 170);
-  --secondary: oklch(0.21 0.016 245);
-  --secondary-foreground: oklch(0.9 0.006 230);
-  --muted: oklch(0.22 0.014 245);
-  --muted-foreground: oklch(0.73 0.008 235);
-  --accent: oklch(0.27 0.048 195);
-  --accent-foreground: oklch(0.88 0.08 195);
-  --destructive: oklch(0.58 0.18 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --studio-cta-start: oklch(0.72 0.13 195);
-  --studio-cta-end: oklch(0.68 0.16 155);
-  --studio-cta-text: oklch(0.1 0.018 210);
-  --studio-chip: oklch(0.23 0.016 245);
-  --studio-chip-border: oklch(0.36 0.026 235);
-  --studio-chip-text: oklch(0.78 0.012 235);
-  --studio-chip-accent: oklch(0.30 0.06 195);
-  --studio-chip-accent-text: oklch(0.88 0.08 190);
-  --studio-state-ok: oklch(0.72 0.16 155);
-  --studio-state-warn: oklch(0.74 0.14 82);
-  --studio-state-text: oklch(0.78 0.11 195);
-  --border: oklch(0.30 0.018 245);
-  --input: oklch(0.24 0.016 245);
-  --ring: oklch(0.74 0.13 200);
+.dark .studio-shell,
+.dark .studio-cockpit-page {
+  --background: #1e2227;
+  --background-radial: linear-gradient(180deg, #242932 0%, #1e2227 100%);
 }
 
 .studio-shell {
@@ -1323,18 +1292,18 @@ h3 { font-size: 1.25rem; }
   background: var(--studio-state-ok);
 }
 
-.book-workspace-console,
-.book-workspace-preview-grid {
-  --background: oklch(0.13 0.012 245);
-  --foreground: oklch(0.94 0.006 230);
-  --card: oklch(0.18 0.014 245);
-  --secondary: oklch(0.21 0.016 245);
-  --muted: oklch(0.22 0.014 245);
-  --muted-foreground: oklch(0.73 0.008 235);
-  --border: oklch(0.30 0.018 245);
-  --primary: oklch(0.74 0.13 200);
-  --studio-state-text: oklch(0.78 0.11 195);
-  --studio-state-ok: oklch(0.72 0.16 155);
+.dark .book-workspace-console,
+.dark .book-workspace-preview-grid {
+  --background: #1e2227;
+  --foreground: #abb2bf;
+  --card: #242932;
+  --secondary: #2b3038;
+  --muted: #2b3038;
+  --muted-foreground: #8b93a3;
+  --border: #3a414d;
+  --primary: #61afef;
+  --studio-state-text: #61afef;
+  --studio-state-ok: #98c379;
 }
 
 .book-workspace-tabbar {
@@ -1399,12 +1368,12 @@ h3 { font-size: 1.25rem; }
   margin-top: 0.75rem;
   border: 1px solid color-mix(in oklch, var(--border) 52%, transparent);
   border-radius: 0.45rem;
-  background: color-mix(in oklch, var(--secondary) 42%, black);
+  background: color-mix(in oklch, var(--secondary) 84%, transparent);
   padding: 0.6rem 0.7rem;
   font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.5;
-  color: color-mix(in oklch, var(--muted-foreground) 92%, white);
+  color: var(--muted-foreground);
 }
 
 .book-workspace-row-actions {
@@ -1422,12 +1391,18 @@ h3 { font-size: 1.25rem; }
 
 .book-workspace-preview-main,
 .book-workspace-feedback {
-  background: color-mix(in oklch, var(--card) 86%, black);
+  background: color-mix(in srgb, var(--card) 92%, var(--background));
 }
 
 .book-workspace-preview-main .paper-sheet {
   background: oklch(0.96 0.006 82);
   color: oklch(0.18 0.018 70);
+}
+
+.dark .book-workspace-preview-main .paper-sheet {
+  background: #242932;
+  color: #c8ccd4;
+  border-color: #3a414d;
 }
 
 @media (min-width: 1280px) {

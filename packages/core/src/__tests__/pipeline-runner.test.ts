@@ -1533,6 +1533,70 @@ describe("PipelineRunner", () => {
     }
   });
 
+  it("feeds post-write warnings into the current chapter revision pass", async () => {
+    const { root, runner, state, bookId } = await createRunnerFixture();
+    const book = {
+      ...(await state.loadBookConfig(bookId)),
+      genre: "modern-fantasy",
+      language: "ko" as const,
+      chapterWordCount: 220,
+    };
+    const draftBody = "그는 문 앞에 섰다.\n\n그는 손을 들었다.";
+    const revisedBody = "도윤은 문 앞에 섰고, 손끝으로 차가운 나무결을 짚었다.";
+
+    await state.saveBookConfig(bookId, book);
+    vi.spyOn(WriterAgent.prototype, "writeChapter").mockResolvedValue(
+      createWriterOutput({
+        chapterNumber: 1,
+        title: "문 앞",
+        content: draftBody,
+        wordCount: draftBody.replace(/\s+/g, "").length,
+        postWriteWarnings: [{
+          rule: "대명사 주어 반복",
+          severity: "warning",
+          description: "3인칭 대명사 주어가 반복되어 번역투처럼 보입니다.",
+          suggestion: "이름, 무주어 행동문, 감각 반응으로 분산하세요.",
+        }],
+      }),
+    );
+    vi.spyOn(ContinuityAuditor.prototype, "auditChapter")
+      .mockResolvedValueOnce(createAuditResult())
+      .mockResolvedValueOnce(createAuditResult());
+    const reviseChapter = vi.spyOn(ReviserAgent.prototype, "reviseChapter").mockResolvedValue(
+      createReviseOutput({
+        revisedContent: revisedBody,
+        wordCount: revisedBody.replace(/\s+/g, "").length,
+        fixedIssues: ["- 대명사 주어 반복을 줄였습니다."],
+      }),
+    );
+    vi.spyOn(ChapterAnalyzerAgent.prototype, "analyzeChapter").mockResolvedValue(
+      createAnalyzedOutput({
+        title: "문 앞",
+        content: revisedBody,
+        wordCount: revisedBody.replace(/\s+/g, "").length,
+      }),
+    );
+
+    try {
+      const result = await runner.writeNextChapter(bookId, 220);
+      const savedChapter = await readFile(join(state.bookDir(bookId), "chapters", "0001_문_앞.md"), "utf-8");
+
+      expect(reviseChapter).toHaveBeenCalledTimes(1);
+      expect(reviseChapter.mock.calls[0]?.[3]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            category: "대명사 주어 반복",
+            description: expect.stringContaining("3인칭 대명사 주어"),
+          }),
+        ]),
+      );
+      expect(result.revised).toBe(true);
+      expect(savedChapter).toContain(revisedBody);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("passes reduced control inputs into auditor and reviser in v2 mode", async () => {
     const { root, runner, state, bookId } = await createRunnerFixture({
       inputGovernanceMode: "v2",

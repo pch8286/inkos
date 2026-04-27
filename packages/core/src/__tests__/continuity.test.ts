@@ -15,6 +15,86 @@ describe("ContinuityAuditor", () => {
     vi.restoreAllMocks();
   });
 
+  it("parses audit JSON when issue text contains unmatched braces inside strings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "inkos-auditor-braces-test-"));
+    const bookDir = join(root, "book");
+    const storyDir = join(bookDir, "story");
+    await mkdir(storyDir, { recursive: true });
+
+    await Promise.all([
+      writeFile(
+        join(bookDir, "book.json"),
+        JSON.stringify({
+          id: "brace-book",
+          title: "Brace Book",
+          genre: "modern-fantasy",
+          platform: "naver-series",
+          chapterWordCount: 800,
+          targetChapters: 60,
+          status: "active",
+          language: "en",
+          createdAt: "2026-04-27T00:00:00.000Z",
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        }, null, 2),
+        "utf-8",
+      ),
+      writeFile(join(storyDir, "current_state.md"), "# Current State\n\n- Mara has the key.\n", "utf-8"),
+      writeFile(join(storyDir, "pending_hooks.md"), "# Pending Hooks\n", "utf-8"),
+      writeFile(join(storyDir, "chapter_summaries.md"), "# Chapter Summaries\n", "utf-8"),
+      writeFile(join(storyDir, "subplot_board.md"), "# Subplot Board\n", "utf-8"),
+      writeFile(join(storyDir, "emotional_arcs.md"), "# Emotional Arcs\n", "utf-8"),
+      writeFile(join(storyDir, "character_matrix.md"), "# Character Matrix\n", "utf-8"),
+      writeFile(join(storyDir, "volume_outline.md"), "# Volume Outline\n\n## Chapter 1\nOpen the warehouse.\n", "utf-8"),
+      writeFile(join(storyDir, "style_guide.md"), "# Style Guide\n\n- Keep it grounded.\n", "utf-8"),
+    ]);
+
+    const auditor = new ContinuityAuditor({
+      client: {
+        provider: "openai",
+        apiFormat: "chat",
+        stream: false,
+        defaults: {
+          temperature: 0.7,
+          maxTokens: 4096,
+          thinkingBudget: 0, maxTokensCap: null,
+          extra: {},
+        },
+      },
+      model: "test-model",
+      projectRoot: root,
+    });
+
+    vi.spyOn(ContinuityAuditor.prototype as never, "chat" as never).mockResolvedValue({
+      content: `Audit result:\n${JSON.stringify({
+        passed: false,
+        issues: [{
+          severity: "warning",
+          category: "format",
+          description: "The literal marker } appears in narration.",
+          suggestion: "Replace the stray } with concrete prose.",
+        }],
+        summary: "brace marker found",
+      })}\nExtra notes after JSON.`,
+      usage: ZERO_USAGE,
+    });
+
+    try {
+      const result = await auditor.auditChapter(bookDir, "Chapter body.", 1, "modern-fantasy");
+
+      expect(result.passed).toBe(false);
+      expect(result.summary).toBe("brace marker found");
+      expect(result.issues).toEqual([
+        expect.objectContaining({
+          category: "format",
+          description: "The literal marker } appears in narration.",
+          suggestion: "Replace the stray } with concrete prose.",
+        }),
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("prefers book language override when building audit prompts", async () => {
     const root = await mkdtemp(join(tmpdir(), "inkos-auditor-lang-test-"));
     const bookDir = join(root, "book");

@@ -59,6 +59,7 @@ function isActionableStyleIssue(issue: AuditIssue): boolean {
     "나열식", "Chronicle", "流水账",
     "AI", "段落", "문단",
     "감정 직설", "대사 압력",
+    "대명사", "종속절", "부정형", "짧은 문단",
   ].some((needle) => text.includes(needle));
 }
 
@@ -91,11 +92,22 @@ function toStructuralGateSoftIssue(finding: StructuralGateSoftFinding): AuditIss
   };
 }
 
+function toPostWriteWarningIssue(warning: WriteChapterOutput["postWriteWarnings"][number]): AuditIssue {
+  return {
+    severity: "warning",
+    category: warning.rule,
+    description: warning.description,
+    suggestion: warning.suggestion,
+  };
+}
+
 export async function runChapterReviewCycle(params: {
   readonly book: Pick<{ genre: string }, "genre">;
   readonly bookDir: string;
   readonly chapterNumber: number;
-  readonly initialOutput: Pick<WriteChapterOutput, "title" | "content" | "wordCount" | "postWriteErrors">;
+  readonly initialOutput: Pick<WriteChapterOutput, "title" | "content" | "wordCount" | "postWriteErrors"> & {
+    readonly postWriteWarnings?: WriteChapterOutput["postWriteWarnings"];
+  };
   readonly reducedControlInput?: ChapterReviewCycleControlInput;
   readonly lengthSpec: LengthSpec;
   readonly initialUsage: ChapterReviewCycleUsage;
@@ -331,6 +343,7 @@ export async function runChapterReviewCycle(params: {
     passed: hasBlockedWriteWords ? false : llmAudit.passed,
     issues: [
       ...structuralGateSoftIssues,
+      ...(params.initialOutput.postWriteWarnings ?? []).map(toPostWriteWarningIssue),
       ...llmAudit.issues,
       ...aiTellsResult.issues,
       ...sensitiveWriteResult.issues,
