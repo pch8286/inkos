@@ -1083,8 +1083,46 @@ h3 { font-size: 1.25rem; }
 .studio-cockpit-status-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.35rem 0.75rem;
   min-width: 0;
+}
+
+.studio-cockpit-status-fact {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.4rem;
+  border-right: 1px solid color-mix(in oklch, var(--border) 48%, transparent);
+  padding-right: 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: color-mix(in oklch, var(--foreground) 78%, var(--muted-foreground));
+}
+
+.studio-cockpit-status-fact:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.studio-cockpit-status-fact.is-active .studio-cockpit-status-fact-value {
+  color: var(--studio-state-text);
+}
+
+.studio-cockpit-status-fact-label {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.studio-cockpit-status-fact-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  color: var(--foreground);
 }
 
 .studio-cockpit-live-status-row {
@@ -1215,37 +1253,58 @@ h3 { font-size: 1.25rem; }
 
 .studio-cockpit-message {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 0.75rem;
-  padding: 0.5rem 0.65rem;
-  border-left: 2px solid color-mix(in oklch, var(--border) 78%, transparent);
-  background: color-mix(in oklch, var(--background) 58%, transparent);
+  gap: 0.35rem;
+  width: min(88%, 46rem);
+  padding: 0.7rem 0.85rem;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent);
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--background) 68%, transparent);
   color: color-mix(in oklch, var(--foreground) 86%, transparent);
   font-size: 0.82rem;
   line-height: 1.55;
 }
 
 .studio-cockpit-message.is-user {
-  border-left-color: color-mix(in oklch, var(--studio-cta-end) 70%, transparent);
+  justify-self: end;
+  border-color: color-mix(in oklch, var(--studio-cta-end) 58%, transparent);
+  background: color-mix(in oklch, var(--studio-cta-end) 12%, var(--background));
 }
 
 .studio-cockpit-message.is-assistant {
-  border-left-color: color-mix(in oklch, var(--studio-state-text) 70%, transparent);
+  justify-self: start;
+  border-color: color-mix(in oklch, var(--studio-state-text) 58%, transparent);
+  background: color-mix(in oklch, var(--studio-state-text) 8%, var(--background));
 }
 
 .studio-cockpit-message.is-system {
-  border-left-color: color-mix(in oklch, var(--muted-foreground) 62%, transparent);
+  justify-self: center;
+  width: min(94%, 42rem);
+  border-style: dashed;
   color: var(--muted-foreground);
 }
 
 .studio-cockpit-message-meta {
-  min-width: 4.4rem;
+  display: flex;
+  align-items: center;
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.12em;
-  line-height: 1.65;
+  line-height: 1.2;
   color: color-mix(in oklch, var(--muted-foreground) 86%, transparent);
+}
+
+.studio-cockpit-message-meta[data-align="right"] {
+  justify-content: flex-end;
+}
+
+.studio-cockpit-message.is-user .studio-cockpit-message-meta {
+  color: color-mix(in oklch, var(--studio-cta-end) 78%, var(--foreground));
+}
+
+.studio-cockpit-message.is-assistant .studio-cockpit-message-meta {
+  color: var(--studio-state-text);
 }
 
 .studio-cockpit-message-body {

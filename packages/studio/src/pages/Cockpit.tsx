@@ -169,6 +169,53 @@ interface PersistedCockpitPayload {
 const COCKPIT_SESSION_ID = "studio:cockpit";
 const COCKPIT_POINTER_SCOPE = "cockpit";
 
+interface CockpitStatusFact {
+  readonly label: string;
+  readonly value: string;
+  readonly accent?: boolean;
+}
+
+export function buildCockpitStatusFacts(input: {
+  readonly stage: string;
+  readonly stageLabel: string;
+  readonly targetLabel: string;
+  readonly modelLabel: string;
+  readonly reasoningLabel: string | null;
+  readonly labels: {
+    readonly stage: string;
+    readonly target: string;
+    readonly model: string;
+    readonly reasoning: string;
+  };
+}): ReadonlyArray<CockpitStatusFact> {
+  const facts: CockpitStatusFact[] = [];
+  if (input.stage !== "idle" && input.stage !== "ready") {
+    facts.push({ accent: true, label: input.labels.stage, value: input.stageLabel });
+  }
+  facts.push(
+    { label: input.labels.target, value: input.targetLabel },
+    { label: input.labels.model, value: input.modelLabel },
+  );
+  if (input.reasoningLabel) {
+    facts.push({ label: input.labels.reasoning, value: input.reasoningLabel });
+  }
+  return facts;
+}
+
+export function getCockpitMessageRolePresentation(role: CockpitMessage["role"]): {
+  readonly className: "is-user" | "is-assistant" | "is-system";
+  readonly label: string;
+  readonly alignLabel: "left" | "right";
+} {
+  if (role === "user") {
+    return { className: "is-user", label: "YOU", alignLabel: "right" };
+  }
+  if (role === "system") {
+    return { className: "is-system", label: "SYSTEM", alignLabel: "left" };
+  }
+  return { className: "is-assistant", label: "INKOS", alignLabel: "left" };
+}
+
 function isPersistedCockpitPayload(value: unknown): value is PersistedCockpitPayload {
   if (!value || typeof value !== "object") {
     return false;
@@ -948,12 +995,19 @@ export function Cockpit({
     { accent: true, label: t("cockpit.statusTarget"), value: statusStrip.targetLabel },
     ...(hasPendingChanges ? [{ accent: true, label: t("cockpit.pendingChanges"), value: `${activeProposal?.changes.length ?? 0}` }] : []),
   ];
-  const statusPills = [
-    { accent: true, label: t("cockpit.statusStage"), value: statusStageLabel },
-    { label: t("cockpit.statusTarget"), value: statusStrip.targetLabel },
-    { label: t("cockpit.statusModel"), value: statusModelLabel },
-    ...(statusReasoningLabel ? [{ label: t("config.reasoningLevel"), value: statusReasoningLabel }] : []),
-  ];
+  const statusPills = buildCockpitStatusFacts({
+    stage: statusStrip.stage,
+    stageLabel: statusStageLabel,
+    targetLabel: statusStrip.targetLabel,
+    modelLabel: statusModelLabel,
+    reasoningLabel: statusReasoningLabel,
+    labels: {
+      stage: t("cockpit.statusStage"),
+      target: t("cockpit.statusTarget"),
+      model: t("cockpit.statusModel"),
+      reasoning: t("config.reasoningLevel"),
+    },
+  });
   const activeEditorTab =
     inspectorTab === "changes" ? "diffs"
       : inspectorTab === "activity" ? "reviews"
@@ -1436,13 +1490,13 @@ function StatusPill({
   readonly accent?: boolean;
 }) {
   return (
-    <div className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-[11px] ${accent ? "studio-chip-accent studio-surface-active" : "studio-chip"}`}>
+    <div className={`studio-cockpit-status-fact ${accent ? "is-active" : ""}`}>
       {label ? (
-        <span className="shrink-0 font-bold uppercase tracking-[0.14em] text-muted-foreground/90">
+        <span className="studio-cockpit-status-fact-label">
           {label}
         </span>
       ) : null}
-      <span className="truncate text-sm font-semibold text-foreground/90">
+      <span className="studio-cockpit-status-fact-value">
         {value}
       </span>
     </div>
@@ -1476,14 +1530,12 @@ function ActionButton({
 }
 
 function MessageBubble({ message }: { readonly message: CockpitMessage }) {
-  const isUser = message.role === "user";
-  const isSystem = message.role === "system";
-  const roleLabel = isUser ? "USER" : isSystem ? "SYSTEM" : "INKOS";
+  const role = getCockpitMessageRolePresentation(message.role);
 
   return (
-    <div className={`studio-cockpit-message ${isUser ? "is-user" : isSystem ? "is-system" : "is-assistant"}`}>
-      <div className="studio-cockpit-message-meta">
-        <span>{roleLabel}</span>
+    <div className={`studio-cockpit-message ${role.className}`}>
+      <div className="studio-cockpit-message-meta" data-align={role.alignLabel}>
+        <span>{role.label}</span>
       </div>
       <div className="studio-cockpit-message-body whitespace-pre-wrap break-words">
         {message.content}

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { defaultChapterWordsForLanguage } from "../shared/book-create-form";
 import {
+  buildCockpitStatusFacts,
   defaultQueuedComposerActionForMode,
   getCockpitCreateActionErrorKey,
+  getCockpitMessageRolePresentation,
   isSetupDiscussionLocked,
   shouldRunQueuedComposerEntry,
 } from "./Cockpit";
@@ -81,6 +83,81 @@ describe("shouldRunQueuedComposerEntry", () => {
         "book-2:draft": [{ id: "q1", action: "draft", text: "later", createdAt: 1 }],
       },
     })).toBe(false);
+  });
+});
+
+describe("buildCockpitStatusFacts", () => {
+  it("omits idle and ready stage facts because they add noise", () => {
+    expect(buildCockpitStatusFacts({
+      stage: "idle",
+      stageLabel: "대기",
+      targetLabel: "새 설정 논의",
+      modelLabel: "Codex · 5.5",
+      reasoningLabel: "보통",
+      labels: {
+        stage: "단계",
+        target: "대상",
+        model: "모델",
+        reasoning: "추론 강도",
+      },
+    })).toEqual([
+      { label: "대상", value: "새 설정 논의" },
+      { label: "모델", value: "Codex · 5.5" },
+      { label: "추론 강도", value: "보통" },
+    ]);
+
+    expect(buildCockpitStatusFacts({
+      stage: "ready",
+      stageLabel: "준비 완료",
+      targetLabel: "새 설정 논의",
+      modelLabel: "Codex · 5.5",
+      reasoningLabel: null,
+      labels: {
+        stage: "단계",
+        target: "대상",
+        model: "모델",
+        reasoning: "추론 강도",
+      },
+    })).toEqual([
+      { label: "대상", value: "새 설정 논의" },
+      { label: "모델", value: "Codex · 5.5" },
+    ]);
+  });
+
+  it("keeps active stage facts when the cockpit is doing work", () => {
+    expect(buildCockpitStatusFacts({
+      stage: "working",
+      stageLabel: "작업 중",
+      targetLabel: "1장",
+      modelLabel: "Codex · 5.5",
+      reasoningLabel: null,
+      labels: {
+        stage: "단계",
+        target: "대상",
+        model: "모델",
+        reasoning: "추론 강도",
+      },
+    })).toEqual([
+      { accent: true, label: "단계", value: "작업 중" },
+      { label: "대상", value: "1장" },
+      { label: "모델", value: "Codex · 5.5" },
+    ]);
+  });
+});
+
+describe("getCockpitMessageRolePresentation", () => {
+  it("uses distinct labels, alignment, and tone for user and InkOS messages", () => {
+    expect(getCockpitMessageRolePresentation("user")).toEqual({
+      className: "is-user",
+      label: "YOU",
+      alignLabel: "right",
+    });
+
+    expect(getCockpitMessageRolePresentation("assistant")).toEqual({
+      className: "is-assistant",
+      label: "INKOS",
+      alignLabel: "left",
+    });
   });
 });
 
