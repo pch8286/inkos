@@ -253,7 +253,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
               </p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row md:justify-start">
                 <button
-                  onClick={nav.toCockpit}
+                  onClick={() => nav.toCockpit()}
                   className="group inline-flex items-center justify-center gap-2 rounded-xl px-8 py-3.5 text-sm font-bold studio-cta transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <Plus size={18} />
@@ -285,7 +285,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
               title={t("dash.quickStepCockpit")}
               description={t("dash.quickStepBookBody")}
               ctaLabel={t("common.open")}
-              onClick={nav.toCockpit}
+              onClick={() => nav.toCockpit()}
             />
             <QuickStartCard
               icon={<FileInput size={16} />}
@@ -309,7 +309,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
           <p className="text-sm text-muted-foreground">{t("dash.subtitle")}</p>
         </div>
         <button
-          onClick={nav.toCockpit}
+          onClick={() => nav.toCockpit()}
           className="group inline-flex items-center justify-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-bold studio-cta transition-all hover:scale-105 active:scale-95 sm:self-auto"
         >
           <Plus size={16} />

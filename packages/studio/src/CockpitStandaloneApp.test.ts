@@ -45,6 +45,11 @@ describe("buildStandaloneCockpitUrl", () => {
       .toBe("/tenant-a/cockpit/");
   });
 
+  it("ignores non-string bookId values passed accidentally from click handlers", () => {
+    expect(buildStandaloneCockpitUrl("/", { bookId: { type: "click" } as unknown as string }))
+      .toBe("/cockpit/");
+  });
+
   it("can force a fresh new setup entry", () => {
     expect(buildStandaloneCockpitUrl("/tenant-a/", { newSetup: true }))
       .toBe("/tenant-a/cockpit/?newSetup=1");

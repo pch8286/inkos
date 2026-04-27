@@ -26,9 +26,10 @@ export function buildStandaloneCockpitUrl(
   const normalizedRoot = normalizeSharedPathWithTrailingSlash(pathname);
   const cockpitPath = normalizedRoot === "/" ? "/cockpit/" : `${normalizedRoot}cockpit/`;
   const params = new URLSearchParams();
+  const bookId = typeof options?.bookId === "string" ? options.bookId.trim() : "";
 
-  if (!options?.newSetup && options?.bookId?.trim()) {
-    params.set("bookId", options.bookId.trim());
+  if (!options?.newSetup && bookId) {
+    params.set("bookId", bookId);
   }
   if (options?.newSetup) {
     params.set("newSetup", "1");

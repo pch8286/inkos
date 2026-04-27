@@ -17,7 +17,8 @@ const i18nSource = loadSource("../hooks/use-i18n.ts");
 
 describe("entrypoint wiring in source", () => {
   it("routes dashboard new-book calls to cockpit navigation", () => {
-    expect(dashboardSource).toContain("onClick={nav.toCockpit}");
+    expect(dashboardSource).toContain("onClick={() => nav.toCockpit()}");
+    expect(dashboardSource).not.toContain("onClick={nav.toCockpit}");
     expect(dashboardSource).toContain('t("nav.openCockpit")');
     expect(dashboardSource).toContain('title={t("dash.quickStepCockpit")}');
     expect(dashboardSource).not.toContain("onClick={nav.toBookCreate}");
