@@ -59,6 +59,20 @@ describe("CockpitHeaderSection", () => {
     expect(html).not.toContain("cockpit-hero-v1");
   });
 
+  it("renders top console chips as clickable controls", () => {
+    const html = renderToStaticMarkup(React.createElement(CockpitHeaderSection, {
+      ...baseProps,
+      onFocusWorkspace: () => undefined,
+      onFocusSearch: () => undefined,
+    }));
+
+    expect(html).toContain('type="button" class="studio-cockpit-select-chip"');
+    expect(html).toContain('aria-label="Workspace: 달빛 아래, 이야기꾼"');
+    expect(html).toContain('aria-label="Refresh environment data: Production"');
+    expect(html).toContain('type="button" class="studio-cockpit-search"');
+    expect(html).not.toContain("lucide-chevron-down");
+  });
+
   it("keeps loading, error, and create job notices as compact console events", () => {
     const html = renderToStaticMarkup(React.createElement(CockpitHeaderSection, {
       ...baseProps,

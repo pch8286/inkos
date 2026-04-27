@@ -1,7 +1,6 @@
 import type { TFunction } from "../../hooks/use-i18n";
 import {
   BookOpen,
-  ChevronDown,
   FileText,
   Loader2,
   MessageSquareText,
@@ -44,6 +43,8 @@ interface CockpitHeaderSectionProps {
   readonly statusModelLabel: string;
   readonly selectedBookId: string;
   readonly onRefresh: () => void;
+  readonly onFocusWorkspace?: () => void;
+  readonly onFocusSearch?: () => void;
   readonly classes: HeaderClassNames;
 }
 
@@ -61,6 +62,8 @@ export function CockpitHeaderSection({
   statusModelLabel,
   selectedBookId,
   onRefresh,
+  onFocusWorkspace,
+  onFocusSearch,
   classes,
 }: CockpitHeaderSectionProps) {
   return (
@@ -73,21 +76,35 @@ export function CockpitHeaderSection({
         </div>
 
         <div className="studio-cockpit-top-controls">
-          <div className="studio-cockpit-select-chip">
+          <button
+            type="button"
+            className="studio-cockpit-select-chip"
+            aria-label={`Workspace: ${selectedBookLabel}`}
+            onClick={onFocusWorkspace}
+          >
             <span>Workspace</span>
             <strong>{selectedBookLabel}</strong>
-            <ChevronDown size={13} />
-          </div>
-          <div className="studio-cockpit-select-chip">
+          </button>
+          <button
+            type="button"
+            className="studio-cockpit-select-chip"
+            aria-label="Refresh environment data: Production"
+            onClick={onRefresh}
+          >
             <span>Environment</span>
             <i />
             <strong>Production</strong>
-            <ChevronDown size={13} />
-          </div>
-          <div className="studio-cockpit-search" aria-label="Search">
+            <RefreshCcw size={13} />
+          </button>
+          <button
+            type="button"
+            className="studio-cockpit-search"
+            aria-label="Search"
+            onClick={onFocusSearch}
+          >
             <Search size={14} />
             <span>Search</span>
-          </div>
+          </button>
         </div>
       </div>
 

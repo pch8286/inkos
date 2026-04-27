@@ -653,8 +653,13 @@ h3 { font-size: 1.25rem; }
   border-radius: 0.35rem;
   background: color-mix(in oklch, var(--background) 80%, black);
   padding: 0.42rem 0.6rem;
+  border-style: solid;
+  font-family: inherit;
   font-size: 0.78rem;
+  color: inherit;
   line-height: 1.1;
+  text-align: left;
+  cursor: pointer;
 }
 
 .studio-cockpit-select-chip span,
@@ -681,6 +686,12 @@ h3 { font-size: 1.25rem; }
 .studio-cockpit-search {
   width: min(16rem, 20vw);
   color: var(--muted-foreground);
+}
+
+.studio-cockpit-select-chip:hover,
+.studio-cockpit-search:hover {
+  border-color: color-mix(in oklch, var(--primary) 46%, var(--border));
+  background: color-mix(in oklch, var(--background) 88%, var(--primary) 8%);
 }
 
 .studio-console-eyebrow {
@@ -917,12 +928,17 @@ h3 { font-size: 1.25rem; }
   color: var(--muted-foreground);
 }
 
-.studio-cockpit-editor-tabs span {
+.studio-cockpit-editor-tabs button {
+  border: 0;
   border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
   padding: 0.25rem 0;
 }
 
-.studio-cockpit-editor-tabs span.is-active {
+.studio-cockpit-editor-tabs button.is-active {
   border-bottom-color: var(--primary);
   color: var(--studio-state-text);
 }
@@ -1247,9 +1263,16 @@ h3 { font-size: 1.25rem; }
 
 .studio-cockpit-system-heading {
   display: flex;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
 }
 
 .studio-cockpit-system-heading span {
@@ -1270,7 +1293,7 @@ h3 { font-size: 1.25rem; }
   gap: 0.45rem;
 }
 
-.studio-cockpit-system-dots span {
+.studio-cockpit-system-dots button {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1280,8 +1303,16 @@ h3 { font-size: 1.25rem; }
   border-radius: 0.35rem;
   background: color-mix(in oklch, var(--background) 70%, black);
   padding: 0.42rem 0.5rem;
+  font-family: inherit;
   font-size: 0.72rem;
   color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.studio-cockpit-system-heading:hover,
+.studio-cockpit-system-dots button:hover {
+  border-color: color-mix(in oklch, var(--studio-state-ok) 42%, var(--border));
+  color: var(--foreground);
 }
 
 .studio-cockpit-system-dots i {

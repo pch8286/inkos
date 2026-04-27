@@ -64,9 +64,12 @@ interface ClassNames {
   readonly error: string;
 }
 
+export type CockpitEditorTab = "manuscript" | "outline" | "diffs" | "reviews";
+
 interface CockpitMainConversationProps {
   readonly t: TFunction;
   readonly mode: CockpitMode;
+  readonly activeEditorTab?: CockpitEditorTab;
   readonly busy: boolean;
   readonly error: string | null;
   readonly input: string;
@@ -88,6 +91,10 @@ interface CockpitMainConversationProps {
   readonly onRestoreQueuedComposerInput: () => void;
   readonly onSubmit: (action?: ComposerAction) => Promise<void> | void;
   readonly onApplyAll: () => void;
+  readonly onOpenManuscript?: () => void;
+  readonly onOpenOutline?: () => void;
+  readonly onOpenDiffs?: () => void;
+  readonly onOpenReviews?: () => void;
   readonly classes: ClassNames;
   readonly ActionButton: (props: ActionButtonProps) => ReactNode;
   readonly ScopeChip: (props: ScopeChipProps) => ReactNode;
@@ -100,6 +107,7 @@ const COMMAND_CHIPS = ["/draft", "/propose", "/ask", "/write", "/write-next", "/
 export function CockpitMainConversation({
   t,
   mode,
+  activeEditorTab = mode === "draft" ? "manuscript" : "outline",
   busy,
   error,
   input,
@@ -121,6 +129,10 @@ export function CockpitMainConversation({
   onRestoreQueuedComposerInput,
   onSubmit,
   onApplyAll,
+  onOpenManuscript = () => undefined,
+  onOpenOutline = () => undefined,
+  onOpenDiffs = () => undefined,
+  onOpenReviews = () => undefined,
   classes,
   ActionButton,
   ScopeChip,
@@ -163,10 +175,43 @@ export function CockpitMainConversation({
     <div className="studio-cockpit-main studio-cockpit-panel rounded-[1.9rem] p-4 md:p-5">
       <div className="mb-3 space-y-3 border-b border-border/50 pb-3">
         <div className="studio-cockpit-editor-tabs">
-          <span className="is-active">MANUSCRIPT</span>
-          <span>OUTLINE</span>
-          <span>DIFFS</span>
-          <span>REVIEWS</span>
+          <button
+            type="button"
+            className={activeEditorTab === "manuscript" ? "is-active" : ""}
+            aria-pressed={activeEditorTab === "manuscript"}
+            aria-label="Open manuscript cockpit view"
+            disabled={!canUseDraft}
+            onClick={onOpenManuscript}
+          >
+            MANUSCRIPT
+          </button>
+          <button
+            type="button"
+            className={activeEditorTab === "outline" ? "is-active" : ""}
+            aria-pressed={activeEditorTab === "outline"}
+            aria-label="Open outline cockpit view"
+            onClick={onOpenOutline}
+          >
+            OUTLINE
+          </button>
+          <button
+            type="button"
+            className={activeEditorTab === "diffs" ? "is-active" : ""}
+            aria-pressed={activeEditorTab === "diffs"}
+            aria-label="Open diffs cockpit view"
+            onClick={onOpenDiffs}
+          >
+            DIFFS
+          </button>
+          <button
+            type="button"
+            className={activeEditorTab === "reviews" ? "is-active" : ""}
+            aria-pressed={activeEditorTab === "reviews"}
+            aria-label="Open reviews cockpit view"
+            onClick={onOpenReviews}
+          >
+            REVIEWS
+          </button>
           <strong>{hasPendingChanges ? t("cockpit.pendingChanges") : status.stage}</strong>
         </div>
 

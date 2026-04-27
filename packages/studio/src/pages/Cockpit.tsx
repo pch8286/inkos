@@ -954,6 +954,11 @@ export function Cockpit({
     { label: t("cockpit.statusModel"), value: statusModelLabel },
     ...(statusReasoningLabel ? [{ label: t("config.reasoningLevel"), value: statusReasoningLabel }] : []),
   ];
+  const activeEditorTab =
+    inspectorTab === "changes" ? "diffs"
+      : inspectorTab === "activity" ? "reviews"
+        : mode === "draft" ? "manuscript"
+          : "outline";
   const tabIds = {
     focusTabId,
     changesTabId,
@@ -970,6 +975,45 @@ export function Cockpit({
     && setupGenre
     && (!needsFreshAutoCreateProposal || setupCanPrepareProposal),
   );
+  const refreshCockpitData = () => {
+    void refetchBooks();
+    void refetchCreateStatus();
+    void refetchBookDetail();
+    void refetchTruthList();
+    void refetchTruthDetail();
+    void refetchChapterDetail();
+    void refetchActivity();
+    void loadRecentSetupSessions();
+  };
+  const focusComposer = () => {
+    document.getElementById(composerInputId)?.focus();
+  };
+  const focusWorkspace = () => {
+    setInspectorTab(showNewSetup ? "setup" : "focus");
+  };
+  const openManuscriptView = () => {
+    if (!selectedBookId) {
+      setError(t("cockpit.noBook"));
+      return;
+    }
+    setShowNewSetup(false);
+    setMode("draft");
+    setInspectorTab("focus");
+  };
+  const openOutlineView = () => {
+    setMode("discuss");
+    setInspectorTab(showNewSetup ? "setup" : "focus");
+  };
+  const openDiffsView = () => {
+    setInspectorTab("changes");
+  };
+  const openReviewsView = () => {
+    setInspectorTab("activity");
+  };
+  const openSystemHealth = () => {
+    setInspectorTab("activity");
+    refreshCockpitData();
+  };
 
   const renderSetupActionButton = (action: SetupPrimaryAction, primary = false) => {
     const className = primary ? c.btnPrimary : c.btnSecondary;
@@ -1114,16 +1158,9 @@ export function Cockpit({
         statusTargetLabel={statusStrip.targetLabel}
         statusModelLabel={statusModelLabel}
         selectedBookId={selectedBookId}
-        onRefresh={() => {
-          void refetchBooks();
-          void refetchCreateStatus();
-          void refetchBookDetail();
-          void refetchTruthList();
-          void refetchTruthDetail();
-          void refetchChapterDetail();
-          void refetchActivity();
-          void loadRecentSetupSessions();
-        }}
+        onRefresh={refreshCockpitData}
+        onFocusWorkspace={focusWorkspace}
+        onFocusSearch={focusComposer}
         classes={{ btnPrimary: c.btnPrimary, btnSecondary: c.btnSecondary, error: c.error }}
       />
 
@@ -1172,6 +1209,7 @@ export function Cockpit({
         <CockpitMainConversation
           t={t}
           mode={mode}
+          activeEditorTab={activeEditorTab}
           busy={busy || setupDiscussionLocked}
           error={error}
           input={input}
@@ -1193,6 +1231,10 @@ export function Cockpit({
           onRestoreQueuedComposerInput={restoreQueuedComposerInput}
           onSubmit={handleSubmit}
           onApplyAll={handleApplyAll}
+          onOpenManuscript={openManuscriptView}
+          onOpenOutline={openOutlineView}
+          onOpenDiffs={openDiffsView}
+          onOpenReviews={openReviewsView}
           classes={{ btnPrimary: c.btnPrimary, btnSecondary: c.btnSecondary, input: c.input, error: c.error }}
           ActionButton={ActionButton}
           ScopeChip={ScopeChip}
@@ -1278,6 +1320,7 @@ export function Cockpit({
           }}
           activityEntries={activityEntries}
           activityEmptyLabel={t("app.alertsEmpty")}
+          onOpenSystemHealth={openSystemHealth}
           classNames={{ btnPrimary: c.btnPrimary, btnSecondary: c.btnSecondary, input: c.input, error: c.error }}
           ids={tabIds}
           InspectorTabButton={InspectorTabButton}

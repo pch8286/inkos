@@ -181,6 +181,139 @@ describe("CockpitMainConversation", () => {
     expect(markup).not.toContain("/help");
   });
 
+  it("renders console tabs as clickable shortcuts", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(CockpitMainConversation, {
+        t,
+        mode: "discuss",
+        activeEditorTab: "outline",
+        busy: false,
+        error: null,
+        input: "",
+        scopeChips: [
+          { label: "Scope", value: "Discuss" },
+          { label: "Target", value: "Novel" },
+        ],
+        hasPendingChanges: false,
+        statusPills: [{ label: "Stage", value: "Ready" }],
+        status: buildStatusStrip({ stage: "ready" }),
+        activeMessages: [],
+        quickStartPanel: null,
+        composerInputId: "composer",
+        composerHintId: "composer-hint",
+        composerHint: "Try writing a prompt",
+        canUseBinder: false,
+        canUseDraft: false,
+        hasPendingProposalChanges: false,
+        queuedComposerEntries: [],
+        onInputChange: () => undefined,
+        onQueueComposerInput: () => undefined,
+        onRestoreQueuedComposerInput: () => undefined,
+        onSubmit: () => undefined,
+        onApplyAll: () => undefined,
+        onOpenManuscript: () => undefined,
+        onOpenOutline: () => undefined,
+        onOpenDiffs: () => undefined,
+        onOpenReviews: () => undefined,
+        classes: { btnPrimary: "", btnSecondary: "", input: "", error: "" },
+        ActionButton,
+        ScopeChip,
+        StatusPill: BaseStatusChip,
+        MessageBubble,
+      }),
+    );
+
+    expect(markup).toContain('type="button" class="is-active"');
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-label="Open manuscript cockpit view"');
+    expect(markup).toContain('aria-label="Open outline cockpit view"');
+    expect(markup).toContain('aria-label="Open diffs cockpit view"');
+    expect(markup).toContain('aria-label="Open reviews cockpit view"');
+  });
+
+  it("disables manuscript shortcut until a draft-capable book is selected", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(CockpitMainConversation, {
+        t,
+        mode: "discuss",
+        activeEditorTab: "outline",
+        busy: false,
+        error: null,
+        input: "",
+        scopeChips: [
+          { label: "Scope", value: "Discuss" },
+          { label: "Target", value: "Setup" },
+        ],
+        hasPendingChanges: false,
+        statusPills: [{ label: "Stage", value: "Ready" }],
+        status: buildStatusStrip({ stage: "ready" }),
+        activeMessages: [],
+        quickStartPanel: null,
+        composerInputId: "composer",
+        composerHintId: "composer-hint",
+        composerHint: "Try writing a prompt",
+        canUseBinder: false,
+        canUseDraft: false,
+        hasPendingProposalChanges: false,
+        queuedComposerEntries: [],
+        onInputChange: () => undefined,
+        onQueueComposerInput: () => undefined,
+        onRestoreQueuedComposerInput: () => undefined,
+        onSubmit: () => undefined,
+        onApplyAll: () => undefined,
+        classes: { btnPrimary: "", btnSecondary: "", input: "", error: "" },
+        ActionButton,
+        ScopeChip,
+        StatusPill: BaseStatusChip,
+        MessageBubble,
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Open manuscript cockpit view" disabled=""');
+  });
+
+  it("marks diffs and reviews shortcuts active from the selected inspector tab", () => {
+    const renderWithTab = (activeEditorTab: "diffs" | "reviews") => renderToStaticMarkup(
+      React.createElement(CockpitMainConversation, {
+        t,
+        mode: "discuss",
+        activeEditorTab,
+        busy: false,
+        error: null,
+        input: "",
+        scopeChips: [
+          { label: "Scope", value: "Discuss" },
+          { label: "Target", value: "Novel" },
+        ],
+        hasPendingChanges: false,
+        statusPills: [{ label: "Stage", value: "Ready" }],
+        status: buildStatusStrip({ stage: "ready" }),
+        activeMessages: [],
+        quickStartPanel: null,
+        composerInputId: "composer",
+        composerHintId: "composer-hint",
+        composerHint: "Try writing a prompt",
+        canUseBinder: false,
+        canUseDraft: true,
+        hasPendingProposalChanges: false,
+        queuedComposerEntries: [],
+        onInputChange: () => undefined,
+        onQueueComposerInput: () => undefined,
+        onRestoreQueuedComposerInput: () => undefined,
+        onSubmit: () => undefined,
+        onApplyAll: () => undefined,
+        classes: { btnPrimary: "", btnSecondary: "", input: "", error: "" },
+        ActionButton,
+        ScopeChip,
+        StatusPill: BaseStatusChip,
+        MessageBubble,
+      }),
+    );
+
+    expect(renderWithTab("diffs")).toContain('class="is-active" aria-pressed="true" aria-label="Open diffs cockpit view"');
+    expect(renderWithTab("reviews")).toContain('class="is-active" aria-pressed="true" aria-label="Open reviews cockpit view"');
+  });
+
   it("renders a live status strip with determinate progress in the conversation path", () => {
     const markup = renderToStaticMarkup(
       React.createElement(CockpitMainConversation, {

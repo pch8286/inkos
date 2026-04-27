@@ -154,6 +154,7 @@ interface CockpitInspectorPanelProps {
   readonly setupPanel: SetupPanelData;
   readonly activityEntries: ReadonlyArray<CockpitStatusActivity>;
   readonly activityEmptyLabel: string;
+  readonly onOpenSystemHealth?: () => void;
   readonly classNames: ClassNames;
   readonly ids: TabIds;
   readonly InspectorTabButton: (props: TabButtonProps) => ReactNode;
@@ -467,6 +468,7 @@ export function CockpitInspectorPanel({
   setupPanel,
   activityEntries,
   activityEmptyLabel,
+  onOpenSystemHealth,
   classNames,
   ids,
   InspectorTabButton,
@@ -531,15 +533,24 @@ export function CockpitInspectorPanel({
     <aside className="studio-cockpit-right studio-cockpit-rail xl:pr-1">
       <div className="studio-cockpit-panel rounded-lg p-3">
         <div className="studio-cockpit-system-health">
-          <div className="studio-cockpit-system-heading">
+          <button
+            type="button"
+            className="studio-cockpit-system-heading"
+            onClick={onOpenSystemHealth}
+          >
             <span>SYSTEM HEALTH</span>
             <strong>Operational</strong>
-          </div>
+          </button>
           <div className="studio-cockpit-system-dots">
-            <span>API<i /></span>
-            <span>DB<i /></span>
-            <span>Vector<i /></span>
-            <span>Queue<i /></span>
+            {["API", "DB", "Vector", "Queue"].map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onOpenSystemHealth}
+              >
+                {label}<i />
+              </button>
+            ))}
           </div>
         </div>
 
