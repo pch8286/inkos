@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, X } from "lucide-react";
 
 interface ConfirmDialogProps {
@@ -10,6 +11,12 @@ interface ConfirmDialogProps {
   readonly variant?: "danger" | "default";
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
+}
+
+export function resolveConfirmDialogPortalTarget(
+  ownerDocument: Document | undefined,
+): HTMLElement | null {
+  return ownerDocument?.body ?? null;
 }
 
 export function ConfirmDialog({
@@ -37,7 +44,7 @@ export function ConfirmDialog({
 
   const isDanger = variant === "danger";
 
-  return (
+  const dialog = (
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in"
@@ -89,4 +96,7 @@ export function ConfirmDialog({
       </div>
     </div>
   );
+
+  const portalTarget = resolveConfirmDialogPortalTarget(typeof document === "undefined" ? undefined : document);
+  return portalTarget ? createPortal(dialog, portalTarget) : dialog;
 }

@@ -1,5 +1,6 @@
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import { useEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { SSEMessage } from "../hooks/use-sse";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
@@ -58,6 +59,17 @@ interface Nav {
   toRadar: () => void;
 }
 
+export function resolveBookMenuPortalTarget(
+  ownerDocument: Document | undefined,
+): HTMLElement | null {
+  return ownerDocument?.body ?? null;
+}
+
+interface BookMenuPosition {
+  readonly top: number;
+  readonly right: number;
+}
+
 function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
   readonly bookId: string;
   readonly bookTitle: string;
@@ -66,16 +78,42 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
   readonly onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<BookMenuPosition | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) || menuPortalRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPosition({
+        top: rect.bottom + 8,
+        right: window.innerWidth - rect.right,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [open]);
 
   const handleDelete = async () => {
@@ -85,42 +123,50 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete }: {
     onDelete();
   };
 
+  const menu = open && menuPosition ? (
+    <div
+      ref={menuPortalRef}
+      className="fixed min-w-[11rem] bg-card/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl shadow-black/15 py-1 z-[1000] fade-in"
+      style={{ top: menuPosition.top, right: menuPosition.right }}
+    >
+      <button
+        onClick={() => { setOpen(false); nav.toBook(bookId); }}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
+      >
+        <Settings size={14} className="text-muted-foreground" />
+        {t("book.settings")}
+      </button>
+      <a
+        href={`/api/books/${bookId}/export?format=txt`}
+        download
+        onClick={() => setOpen(false)}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
+      >
+        <Download size={14} className="text-muted-foreground" />
+        {t("book.export")}
+      </a>
+      <div className="border-t border-border/50 my-1" />
+      <button
+        onClick={() => { setOpen(false); setConfirmDelete(true); }}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/12 transition-colors cursor-pointer"
+      >
+        <Trash2 size={14} />
+        {t("book.deleteBook")}
+      </button>
+    </div>
+  ) : null;
+  const portalTarget = resolveBookMenuPortalTarget(typeof document === "undefined" ? undefined : document);
+
   return (
     <div ref={menuRef} className="relative z-10">
       <button
+        ref={triggerRef}
         onClick={() => setOpen((prev) => !prev)}
         className="inline-flex h-9 w-9 items-center justify-center rounded-xl studio-icon-btn cursor-pointer"
       >
         <MoreVertical size={18} />
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-2 min-w-[11rem] bg-card/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl shadow-black/15 py-1 z-50 fade-in">
-          <button
-            onClick={() => { setOpen(false); nav.toBook(bookId); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
-          >
-            <Settings size={14} className="text-muted-foreground" />
-            {t("book.settings")}
-          </button>
-          <a
-            href={`/api/books/${bookId}/export?format=txt`}
-            download
-            onClick={() => setOpen(false)}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
-          >
-            <Download size={14} className="text-muted-foreground" />
-            {t("book.export")}
-          </a>
-          <div className="border-t border-border/50 my-1" />
-          <button
-            onClick={() => { setOpen(false); setConfirmDelete(true); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/12 transition-colors cursor-pointer"
-          >
-            <Trash2 size={14} />
-            {t("book.deleteBook")}
-          </button>
-        </div>
-      )}
+      {portalTarget && menu ? createPortal(menu, portalTarget) : menu}
       <ConfirmDialog
         open={confirmDelete}
         title={t("book.deleteBook")}
