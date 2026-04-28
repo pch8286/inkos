@@ -41,6 +41,8 @@ const ACTIONABLE_STYLE_CATEGORIES = new Set([
   "추상 정리문",
   "도입부 신체 감각 과밀",
   "장면 밖 원칙 해설",
+  "장식적 판정문",
+  "서술자 판정문",
 ]);
 
 function isActionableStyleIssue(issue: AuditIssue): boolean {
@@ -60,6 +62,7 @@ function isActionableStyleIssue(issue: AuditIssue): boolean {
     "AI", "段落", "문단",
     "감정 직설", "대사 압력",
     "대명사", "종속절", "부정형", "짧은 문단",
+    "판정문", "장식적 비유",
   ].some((needle) => text.includes(needle));
 }
 

@@ -338,6 +338,7 @@ describe("ContinuityAuditor", () => {
       expect(systemPrompt).toContain("그는/그녀는 같은 3인칭 대명사 주어가 영어 번역투처럼 반복되는지");
       expect(systemPrompt).toContain("감각 자체가 주어가 되는 도입문이 반복되는지");
       expect(systemPrompt).toContain("비문처럼 걸리는 인식 문장");
+      expect(systemPrompt).toContain("구체 사물·행동 묘사 뒤에 서술자가 인물의 의도나 성격을 장식적 비유/판정문으로 닫아 독자의 추론을 대신하는지");
       expect(systemPrompt).toContain("시점 인물이 알 수 없는 정보나 타인의 속마음을 서술자가 먼저 해설하는지");
       expect(systemPrompt).toContain("처음 등장하는 고유명사가 관계, 기능, 위협 없이 이름만 던져지는지");
       expect(systemPrompt).toContain("장면의 갈등이 인물의 욕망과 방해로 작동하는지");

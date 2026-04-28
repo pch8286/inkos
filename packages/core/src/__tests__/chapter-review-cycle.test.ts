@@ -260,6 +260,83 @@ describe("runChapterReviewCycle", () => {
     expect(result.revised).toBe(true);
   });
 
+  it("runs one bounded spot-fix pass for decorative narrator verdict warnings", async () => {
+    const warningAudit = createAuditResult({
+      passed: true,
+      issues: [{
+        severity: "warning",
+        category: "장식적 판정문",
+        description: "구체 묘사 뒤에 서술자가 인물 의도를 비유적 결론으로 다시 판정합니다.",
+        suggestion: "독자가 이미 추론 가능한 결론문은 빼고 다음 행동이나 반응으로 이어 주세요.",
+      }],
+    });
+    const auditChapter = vi.fn()
+      .mockResolvedValueOnce(warningAudit)
+      .mockResolvedValueOnce(createAuditResult());
+    const reviseChapter = vi.fn().mockResolvedValue({
+      revisedContent: "verdict-trimmed draft",
+      wordCount: 19,
+      fixedIssues: ["trimmed narrator verdict"],
+      updatedState: "",
+      updatedLedger: "",
+      updatedHooks: "",
+      tokenUsage: ZERO_USAGE,
+    });
+    const normalizeDraftLengthIfNeeded = vi.fn()
+      .mockResolvedValueOnce({
+        content: "original draft",
+        wordCount: 13,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      })
+      .mockResolvedValueOnce({
+        content: "verdict-trimmed draft",
+        wordCount: 19,
+        applied: false,
+        tokenUsage: ZERO_USAGE,
+      });
+
+    const result = await runChapterReviewCycle({
+      book: { genre: "modern-fantasy" },
+      bookDir: "/tmp/book",
+      chapterNumber: 1,
+      initialOutput: {
+        title: "Test Chapter",
+        content: "original draft",
+        wordCount: 13,
+        postWriteErrors: [],
+      },
+      lengthSpec: LENGTH_SPEC,
+      reducedControlInput: undefined,
+      initialUsage: ZERO_USAGE,
+      createReviser: () => ({ reviseChapter }),
+      structuralGate: { evaluateStructuralGate: vi.fn().mockResolvedValue(CLEAN_STRUCTURAL_GATE) },
+      auditor: { auditChapter },
+      normalizeDraftLengthIfNeeded,
+      assertChapterContentNotEmpty: () => undefined,
+      addUsage: (left, right) => ({
+        promptTokens: left.promptTokens + (right?.promptTokens ?? 0),
+        completionTokens: left.completionTokens + (right?.completionTokens ?? 0),
+        totalTokens: left.totalTokens + (right?.totalTokens ?? 0),
+      }),
+      restoreLostAuditIssues: (_previous, next) => next,
+      analyzeAITells: () => ({ issues: [] as AuditIssue[] }),
+      analyzeSensitiveWords: () => ({ found: [] as Array<{ severity: "warn" | "block" }>, issues: [] as AuditIssue[] }),
+      logWarn: () => undefined,
+      logStage: () => undefined,
+    });
+
+    expect(reviseChapter).toHaveBeenCalledTimes(1);
+    expect(reviseChapter.mock.calls[0]?.[3]).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        category: "장식적 판정문",
+      }),
+    ]);
+    expect(result.finalContent).toBe("verdict-trimmed draft");
+    expect(result.revised).toBe(true);
+  });
+
   it("runs one bounded spot-fix pass for Korean scene-note leakage warnings", async () => {
     const auditChapter = vi.fn()
       .mockResolvedValueOnce(createAuditResult())

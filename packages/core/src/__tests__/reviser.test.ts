@@ -312,6 +312,7 @@ describe("ReviserAgent", () => {
       expect(systemPrompt).toContain("이동, 반복 절차, 이미 이해된 정보는 압축한다");
       expect(systemPrompt).toContain("짧은 문단이 연속되면 효과 비트만 남기고 인접한 행동-관찰-반응은 한 문단으로 묶는다");
       expect(systemPrompt).toContain("소품의 의미 해설은 사용 방식, 실패, 손에 익은 정도, 상대 반응으로 바꾼다");
+      expect(systemPrompt).toContain("구체 단서가 이미 의도나 성격을 보여 주면, 뒤따르는 장식적 판정문은 삭제하거나");
       expect(systemPrompt).toContain("회차 끝의 회고형 선언이나 판세 비유는 마지막 행동, 되돌릴 수 없는 결과, 상대 반응으로 바꾼다");
       expect(systemPrompt).toContain("수정 우선순위는 구조 -> 인물/갈등 -> 장면 -> 문장 순서로 판단한다");
       expect(systemPrompt).toContain("회차의 작은 보상과 다음 질문이 사라진 경우");
