@@ -91,6 +91,7 @@ interface SetupPanelData {
   readonly setupStatusLabel: string;
   readonly setupSession: BookSetupSessionPayload | null;
   readonly onStartNewSetup: () => void;
+  readonly setupResetDisabled: boolean;
   readonly setupDraftDirty: boolean;
   readonly setupProposalDelta: ReadonlyArray<string>;
   readonly setupPrimaryAction: SetupPrimaryAction;
@@ -845,7 +846,12 @@ export function CockpitInspectorPanel({
                     <button
                       type="button"
                       onClick={() => setupPanel.onStartNewSetup()}
-                      className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${classNames.btnSecondary}`}
+                      disabled={setupPanel.setupResetDisabled || Boolean(setupPanel.autoCreatePhase)}
+                      className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${
+                        setupPanel.setupResetDisabled || setupPanel.autoCreatePhase
+                          ? "cursor-not-allowed opacity-45"
+                          : classNames.btnSecondary
+                      }`}
                     >
                       {t("cockpit.startNewSetup")}
                     </button>
@@ -859,6 +865,90 @@ export function CockpitInspectorPanel({
                   </div>
                 </div>
                 <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupReadyHint")}</div>
+                <div className="mb-4 grid gap-3">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">{t("create.bookTitle")}</span>
+                    <input
+                      aria-label={t("create.bookTitle")}
+                      value={setupPanel.setupTitle}
+                      onChange={(event) => setupPanel.onSetSetupTitle(event.target.value)}
+                      className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                    />
+                  </label>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">{t("create.genre")}</span>
+                      <select
+                        aria-label={t("create.genre")}
+                        value={setupPanel.setupGenre}
+                        onChange={(event) => setupPanel.onSetSetupGenre(event.target.value)}
+                        className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                      >
+                        <option value="">{t("create.genre")}</option>
+                        {setupPanel.genres.map((genre) => (
+                          <option key={genre.id} value={genre.id}>
+                            {genre.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">{t("create.platform")}</span>
+                      <select
+                        aria-label={t("create.platform")}
+                        value={setupPanel.setupPlatform}
+                        onChange={(event) => setupPanel.onSetSetupPlatform(event.target.value)}
+                        className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                      >
+                        <option value="">{t("create.platform")}</option>
+                        {setupPanel.platformOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">{t("create.wordsPerChapter")}</span>
+                      <input
+                        aria-label={t("create.wordsPerChapter")}
+                        type="number"
+                        min="1"
+                        value={setupPanel.setupWords}
+                        onChange={(event) => setupPanel.onSetSetupWords(event.target.value)}
+                        className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">{t("create.targetChapters")}</span>
+                      <input
+                        aria-label={t("create.targetChapters")}
+                        type="number"
+                        min="1"
+                        value={setupPanel.setupTargetChapters}
+                        onChange={(event) => setupPanel.onSetSetupTargetChapters(event.target.value)}
+                        className={`w-full rounded-xl px-3 py-2.5 text-sm outline-none ${classNames.input}`}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">{t("cockpit.setupBrief")}</span>
+                    <textarea
+                      aria-label={t("cockpit.setupBrief")}
+                      value={setupPanel.setupBrief}
+                      onChange={(event) => setupPanel.onSetSetupBrief(event.target.value)}
+                      rows={4}
+                      className={`w-full resize-y rounded-xl px-3 py-2.5 text-sm leading-6 outline-none ${classNames.input}`}
+                    />
+                  </label>
+                </div>
                 {setupPanel.setupDraftDirty ? (
                   <div className={`mb-3 rounded-xl border px-3 py-2 text-xs ${classNames.error}`}>
                     {t("cockpit.setupDraftChanged")}

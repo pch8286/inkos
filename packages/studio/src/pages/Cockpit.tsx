@@ -1692,6 +1692,7 @@ export function Cockpit({
             setupStatusLabel,
             setupSession,
             onStartNewSetup: startNewSetupSession,
+            setupResetDisabled: autoCreateBusy || savingSetupReviewThreads || Boolean(resumingSetupSessionId),
             setupDraftDirty,
             setupProposalDelta,
             setupPrimaryAction,
