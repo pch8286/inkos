@@ -143,6 +143,7 @@ describe("CockpitMainConversation", () => {
         }),
         activeMessages: [],
         quickStartPanel: null,
+        editorPanel: React.createElement("section", { "data-editor-panel": "outline" }, "Outline workspace"),
         composerInputId: "composer",
         composerHintId: "composer-hint",
         composerHint: "Try writing a prompt",
@@ -166,6 +167,8 @@ describe("CockpitMainConversation", () => {
     expect(markup).toContain("studio-cockpit-work-log");
     expect(markup).toContain('role="log"');
     expect(markup).toContain("studio-cockpit-command-composer");
+    expect(markup).toContain('data-editor-panel="outline"');
+    expect(markup).toContain("Outline workspace");
     expect(markup).toContain("studio-command-chip");
     expect(markup).toContain("/draft");
     expect(markup).toContain("/propose");

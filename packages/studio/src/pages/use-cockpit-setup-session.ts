@@ -90,6 +90,15 @@ export function buildHiddenSetupResetState(projectLanguage: "ko" | "zh" | "en") 
   };
 }
 
+export function buildVisibleSetupResetState(projectLanguage: "ko" | "zh" | "en") {
+  return {
+    ...buildHiddenSetupResetState(projectLanguage),
+    setupSession: null as BookSetupSessionPayload | null,
+    readySetupFingerprint: null as string | null,
+    committedSetupFingerprint: null as string | null,
+  };
+}
+
 export interface SetupMutationRequestState {
   readonly version: number;
   readonly visible: boolean;
@@ -107,6 +116,13 @@ export function advanceSetupMutationRequestState(
     version: shouldInvalidate ? current.version + 1 : current.version,
     visible: input.visible,
   };
+}
+
+export function beginVisibleSetupMutationRequest(current: SetupMutationRequestState): SetupMutationRequestState {
+  return advanceSetupMutationRequestState(current, {
+    visible: true,
+    invalidate: true,
+  });
 }
 
 const staleSetupMutation = Symbol("stale-setup-mutation");
@@ -363,7 +379,7 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
 
   useEffect(() => {
     if (!input.showNewSetup) {
-      const resetState = buildHiddenSetupResetState(input.projectLanguage);
+      const resetState = buildVisibleSetupResetState(input.projectLanguage);
       setSetupSession(null);
       setSetupTitle(resetState.setupTitle);
       setSetupGenre(resetState.setupGenre);
@@ -418,6 +434,43 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     setAutoCreateFailedPhase(null);
     input.setError(null);
   }, [currentSetupDraftFingerprint, input]);
+
+  const startNewSetupSession = useCallback(() => {
+    const resetState = buildVisibleSetupResetState(input.projectLanguage);
+    setupMutationRequestRef.current = advanceSetupMutationRequestState(setupMutationRequestRef.current, {
+      visible: true,
+      invalidate: true,
+    });
+    setSetupSession(resetState.setupSession);
+    setSetupTitle(resetState.setupTitle);
+    setSetupGenre(resetState.setupGenre);
+    setSetupPlatform(resetState.setupPlatform);
+    setSetupWords(resetState.setupWords);
+    setSetupTargetChapters(resetState.setupTargetChapters);
+    setSetupBrief(resetState.setupBrief);
+    setPendingSetupBookId(resetState.pendingSetupBookId);
+    setSelectedFoundationPreviewKey(resetState.selectedFoundationPreviewKey);
+    setReadySetupFingerprint(resetState.readySetupFingerprint);
+    setCommittedSetupFingerprint(resetState.committedSetupFingerprint);
+    setAutoCreatePhase(resetState.autoCreatePhase);
+    setAutoCreateFailedPhase(resetState.autoCreateFailedPhase);
+    setSetupRecoveryError(null);
+    input.replaceThread(input.setupThreadKey, []);
+    input.clearProposal(input.setupThreadKey);
+    input.setError(null);
+    input.setShowNewSetup(true);
+    input.setSelectedBookId("");
+    input.setMode("discuss");
+    input.setInspectorTab("setup");
+  }, [input]);
+
+  const openSetupSession = useCallback(() => {
+    input.setShowNewSetup(true);
+    input.setSelectedBookId("");
+    input.setMode("discuss");
+    input.setInspectorTab("setup");
+    input.setError(null);
+  }, [input]);
 
   const saveSetupLlm = useCallback(async () => {
     if (!input.projectProvider) {
@@ -814,16 +867,17 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     }
 
     setResumingSetupSessionId(summary.id);
-    setupMutationRequestRef.current = advanceSetupMutationRequestState(setupMutationRequestRef.current, {
-      visible: input.showNewSetup,
-      invalidate: true,
-    });
+    setupMutationRequestRef.current = beginVisibleSetupMutationRequest(setupMutationRequestRef.current);
+    const request = captureSetupMutationRequest();
     setAutoCreatePhase(null);
     setAutoCreateFailedPhase(null);
     input.setError(null);
     setSetupRecoveryError(null);
     try {
       const result = await fetchJson<BookSetupSessionPayload>(`/book-setup/${summary.id}`);
+      if (!isActiveSetupMutationRequest(request)) {
+        throw staleSetupMutation;
+      }
       hydrateSetupSessionState(result, summary);
       syncSetupDraftSnapshot(buildSetupFingerprintFromSession(result));
       input.replaceThread(input.setupThreadKey, [createMessage("system", `${input.t("cockpit.setupRecoveredHeadline")} ${result.title}.`)]);
@@ -831,11 +885,14 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
       await loadRecentSetupSessions();
       await Promise.all([input.refetchBooks(), input.refetchCreateStatus()]);
     } catch (cause) {
+      if (isStaleSetupMutation(cause)) {
+        return;
+      }
       input.setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setResumingSetupSessionId("");
     }
-  }, [buildSetupFingerprintFromSession, hydrateSetupSessionState, input, loadRecentSetupSessions, recoverLatestSetupSession, resumingSetupSessionId, syncSetupDraftSnapshot]);
+  }, [buildSetupFingerprintFromSession, captureSetupMutationRequest, hydrateSetupSessionState, input, isActiveSetupMutationRequest, loadRecentSetupSessions, recoverLatestSetupSession, resumingSetupSessionId, syncSetupDraftSnapshot]);
 
   const handleDiscussSetup = useCallback(async () => {
     setAutoCreateFailedPhase(null);
@@ -898,6 +955,8 @@ export function useCockpitSetupSession(input: UseCockpitSetupSessionInput) {
     creatingBook,
     savingSetupReviewThreads,
     markSetupReady,
+    startNewSetupSession,
+    openSetupSession,
     saveSetupLlm,
     handlePrepareSetupProposal,
     handleApproveSetup,

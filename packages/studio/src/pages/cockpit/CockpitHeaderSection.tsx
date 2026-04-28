@@ -1,5 +1,6 @@
 import type { TFunction } from "../../hooks/use-i18n";
 import {
+  AppWindow,
   BookOpen,
   FileText,
   Loader2,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 
 interface Nav {
+  readonly toDashboard: () => void;
   readonly toBook: (id: string) => void;
   readonly toTruth: (id: string) => void;
 }
@@ -42,9 +44,13 @@ interface CockpitHeaderSectionProps {
   readonly statusTargetLabel: string;
   readonly statusModelLabel: string;
   readonly selectedBookId: string;
+  readonly runLabel: string;
+  readonly runDisabled?: boolean;
+  readonly onRun: () => void;
   readonly onRefresh: () => void;
   readonly onFocusWorkspace?: () => void;
-  readonly onFocusSearch?: () => void;
+  readonly searchQuery: string;
+  readonly onSearchQueryChange: (value: string) => void;
   readonly classes: HeaderClassNames;
 }
 
@@ -61,9 +67,13 @@ export function CockpitHeaderSection({
   statusTargetLabel,
   statusModelLabel,
   selectedBookId,
+  runLabel,
+  runDisabled = false,
+  onRun,
   onRefresh,
   onFocusWorkspace,
-  onFocusSearch,
+  searchQuery,
+  onSearchQueryChange,
   classes,
 }: CockpitHeaderSectionProps) {
   return (
@@ -96,15 +106,20 @@ export function CockpitHeaderSection({
             <strong>Production</strong>
             <RefreshCcw size={13} />
           </button>
-          <button
-            type="button"
+          <div
             className="studio-cockpit-search"
+            role="search"
             aria-label="Search"
-            onClick={onFocusSearch}
           >
             <Search size={14} />
-            <span>Search</span>
-          </button>
+            <input
+              type="search"
+              aria-label="Search"
+              value={searchQuery}
+              onChange={(event) => onSearchQueryChange(event.target.value)}
+              placeholder={t("cockpit.searchPlaceholder")}
+            />
+          </div>
         </div>
       </div>
 
@@ -116,11 +131,13 @@ export function CockpitHeaderSection({
           <span className="studio-cockpit-commandline-muted">{modeLabel} · {statusStageLabel}</span>
         </div>
         <button
-          onClick={onRefresh}
+          type="button"
+          onClick={onRun}
+          disabled={runDisabled}
           className={`studio-cockpit-launch-button ${classes.btnPrimary}`}
         >
           <Play size={15} />
-          Run
+          {runLabel}
         </button>
       </div>
 
@@ -153,6 +170,16 @@ export function CockpitHeaderSection({
 
       <div className="studio-cockpit-console-actions">
         <button
+          type="button"
+          aria-label={t("nav.studio")}
+          onClick={nav.toDashboard}
+          className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${classes.btnSecondary}`}
+        >
+          <AppWindow size={15} />
+          {t("nav.studio")}
+        </button>
+        <button
+          type="button"
           onClick={onRefresh}
           className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${classes.btnSecondary}`}
         >
@@ -162,6 +189,7 @@ export function CockpitHeaderSection({
         {selectedBookId ? (
           <>
             <button
+              type="button"
               onClick={() => nav.toBook(selectedBookId)}
               className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${classes.btnSecondary}`}
             >
@@ -169,6 +197,7 @@ export function CockpitHeaderSection({
               {t("cockpit.openBook")}
             </button>
             <button
+              type="button"
               onClick={() => nav.toTruth(selectedBookId)}
               className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${classes.btnPrimary}`}
             >

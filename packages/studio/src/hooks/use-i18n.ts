@@ -10,6 +10,7 @@ const strings = {
   "nav.config": { zh: "配置", en: "Config", ko: "설정" },
   "nav.cockpit": { zh: "对话驾驶舱", en: "Cockpit", ko: "코크핏" },
   "nav.openCockpit": { zh: "打开驾驶舱", en: "Open Cockpit", ko: "코크핏 열기" },
+  "nav.studio": { zh: "Studio", en: "Studio", ko: "Studio" },
   "nav.connected": { zh: "已连接", en: "Connected", ko: "연결됨" },
   "nav.disconnected": { zh: "未连接", en: "Disconnected", ko: "미연결" },
 
@@ -150,6 +151,8 @@ const strings = {
   "cockpit.subtitle": { zh: "以对话为主推进创作，需要时再切到设定集提案与章节操作。先讨论，再提案，确认后才落盘。", en: "Drive the book through conversation first, then switch into binder proposals or chapter actions only when needed. Discuss first, propose second, apply only after review.", ko: "대화를 중심으로 창작을 진행하고, 필요할 때만 설정집 제안이나 장 작업으로 전환합니다. 먼저 논의하고, 그다음 제안하며, 확인 후에만 반영합니다." },
   "cockpit.selectBook": { zh: "选择书籍", en: "Select Book", ko: "책 선택" },
   "cockpit.newSetup": { zh: "新设定讨论", en: "New Setup", ko: "새 설정 논의" },
+  "cockpit.startNewSetup": { zh: "重新开始", en: "Start New", ko: "새로 시작" },
+  "cockpit.searchPlaceholder": { zh: "搜索驾驶舱", en: "Search cockpit", ko: "코크핏 검색" },
   "cockpit.scope": { zh: "工作模式", en: "Mode", ko: "작업 모드" },
   "cockpit.discuss": { zh: "讨论", en: "Discuss", ko: "논의" },
   "cockpit.binder": { zh: "设定集", en: "Binder", ko: "설정집" },

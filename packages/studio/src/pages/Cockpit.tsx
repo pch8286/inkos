@@ -13,6 +13,7 @@ import {
   type PersistedAiSessionRecord,
 } from "../shared/ai-session-store";
 import type {
+  BookSetupSessionStatus,
   StudioRun,
   TruthFileDetail,
   TruthFileSummary,
@@ -34,7 +35,7 @@ import {
   type SetupPrimaryAction,
 } from "./cockpit-ui-state";
 import { CockpitHeaderSection } from "./cockpit/CockpitHeaderSection";
-import { CockpitInspectorPanel } from "./cockpit/CockpitInspectorPanel";
+import { CockpitInspectorPanel, makeActivityDataPreview } from "./cockpit/CockpitInspectorPanel";
 import { CockpitLeftRail } from "./cockpit/CockpitLeftRail";
 import { CockpitMainConversation } from "./cockpit/CockpitMainConversation";
 import {
@@ -216,6 +217,49 @@ export function getCockpitMessageRolePresentation(role: CockpitMessage["role"]):
   return { className: "is-assistant", label: "INKOS", alignLabel: "left" };
 }
 
+export function filterCockpitItems(input: {
+  readonly query: string;
+  readonly books: ReadonlyArray<BookSummary>;
+  readonly truthFiles: ReadonlyArray<TruthFileSummary>;
+  readonly chapters: ReadonlyArray<BookChapterSummary>;
+}) {
+  const query = input.query.trim().toLocaleLowerCase();
+  if (!query) {
+    return {
+      books: input.books,
+      truthFiles: input.truthFiles,
+      chapters: input.chapters,
+    };
+  }
+  const includesQuery = (...values: ReadonlyArray<string | number | null | undefined>) => {
+    return values.some((value) => String(value ?? "").toLocaleLowerCase().includes(query));
+  };
+  return {
+    books: input.books.filter((book) => includesQuery(
+      book.title,
+      book.genre,
+      book.platform,
+      book.status,
+      book.chaptersWritten,
+    )),
+    truthFiles: input.truthFiles.filter((file) => includesQuery(
+      file.name,
+      file.label,
+      file.path,
+      file.section,
+      file.sectionLabel,
+      file.preview,
+      file.exists ? "saved" : "seed",
+    )),
+    chapters: input.chapters.filter((chapter) => includesQuery(
+      chapter.number,
+      chapter.title,
+      chapter.status,
+      chapter.wordCount,
+    )),
+  };
+}
+
 function isPersistedCockpitPayload(value: unknown): value is PersistedCockpitPayload {
   if (!value || typeof value !== "object") {
     return false;
@@ -237,6 +281,73 @@ export function isSetupDiscussionLocked(input: {
   readonly autoCreateBusy: boolean;
 }) {
   return input.mode === "discuss" && input.showNewSetup && input.autoCreateBusy;
+}
+
+export function isSetupPrimaryActionDisabled(input: {
+  readonly action: SetupPrimaryAction;
+  readonly setupDiscussionLocked: boolean;
+  readonly setupTitle: string;
+  readonly setupGenre: string;
+  readonly setupDiscussionState: "discussing" | "ready";
+  readonly autoCreateAllowed: boolean;
+  readonly autoCreateBusy: boolean;
+  readonly setupCanPrepareProposal: boolean;
+  readonly preparingSetupProposal: boolean;
+  readonly approvingSetup: boolean;
+  readonly preparingFoundationPreview: boolean;
+  readonly creatingBook: boolean;
+  readonly setupDraftDirty: boolean;
+  readonly setupSessionStatus: BookSetupSessionStatus | null;
+  readonly hasFoundationPreview: boolean;
+}) {
+  switch (input.action) {
+    case "discuss":
+      return input.setupDiscussionLocked;
+    case "mark-ready":
+      return !input.setupTitle.trim() || !input.setupGenre || input.setupDiscussionState === "ready";
+    case "auto-create":
+      return !input.autoCreateAllowed || input.autoCreateBusy;
+    case "prepare-proposal":
+      return !input.setupCanPrepareProposal
+        || input.preparingSetupProposal
+        || input.approvingSetup
+        || input.preparingFoundationPreview
+        || input.creatingBook;
+    case "approve":
+      return input.setupDraftDirty || input.approvingSetup || input.setupSessionStatus !== "proposed";
+    case "preview-foundation":
+      return input.setupDraftDirty
+        || input.preparingFoundationPreview
+        || input.creatingBook
+        || input.setupSessionStatus !== "approved";
+    case "create":
+      return input.setupDraftDirty
+        || input.creatingBook
+        || input.setupSessionStatus !== "approved"
+        || !input.hasFoundationPreview;
+    default: {
+      const exhaustiveAction: never = input.action;
+      return exhaustiveAction;
+    }
+  }
+}
+
+export function isCockpitRunDisabled(input: {
+  readonly showNewSetup: boolean;
+  readonly setupPrimaryActionDisabled: boolean;
+  readonly busy: boolean;
+  readonly mode: CockpitMode;
+  readonly canUseBinder: boolean;
+  readonly canUseDraft: boolean;
+}) {
+  if (input.busy) {
+    return true;
+  }
+  if (input.showNewSetup) {
+    return input.setupPrimaryActionDisabled;
+  }
+  return (input.mode === "binder" && !input.canUseBinder)
+    || (input.mode === "draft" && !input.canUseDraft);
 }
 
 export function defaultQueuedComposerActionForMode(mode: CockpitMode): ComposerAction {
@@ -287,6 +398,7 @@ export function Cockpit({
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
   const [showNewSetup, setShowNewSetup] = useState(forceNewSetup || !initialBookId);
   const [input, setInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [draftInputByThread, setDraftInputByThread] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -428,6 +540,8 @@ export function Cockpit({
     creatingBook,
     savingSetupReviewThreads,
     markSetupReady,
+    startNewSetupSession,
+    openSetupSession,
     saveSetupLlm,
     handlePrepareSetupProposal,
     handleApproveSetup,
@@ -683,8 +797,15 @@ export function Cockpit({
     sse.messages,
   ]);
 
-  const chapterItems = bookDetailData?.chapters ?? [];
-  const truthFiles = truthListData?.files ?? [];
+  const searchFilteredItems = filterCockpitItems({
+    query: searchQuery,
+    books,
+    truthFiles: truthListData?.files ?? [],
+    chapters: bookDetailData?.chapters ?? [],
+  });
+  const visibleBooks = searchFilteredItems.books;
+  const chapterItems = searchFilteredItems.chapters;
+  const truthFiles = searchFilteredItems.truthFiles;
   const activityEntries = activityData?.entries.slice(0, 6) ?? [];
   const createJobs = createStatusData?.entries ?? [];
   const activeQueuedComposerEntries = queuedComposerEntries[activeThreadKey] ?? [];
@@ -1029,6 +1150,31 @@ export function Cockpit({
     && setupGenre
     && (!needsFreshAutoCreateProposal || setupCanPrepareProposal),
   );
+  const setupPrimaryActionDisabled = isSetupPrimaryActionDisabled({
+    action: setupPrimaryAction,
+    setupDiscussionLocked,
+    setupTitle,
+    setupGenre,
+    setupDiscussionState,
+    autoCreateAllowed,
+    autoCreateBusy,
+    setupCanPrepareProposal,
+    preparingSetupProposal,
+    approvingSetup,
+    preparingFoundationPreview,
+    creatingBook,
+    setupDraftDirty,
+    setupSessionStatus: setupSession?.status ?? null,
+    hasFoundationPreview: Boolean(setupSession?.foundationPreview),
+  });
+  const runDisabled = isCockpitRunDisabled({
+    showNewSetup,
+    setupPrimaryActionDisabled,
+    busy,
+    mode,
+    canUseBinder,
+    canUseDraft,
+  });
   const refreshCockpitData = () => {
     void refetchBooks();
     void refetchCreateStatus();
@@ -1068,6 +1214,83 @@ export function Cockpit({
     setInspectorTab("activity");
     refreshCockpitData();
   };
+  const runSetupAction = async (action: SetupPrimaryAction) => {
+    switch (action) {
+      case "discuss":
+        await handleDiscussSetup();
+        return;
+      case "mark-ready":
+        markSetupReady();
+        return;
+      case "auto-create":
+        await handleAutoCreateSetup();
+        return;
+      case "prepare-proposal":
+        await handlePrepareSetupProposal();
+        return;
+      case "approve":
+        await handleApproveSetup();
+        return;
+      case "preview-foundation":
+        await handlePrepareFoundationPreview();
+        return;
+      case "create":
+        await handleCreateSetup();
+        return;
+      default: {
+        const exhaustiveAction: never = action;
+        return exhaustiveAction;
+      }
+    }
+  };
+  const setupActionLabel = (action: SetupPrimaryAction) => {
+    switch (action) {
+      case "discuss":
+        return t("cockpit.discussSetup");
+      case "mark-ready":
+        return t("cockpit.setupMarkReady");
+      case "auto-create":
+        return t("cockpit.createNow");
+      case "prepare-proposal":
+        return t("cockpit.prepareSetupProposal");
+      case "approve":
+        return t("cockpit.approveCreate");
+      case "preview-foundation":
+        return t("cockpit.previewFoundation");
+      case "create":
+        return t("cockpit.createFromSetup");
+      default: {
+        const exhaustiveAction: never = action;
+        return exhaustiveAction;
+      }
+    }
+  };
+  const runCurrentAction = () => {
+    if (runDisabled) {
+      return;
+    }
+    if (showNewSetup) {
+      void runSetupAction(setupPrimaryAction);
+      return;
+    }
+    if (mode === "draft") {
+      void handleSubmit("draft");
+      return;
+    }
+    if (!input.trim()) {
+      focusComposer();
+      setError(t("common.enterCommand"));
+      return;
+    }
+    void handleSubmit(mode === "binder" ? "ask" : "discuss");
+  };
+  const runLabel = showNewSetup
+    ? setupActionLabel(setupPrimaryAction)
+    : mode === "draft"
+      ? t("cockpit.generateDraft")
+      : mode === "binder"
+        ? t("cockpit.ask")
+        : t("cockpit.discuss");
 
   const renderSetupActionButton = (action: SetupPrimaryAction, primary = false) => {
     const className = primary ? c.btnPrimary : c.btnSecondary;
@@ -1196,6 +1419,114 @@ export function Cockpit({
       ],
     }
     : null;
+  const editorPanel = (() => {
+    if (activeEditorTab === "manuscript") {
+      return (
+        <section className="studio-cockpit-editor-card" aria-label="Manuscript preview">
+          <div className="studio-cockpit-editor-card-header">
+            <span>MANUSCRIPT</span>
+            <strong>{selectedChapterLabel}</strong>
+          </div>
+          {chapterDetailData?.content ? (
+            <div className="studio-cockpit-editor-card-body whitespace-pre-wrap">
+              {chapterDetailData.content.slice(0, 1400)}
+              {chapterDetailData.content.length > 1400 ? "…" : ""}
+            </div>
+          ) : (
+            <div className="studio-cockpit-editor-card-empty">{t("cockpit.noBook")}</div>
+          )}
+        </section>
+      );
+    }
+    if (activeEditorTab === "diffs") {
+      return (
+        <section className="studio-cockpit-editor-card" aria-label="Pending diffs">
+          <div className="studio-cockpit-editor-card-header">
+            <span>DIFFS</span>
+            <strong>{activeProposal?.changes.length ?? 0}</strong>
+          </div>
+          {activeProposal?.changes.length ? (
+            <div className="space-y-2">
+              {activeProposal.changes.slice(0, 4).map((change) => (
+                <div key={change.fileName} className="studio-cockpit-editor-row">
+                  <span>{change.label}</span>
+                  <button type="button" onClick={() => void handleApplyChange(change.fileName, change.content)}>
+                    {t("cockpit.apply")}
+                  </button>
+                </div>
+              ))}
+              <button type="button" className={`mt-2 rounded-xl px-3 py-2 text-xs font-semibold ${c.btnPrimary}`} onClick={() => handleApplyAll()}>
+                {t("cockpit.applyAll")}
+              </button>
+            </div>
+          ) : (
+            <div className="studio-cockpit-editor-card-empty">{t("cockpit.commandHint")}</div>
+          )}
+        </section>
+      );
+    }
+    if (activeEditorTab === "reviews") {
+      return (
+        <section className="studio-cockpit-editor-card" aria-label="Recent reviews and activity">
+          <div className="studio-cockpit-editor-card-header">
+            <span>REVIEWS</span>
+            <strong>{activityEntries.length}</strong>
+          </div>
+          {activityEntries.length ? (
+            <div className="space-y-2">
+              {activityEntries.map((entry, index) => (
+                <div key={`${entry.event}-${entry.timestamp}-${index}`} className="studio-cockpit-editor-row">
+                  <span>{entry.event}</span>
+                  <small>{makeTruthPreview(makeActivityDataPreview(entry.data), 96)}</small>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="studio-cockpit-editor-card-empty">{t("app.alertsEmpty")}</div>
+          )}
+        </section>
+      );
+    }
+    return (
+      <section className="studio-cockpit-editor-card" aria-label="Outline workspace">
+        <div className="studio-cockpit-editor-card-header">
+          <span>OUTLINE</span>
+          <strong>{showNewSetup ? setupDiscussionLabel : `${chapterItems.length}`}</strong>
+        </div>
+        {showNewSetup ? (
+          <div className="studio-cockpit-editor-card-body">
+            <div className="font-semibold text-foreground">{setupTitle || t("cockpit.newSetup")}</div>
+            <div className="mt-2 text-muted-foreground">{setupNotes.creativeBriefPreview || t("cockpit.setupBrief")}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {setupMissingInfoLabels.map((item) => (
+                <span key={item} className="rounded-full studio-badge-soft px-2 py-1 text-[11px]">{item}</span>
+              ))}
+            </div>
+          </div>
+        ) : chapterItems.length ? (
+          <div className="space-y-2">
+            {[...chapterItems].reverse().slice(0, 6).map((chapter) => (
+              <button
+                key={chapter.number}
+                type="button"
+                className="studio-cockpit-editor-row w-full text-left"
+                onClick={() => {
+                  setSelectedChapterNumber(chapter.number);
+                  setMode("draft");
+                  setInspectorTab("focus");
+                }}
+              >
+                <span>{t("chapter.label").replace("{n}", `${chapter.number}`)}</span>
+                <small>{chapter.title || renderChapterStatus(chapter.status)}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="studio-cockpit-editor-card-empty">{t("cockpit.noBook")}</div>
+        )}
+      </section>
+    );
+  })();
 
   return (
     <div className="studio-cockpit-page space-y-6 fade-in">
@@ -1212,16 +1543,20 @@ export function Cockpit({
         statusTargetLabel={statusStrip.targetLabel}
         statusModelLabel={statusModelLabel}
         selectedBookId={selectedBookId}
+        runLabel={runLabel}
+        runDisabled={runDisabled}
+        onRun={runCurrentAction}
         onRefresh={refreshCockpitData}
         onFocusWorkspace={focusWorkspace}
-        onFocusSearch={focusComposer}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
         classes={{ btnPrimary: c.btnPrimary, btnSecondary: c.btnSecondary, error: c.error }}
       />
 
       <section className="studio-cockpit-shell grid gap-5">
         <CockpitLeftRail
           t={t}
-          books={books}
+          books={visibleBooks}
           showNewSetup={showNewSetup}
           selectedBookId={selectedBookId}
           mode={mode}
@@ -1232,9 +1567,7 @@ export function Cockpit({
           chapterItems={chapterItems}
           selectedChapterNumber={selectedChapterNumber}
           onNewSetup={() => {
-            setShowNewSetup(true);
-            setMode("discuss");
-            setInspectorTab("setup");
+            openSetupSession();
           }}
           onSelectBook={(bookId) => {
             setShowNewSetup(false);
@@ -1273,6 +1606,7 @@ export function Cockpit({
           status={statusStrip}
           activeMessages={activeMessages}
           quickStartPanel={setupQuickStartPanel}
+          editorPanel={editorPanel}
           composerInputId={composerInputId}
           composerHintId={composerHintId}
           composerHint={composerHint}
@@ -1357,6 +1691,7 @@ export function Cockpit({
             setupDiscussionLabel,
             setupStatusLabel,
             setupSession,
+            onStartNewSetup: startNewSetupSession,
             setupDraftDirty,
             setupProposalDelta,
             setupPrimaryAction,

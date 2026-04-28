@@ -90,6 +90,7 @@ interface SetupPanelData {
   readonly setupDiscussionLabel: string;
   readonly setupStatusLabel: string;
   readonly setupSession: BookSetupSessionPayload | null;
+  readonly onStartNewSetup: () => void;
   readonly setupDraftDirty: boolean;
   readonly setupProposalDelta: ReadonlyArray<string>;
   readonly setupPrimaryAction: SetupPrimaryAction;
@@ -166,7 +167,7 @@ function deriveSetupStatusTag({ draftDirty, setupSession }: { draftDirty: boolea
   return `${setupSession.status} · ${setupSession.bookId} · r${setupSession.revision}`;
 }
 
-function makeActivityDataPreview(data: unknown): string {
+export function makeActivityDataPreview(data: unknown): string {
   return makeTruthPreview(JSON.stringify(data ?? {}, null, 2), 140);
 }
 
@@ -840,13 +841,22 @@ export function CockpitInspectorPanel({
                   <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
                     {t("cockpit.setupTitle")}
                   </div>
-                  <span
-                    className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                      setupPanel.setupSession?.status === "approved" ? "studio-badge-ok" : "studio-badge-soft"
-                    }`}
-                  >
-                    {setupPanel.setupDiscussionLabel}
-                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setupPanel.onStartNewSetup()}
+                      className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${classNames.btnSecondary}`}
+                    >
+                      {t("cockpit.startNewSetup")}
+                    </button>
+                    <span
+                      className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                        setupPanel.setupSession?.status === "approved" ? "studio-badge-ok" : "studio-badge-soft"
+                      }`}
+                    >
+                      {setupPanel.setupDiscussionLabel}
+                    </span>
+                  </div>
                 </div>
                 <div className="mb-3 text-xs leading-6 text-muted-foreground">{t("cockpit.setupReadyHint")}</div>
                 {setupPanel.setupDraftDirty ? (

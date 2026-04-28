@@ -79,6 +79,7 @@ interface CockpitMainConversationProps {
   readonly status: CockpitStatusStrip;
   readonly activeMessages: ReadonlyArray<CockpitMessage>;
   readonly quickStartPanel: QuickStartPanel | null;
+  readonly editorPanel?: ReactNode;
   readonly composerInputId: string;
   readonly composerHintId: string;
   readonly composerHint: string;
@@ -117,6 +118,7 @@ export function CockpitMainConversation({
   status,
   activeMessages,
   quickStartPanel,
+  editorPanel,
   composerInputId,
   composerHintId,
   composerHint,
@@ -243,6 +245,12 @@ export function CockpitMainConversation({
             <ScopeChip key={`${chip.label}:${chip.value}`} label={chip.label} value={chip.value} accent={chip.accent} />
           ))}
         </div>
+
+        {editorPanel ? (
+          <div className="studio-cockpit-editor-panel">
+            {editorPanel}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex min-h-[clamp(22rem,50vh,30rem)] flex-col">

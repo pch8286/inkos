@@ -3,14 +3,19 @@ import { defaultChapterWordsForLanguage } from "../shared/book-create-form";
 import {
   buildCockpitStatusFacts,
   defaultQueuedComposerActionForMode,
+  filterCockpitItems,
   getCockpitCreateActionErrorKey,
   getCockpitMessageRolePresentation,
+  isCockpitRunDisabled,
+  isSetupPrimaryActionDisabled,
   isSetupDiscussionLocked,
   shouldRunQueuedComposerEntry,
 } from "./Cockpit";
 import {
   advanceSetupMutationRequestState,
+  beginVisibleSetupMutationRequest,
   buildHiddenSetupResetState,
+  buildVisibleSetupResetState,
   isCurrentSetupMutationRequest,
   isStaleSetupMutation,
   runSetupMutationWithBestEffortFollowUp,
@@ -161,6 +166,167 @@ describe("getCockpitMessageRolePresentation", () => {
   });
 });
 
+describe("filterCockpitItems", () => {
+  it("filters books, truth files, and chapters using the cockpit search query", () => {
+    const result = filterCockpitItems({
+      query: "moon",
+      books: [
+        { id: "a", title: "Moon Archive", genre: "fantasy", platform: "naver", status: "draft", chaptersWritten: 2 },
+        { id: "b", title: "Solar Archive", genre: "sf", platform: "kakao", status: "draft", chaptersWritten: 1 },
+      ],
+      truthFiles: [
+        {
+          name: "story_bible.md",
+          label: "Story Bible",
+          section: "core",
+          sectionLabel: "Core",
+          exists: true,
+          path: "story_bible.md",
+          optional: false,
+          available: true,
+          preview: "moon relic",
+          size: 10,
+        },
+        {
+          name: "rules.md",
+          label: "Rules",
+          section: "core",
+          sectionLabel: "Core",
+          exists: true,
+          path: "rules.md",
+          optional: false,
+          available: true,
+          preview: "sun relic",
+          size: 10,
+        },
+      ],
+      chapters: [
+        { number: 1, title: "Under the Moon", status: "done", wordCount: 1200, updatedAt: "now" },
+        { number: 2, title: "Under the Sun", status: "done", wordCount: 1200, updatedAt: "now" },
+      ],
+    });
+
+    expect(result.books.map((book) => book.id)).toEqual(["a"]);
+    expect(result.truthFiles.map((file) => file.name)).toEqual(["story_bible.md"]);
+    expect(result.chapters.map((chapter) => chapter.number)).toEqual([1]);
+  });
+
+  it("matches cockpit truth files by path and section metadata", () => {
+    const result = filterCockpitItems({
+      query: "world",
+      books: [],
+      truthFiles: [
+        {
+          name: "timeline.md",
+          label: "Timeline",
+          section: "world",
+          sectionLabel: "World",
+          exists: true,
+          path: "truth/world/timeline.md",
+          optional: false,
+          available: true,
+          preview: "chronology",
+          size: 10,
+        },
+        {
+          name: "style.md",
+          label: "Style",
+          section: "voice",
+          sectionLabel: "Voice",
+          exists: true,
+          path: "truth/voice/style.md",
+          optional: false,
+          available: true,
+          preview: "sentence rhythm",
+          size: 10,
+        },
+      ],
+      chapters: [],
+    });
+
+    expect(result.truthFiles.map((file) => file.name)).toEqual(["timeline.md"]);
+  });
+});
+
+describe("isSetupPrimaryActionDisabled", () => {
+  const baseInput: Parameters<typeof isSetupPrimaryActionDisabled>[0] = {
+    action: "discuss",
+    setupDiscussionLocked: false,
+    setupTitle: "Moon Archive",
+    setupGenre: "fantasy",
+    setupDiscussionState: "discussing",
+    autoCreateAllowed: true,
+    autoCreateBusy: false,
+    setupCanPrepareProposal: true,
+    preparingSetupProposal: false,
+    approvingSetup: false,
+    preparingFoundationPreview: false,
+    creatingBook: false,
+    setupDraftDirty: false,
+    setupSessionStatus: "approved",
+    hasFoundationPreview: true,
+  };
+
+  it("keeps the header setup action disabled while its matching setup button would be disabled", () => {
+    expect(isSetupPrimaryActionDisabled({
+      ...baseInput,
+      action: "mark-ready",
+      setupTitle: "",
+    })).toBe(true);
+
+    expect(isSetupPrimaryActionDisabled({
+      ...baseInput,
+      action: "create",
+      creatingBook: true,
+    })).toBe(true);
+  });
+
+  it("allows only valid setup primary actions to run from the header", () => {
+    expect(isSetupPrimaryActionDisabled({
+      ...baseInput,
+      action: "mark-ready",
+    })).toBe(false);
+
+    expect(isSetupPrimaryActionDisabled({
+      ...baseInput,
+      action: "create",
+    })).toBe(false);
+  });
+});
+
+describe("isCockpitRunDisabled", () => {
+  const baseInput: Parameters<typeof isCockpitRunDisabled>[0] = {
+    showNewSetup: false,
+    setupPrimaryActionDisabled: false,
+    busy: false,
+    mode: "discuss",
+    canUseBinder: true,
+    canUseDraft: true,
+  };
+
+  it("blocks the header Run action while any cockpit request is busy, including setup mode", () => {
+    expect(isCockpitRunDisabled({
+      ...baseInput,
+      showNewSetup: true,
+      busy: true,
+    })).toBe(true);
+  });
+
+  it("keeps mode-specific capability guards for non-setup contexts", () => {
+    expect(isCockpitRunDisabled({
+      ...baseInput,
+      mode: "binder",
+      canUseBinder: false,
+    })).toBe(true);
+
+    expect(isCockpitRunDisabled({
+      ...baseInput,
+      mode: "draft",
+      canUseDraft: false,
+    })).toBe(true);
+  });
+});
+
 describe("buildHiddenSetupResetState", () => {
   it("clears retained setup draft state using the current project language defaults", () => {
     expect(buildHiddenSetupResetState("en")).toEqual({
@@ -191,6 +357,17 @@ describe("buildHiddenSetupResetState", () => {
   });
 });
 
+describe("buildVisibleSetupResetState", () => {
+  it("clears the visible setup session so a new setup discussion starts from scratch", () => {
+    expect(buildVisibleSetupResetState("ko")).toEqual({
+      ...buildHiddenSetupResetState("ko"),
+      setupSession: null,
+      readySetupFingerprint: null,
+      committedSetupFingerprint: null,
+    });
+  });
+});
+
 describe("isCurrentSetupMutationRequest", () => {
   it("accepts only requests from the active visible setup generation", () => {
     expect(isCurrentSetupMutationRequest(
@@ -216,6 +393,15 @@ describe("advanceSetupMutationRequestState", () => {
       { version: 2, visible: true },
       { visible: true, invalidate: true },
     )).toEqual({ version: 3, visible: true });
+  });
+});
+
+describe("beginVisibleSetupMutationRequest", () => {
+  it("opens a visible request when resuming setup from a hidden book context", () => {
+    const request = beginVisibleSetupMutationRequest({ version: 2, visible: false });
+
+    expect(request).toEqual({ version: 3, visible: true });
+    expect(isCurrentSetupMutationRequest(request, request)).toBe(true);
   });
 });
 
