@@ -332,6 +332,30 @@ function quickCreateRequest(body: Record<string, unknown>, idempotencyKey?: stri
   };
 }
 
+async function writeReadableBook(rootPath: string, book: {
+  readonly id: string;
+  readonly title: string;
+  readonly genre: string;
+  readonly platform: string;
+  readonly language?: string;
+}): Promise<void> {
+  const bookDir = join(rootPath, "books", book.id);
+  await mkdir(join(bookDir, "chapters"), { recursive: true });
+  await writeFile(join(bookDir, "book.json"), JSON.stringify({
+    id: book.id,
+    title: book.title,
+    genre: book.genre,
+    platform: book.platform,
+    status: "active",
+    targetChapters: 200,
+    chapterWordCount: 3000,
+    language: book.language ?? "ko",
+    createdAt: "2026-04-30T00:00:00.000Z",
+    updatedAt: "2026-04-30T00:00:00.000Z",
+  }), "utf-8");
+  await writeFile(join(bookDir, "chapters", "index.json"), "[]", "utf-8");
+}
+
 async function approveSetupSession(app: StudioAppLike, sessionId: string, expectedRevision: number): Promise<Response> {
   return await Promise.resolve(app.request("http://localhost/api/book-setup/" + sessionId + "/approve", {
     method: "POST",
@@ -2242,6 +2266,129 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(initBookMock).not.toHaveBeenCalled();
   });
 
+  it("normalizes setup intake fields by trimming known strings", async () => {
+    const { normalizeBookSetupIntake } = await import("./server.js");
+
+    expect(normalizeBookSetupIntake({
+      firstChapterDraft: "  초고  ",
+      favoriteScenes: "살릴 장면",
+    })).toEqual({
+      firstChapterDraft: "초고",
+      worldNotes: "",
+      characterNotes: "",
+      favoriteScenes: "살릴 장면",
+      rewriteBoundaries: "",
+    });
+  });
+
+  it("builds a Korean setup intake prompt block from author material", async () => {
+    const { buildBookSetupIntakePromptBlock, normalizeBookSetupIntake } = await import("./server.js");
+
+    const block = buildBookSetupIntakePromptBlock("ko", normalizeBookSetupIntake({
+      firstChapterDraft: "첫 문장은 빗속의 장례식에서 시작한다.",
+      worldNotes: "재벌가와 무속 계약이 공존한다.",
+      characterNotes: "주인공은 빚 때문에 후계 싸움에 끌려온다.",
+      favoriteScenes: "할머니가 금지된 대사를 속삭이는 장면",
+      rewriteBoundaries: "주인공을 냉혈한으로 바꾸지 말 것",
+    }));
+
+    expect(block).toContain("## 작가 제공 원고와 설정");
+    expect(block).toContain("새 아이디어를 발명하지 말고");
+    expect(block).toContain("### 1화 초고");
+    expect(block).toContain("할머니가 금지된 대사를 속삭이는 장면");
+    expect(block).toContain("주인공을 냉혈한으로 바꾸지 말 것");
+  });
+
+  it("preserves setup intake in proposal responses, prompts, storage, and foundation context", async () => {
+    chatCompletionMock.mockResolvedValueOnce({
+      content: [
+        "# Setup Proposal",
+        "## Alignment Summary",
+        "Author-led inheritance fantasy.",
+        "",
+        "## Chosen Parameters",
+        "- Title: Intake Setup Book",
+        "- Genre: modern-fantasy",
+        "",
+        "## Open Questions",
+        "- Which family rule blocks the protagonist?",
+        "",
+        "## Approved Creative Brief",
+        "Keep the foundation tightly scoped around inheritance politics.",
+        "",
+        "## Why This Shape",
+        "It keeps the proposal anchored to the provided first chapter.",
+      ].join("\n"),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/book-setup/propose", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Intake Setup Book",
+        genre: "modern-fantasy",
+        language: "ko",
+        platform: "naver-series",
+        brief: "Focus on family succession pressure.",
+        conversation: [
+          { role: "user", content: "Do not replace the opening scene." },
+        ],
+        intake: {
+          firstChapterDraft: "  장례식장에서 첫 번째 빚 독촉이 온다.  ",
+          favoriteScenes: "할머니가 금지된 대사를 속삭이는 장면",
+          rewriteBoundaries: "주인공을 냉혈한으로 바꾸지 말 것",
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const session = await response.json() as { id: string; revision: number; intake: unknown };
+    expect(session).toMatchObject({
+      intake: {
+        firstChapterDraft: "장례식장에서 첫 번째 빚 독촉이 온다.",
+        worldNotes: "",
+        characterNotes: "",
+        favoriteScenes: "할머니가 금지된 대사를 속삭이는 장면",
+        rewriteBoundaries: "주인공을 냉혈한으로 바꾸지 말 것",
+      },
+    });
+
+    const proposalCall = chatCompletionMock.mock.calls[0] as [
+      unknown,
+      string,
+      ReadonlyArray<{ role: string; content: string }>,
+    ];
+    const userPrompt = proposalCall[2].find((message) => message.role === "user")?.content ?? "";
+    expect(userPrompt).toContain("최근 설정 논의:");
+    expect(userPrompt).toContain("## 작가 제공 원고와 설정");
+    expect(userPrompt.indexOf("## 작가 제공 원고와 설정")).toBeGreaterThan(userPrompt.indexOf("최근 설정 논의:"));
+    expect(userPrompt).toContain("장례식장에서 첫 번째 빚 독촉이 온다.");
+    expect(userPrompt).toContain("주인공을 냉혈한으로 바꾸지 말 것");
+
+    const persistedRaw = await readFile(join(root, ".inkos", "studio", "book-setup", session.id + ".json"), "utf-8");
+    expect(JSON.parse(persistedRaw)).toMatchObject({
+      session: {
+        intake: {
+          firstChapterDraft: "장례식장에서 첫 번째 빚 독촉이 온다.",
+          favoriteScenes: "할머니가 금지된 대사를 속삭이는 장면",
+          rewriteBoundaries: "주인공을 냉혈한으로 바꾸지 말 것",
+        },
+      },
+    });
+
+    expect((await approveSetupSession(app, session.id, session.revision)).status).toBe(200);
+    const preview = await previewSetupSession(app, session.id, session.revision + 1);
+    expect(preview.status).toBe(200);
+    const foundationConfig = pipelineConfigs.at(-1) as { externalContext?: string };
+    expect(foundationConfig.externalContext).toContain("Keep the foundation tightly scoped around inheritance politics.");
+    expect(foundationConfig.externalContext).toContain("장례식장에서 첫 번째 빚 독촉이 온다.");
+    expect(foundationConfig.externalContext).toContain("할머니가 금지된 대사를 속삭이는 장면");
+  });
+
   it("revises a setup proposal in place and exposes the previous proposal", async () => {
     chatCompletionMock
       .mockResolvedValueOnce({
@@ -3947,6 +4094,203 @@ describe("createStudioServer daemon lifecycle", () => {
     await vi.waitFor(async () => {
       const next = await app.request("http://localhost/api/book-create-status");
       await expect(next.json()).resolves.toEqual({ entries: [] });
+    });
+  });
+
+  it("clears create status only after a completed background create is readable through book detail", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(async (book: { id: string; title: string; genre: string; platform: string; language?: string }) => {
+      await new Promise<void>((resolve) => {
+        resolveInit = resolve;
+      });
+      await writeReadableBook(root, book);
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Readable Slow Book",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const creating = await app.request("http://localhost/api/books/readable-slow-book/create-status");
+    expect(creating.status).toBe(200);
+    await expect(creating.json()).resolves.toMatchObject({
+      bookId: "readable-slow-book",
+      status: "creating",
+    });
+
+    resolveInit?.();
+    await vi.waitFor(async () => {
+      const detail = await app.request("http://localhost/api/books/readable-slow-book");
+      expect(detail.status).toBe(200);
+      await expect(detail.json()).resolves.toMatchObject({
+        book: {
+          id: "readable-slow-book",
+          title: "Readable Slow Book",
+        },
+        nextChapter: 1,
+      });
+    });
+
+    const completedStatus = await app.request("http://localhost/api/books/readable-slow-book/create-status");
+    expect(completedStatus.status).toBe(404);
+    await expect(completedStatus.json()).resolves.toEqual({ status: "missing" });
+  });
+
+  it("keeps an already-readable slow create reserved until the background job settles", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(async (book: { id: string; title: string; genre: string; platform: string; language?: string }) => {
+      await writeReadableBook(root, book);
+      await new Promise<void>((resolve) => {
+        resolveInit = resolve;
+      });
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const body = {
+      title: "Partially Readable Book",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+    };
+
+    const response = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(async () => {
+      const detail = await app.request("http://localhost/api/books/partially-readable-book");
+      expect(detail.status).toBe(200);
+    });
+
+    const status = await app.request("http://localhost/api/books/partially-readable-book/create-status");
+    expect(status.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({
+      bookId: "partially-readable-book",
+      status: "creating",
+    });
+
+    const duplicate = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+    });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_CREATE_ALREADY_IN_PROGRESS",
+      },
+    });
+
+    resolveInit?.();
+    await vi.waitFor(async () => {
+      const completedStatus = await app.request("http://localhost/api/books/partially-readable-book/create-status");
+      expect(completedStatus.status).toBe(404);
+    });
+  });
+
+  it("rejects deleting a book while background creation is still in flight", async () => {
+    let resolveInit: (() => void) | undefined;
+    initBookMock.mockImplementationOnce(async (book: { id: string; title: string; genre: string; platform: string; language?: string }) => {
+      await writeReadableBook(root, book);
+      await new Promise<void>((resolve) => {
+        resolveInit = resolve;
+      });
+    });
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/create", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        title: "Delete During Create",
+        genre: "modern-fantasy",
+        platform: "naver-series",
+        language: "ko",
+      }),
+    });
+    expect(response.status).toBe(200);
+    await vi.waitFor(async () => {
+      const detail = await app.request("http://localhost/api/books/delete-during-create");
+      expect(detail.status).toBe(200);
+    });
+
+    const deletion = await app.request("http://localhost/api/books/delete-during-create", {
+      method: "DELETE",
+    });
+    expect(deletion.status).toBe(409);
+    await expect(deletion.json()).resolves.toMatchObject({
+      error: {
+        code: "BOOK_BUSY",
+      },
+    });
+
+    const status = await app.request("http://localhost/api/books/delete-during-create/create-status");
+    expect(status.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({ status: "creating" });
+
+    resolveInit?.();
+    await vi.waitFor(async () => {
+      const completedStatus = await app.request("http://localhost/api/books/delete-during-create/create-status");
+      expect(completedStatus.status).toBe(404);
+    });
+  });
+
+  it("surfaces async create failure even when an idempotency replay returns the queued response", async () => {
+    initBookMock.mockRejectedValueOnce(new Error("foundation generation failed"));
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const request = quickCreateRequest({
+      title: "Replay Failed Create",
+      genre: "modern-fantasy",
+      platform: "naver-series",
+      language: "ko",
+    }, "quick-create-async-failure");
+
+    const first = await app.request("http://localhost/api/books/create", request);
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "replay-failed-create",
+    });
+
+    await vi.waitFor(async () => {
+      const status = await app.request("http://localhost/api/books/replay-failed-create/create-status");
+      expect(status.status).toBe(200);
+      await expect(status.json()).resolves.toMatchObject({
+        status: "error",
+        error: "foundation generation failed",
+      });
+    });
+
+    const replay = await app.request("http://localhost/api/books/create", request);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      status: "creating",
+      bookId: "replay-failed-create",
+    });
+
+    const statusAfterReplay = await app.request("http://localhost/api/books/replay-failed-create/create-status");
+    expect(statusAfterReplay.status).toBe(200);
+    await expect(statusAfterReplay.json()).resolves.toMatchObject({
+      status: "error",
+      error: "foundation generation failed",
     });
   });
 

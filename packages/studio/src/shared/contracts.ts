@@ -65,6 +65,14 @@ export interface BookSetupConversationEntry {
   readonly content: string;
 }
 
+export interface BookSetupIntakePayload {
+  readonly firstChapterDraft: string;
+  readonly worldNotes: string;
+  readonly characterNotes: string;
+  readonly favoriteScenes: string;
+  readonly rewriteBoundaries: string;
+}
+
 export interface BookSetupProposalRequest {
   readonly title: string;
   readonly genre: string;
@@ -76,6 +84,7 @@ export interface BookSetupProposalRequest {
   readonly expectedRevision?: number;
   readonly brief?: string;
   readonly conversation?: ReadonlyArray<BookSetupConversationEntry>;
+  readonly intake?: BookSetupIntakePayload;
 }
 
 export interface BookSetupProposalPayload {
@@ -139,6 +148,7 @@ export interface BookSetupSessionPayload {
   readonly chapterWordCount: number;
   readonly targetChapters: number;
   readonly brief: string;
+  readonly intake?: BookSetupIntakePayload;
   readonly proposal: BookSetupProposalPayload;
   readonly previousProposal?: BookSetupProposalPayload;
   readonly foundationPreview?: BookSetupFoundationPreviewPayload;

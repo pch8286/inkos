@@ -10,6 +10,9 @@ const t = ((key: string) => {
     "nav.studio": "Studio",
     "cockpit.title": "InkOS Cockpit",
     "cockpit.subtitle": "Conversation-first writing console",
+    "cockpit.workspace": "Workspace",
+    "cockpit.workspaceData": "Workspace Data",
+    "cockpit.refreshWorkspaceData": "Refresh workspace data",
     "cockpit.scope": "Scope",
     "cockpit.statusStage": "Stage",
     "cockpit.statusTarget": "Target",
@@ -75,7 +78,9 @@ describe("CockpitHeaderSection", () => {
 
     expect(html).toContain('type="button" class="studio-cockpit-select-chip"');
     expect(html).toContain('aria-label="Workspace: 달빛 아래, 이야기꾼"');
-    expect(html).toContain('aria-label="Refresh environment data: Production"');
+    expect(html).toContain('aria-label="Refresh workspace data"');
+    expect(html).toContain("Workspace Data");
+    expect(html).not.toContain("Production");
     expect(html).toContain('class="studio-cockpit-search"');
     expect(html).not.toContain("lucide-chevron-down");
   });

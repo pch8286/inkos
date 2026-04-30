@@ -59,6 +59,7 @@ export async function waitForBookReady(
   const fetchBook = options.fetchBook ?? ((id: string) => fetchJson(`/books/${id}`));
   const fetchStatus = options.fetchStatus ?? ((id: string) => fetchJson<{ status: string; error?: string }>(`/books/${id}/create-status`));
   const maxAttempts = options.maxAttempts ?? DEFAULT_BOOK_READY_MAX_ATTEMPTS;
+  const hasExplicitMaxAttempts = options.maxAttempts !== undefined;
   const delayMs = options.delayMs ?? DEFAULT_BOOK_READY_DELAY_MS;
   const waitImpl = options.waitImpl ?? ((ms: number) => new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -67,7 +68,7 @@ export async function waitForBookReady(
   let lastError: unknown;
   let lastKnownStatus: string | undefined;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     try {
       await fetchBook(bookId);
       return;
@@ -85,7 +86,11 @@ export async function waitForBookReady(
           throw statusError;
         }
       }
-      if (attempt === maxAttempts - 1) {
+      if (attempt >= maxAttempts - 1) {
+        if (lastKnownStatus === "creating" && !hasExplicitMaxAttempts) {
+          await waitImpl(delayMs);
+          continue;
+        }
         if (lastKnownStatus === "creating") {
           break;
         }

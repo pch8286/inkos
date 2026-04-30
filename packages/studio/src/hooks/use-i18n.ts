@@ -149,6 +149,9 @@ const strings = {
   // Cockpit
   "cockpit.title": { zh: "对话式创作驾驶舱", en: "Conversation Cockpit", ko: "대화형 창작 코크핏" },
   "cockpit.subtitle": { zh: "以对话为主推进创作，需要时再切到设定集提案与章节操作。先讨论，再提案，确认后才落盘。", en: "Drive the book through conversation first, then switch into binder proposals or chapter actions only when needed. Discuss first, propose second, apply only after review.", ko: "대화를 중심으로 창작을 진행하고, 필요할 때만 설정집 제안이나 장 작업으로 전환합니다. 먼저 논의하고, 그다음 제안하며, 확인 후에만 반영합니다." },
+  "cockpit.workspace": { zh: "工作区", en: "Workspace", ko: "워크스페이스" },
+  "cockpit.workspaceData": { zh: "工作区数据", en: "Workspace Data", ko: "워크스페이스 데이터" },
+  "cockpit.refreshWorkspaceData": { zh: "刷新工作区数据", en: "Refresh workspace data", ko: "워크스페이스 데이터 새로고침" },
   "cockpit.selectBook": { zh: "选择书籍", en: "Select Book", ko: "책 선택" },
   "cockpit.newSetup": { zh: "新设定讨论", en: "New Setup", ko: "새 설정 논의" },
   "cockpit.startNewSetup": { zh: "重新开始", en: "Start New", ko: "새로 시작" },
@@ -678,6 +681,17 @@ const strings = {
     en: "This feedback draft stays on this screen; open the full reader for saved review actions.",
     ko: "이 피드백 메모는 현재 화면용 임시 메모입니다. 저장되는 검토 작업은 전체 리더에서 진행하세요.",
   },
+  "reader.feedbackLabel": { zh: "读者反馈", en: "Reader Feedback", ko: "독자 피드백" },
+  "reader.feedbackTitle": { zh: "移动优先检查", en: "Mobile-first pass", ko: "모바일 우선 점검" },
+  "reader.feedbackBody": {
+    zh: "检查移动默认视图中的段落密度、首屏钩子、换行节奏和继续阅读冲动。",
+    en: "Check paragraph density, first-screen hook, line breaks, and desire to continue in the default mobile view.",
+    ko: "모바일 기본 보기에서 문단 밀도, 첫 화면 훅, 줄바꿈, 다음 화 클릭 욕구를 확인합니다.",
+  },
+  "reader.feedbackPlaceholder": { zh: "读者体验备注...", en: "Reader experience notes...", ko: "독자 체험 메모..." },
+  "reader.feedbackQuestionConflict": { zh: "首屏是否能看见冲突？", en: "Is the conflict visible on the first screen?", ko: "첫 화면에서 갈등이 보이는가?" },
+  "reader.feedbackQuestionDensity": { zh: "移动端段落长度是否轻松？", en: "Does the mobile paragraph length feel manageable?", ko: "모바일 문단 길이가 부담스럽지 않은가?" },
+  "reader.feedbackQuestionHook": { zh: "最后一段是否拉动下一章？", en: "Does the final paragraph pull readers into the next chapter?", ko: "마지막 문단이 다음 화를 당기는가?" },
   "book.workspace": { zh: "书籍工作区", en: "Book Workspace", ko: "북 워크스페이스" },
   "book.workspace.manuscript": { zh: "书稿", en: "Manuscript", ko: "원고" },
 

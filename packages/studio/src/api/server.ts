@@ -39,6 +39,7 @@ import type {
   RadarFitCheckMetadata,
   TruthAssistAlignmentPayload,
   TruthAssistRequest,
+  BookSetupIntakePayload,
   BookSetupProposalPayload,
   BookSetupProposalRequest,
   BookSetupSessionPayload,
@@ -227,6 +228,93 @@ function isBookSetupReviewThreadPayloadValue(value: unknown): value is BookSetup
     && typeof value.quote === "string"
     && typeof value.createdAt === "string"
     && (value.resolvedAt === undefined || value.resolvedAt === null || typeof value.resolvedAt === "string");
+}
+
+function trimStringField(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function normalizeBookSetupIntake(value: unknown): BookSetupIntakePayload {
+  const record = isObjectRecord(value) ? value : {};
+  return {
+    firstChapterDraft: trimStringField(record.firstChapterDraft),
+    worldNotes: trimStringField(record.worldNotes),
+    characterNotes: trimStringField(record.characterNotes),
+    favoriteScenes: trimStringField(record.favoriteScenes),
+    rewriteBoundaries: trimStringField(record.rewriteBoundaries),
+  };
+}
+
+export function hasBookSetupIntake(intake: BookSetupIntakePayload): boolean {
+  return intake.firstChapterDraft.length > 0
+    || intake.worldNotes.length > 0
+    || intake.characterNotes.length > 0
+    || intake.favoriteScenes.length > 0
+    || intake.rewriteBoundaries.length > 0;
+}
+
+function isBookSetupIntakePayloadValue(value: unknown): value is BookSetupIntakePayload {
+  return isObjectRecord(value)
+    && typeof value.firstChapterDraft === "string"
+    && typeof value.worldNotes === "string"
+    && typeof value.characterNotes === "string"
+    && typeof value.favoriteScenes === "string"
+    && typeof value.rewriteBoundaries === "string";
+}
+
+export function buildBookSetupIntakePromptBlock(language: StudioLanguage, intake: BookSetupIntakePayload): string {
+  if (!hasBookSetupIntake(intake)) return "";
+
+  const copy = language === "ko"
+    ? {
+        heading: "## 작가 제공 원고와 설정",
+        instructions: [
+          "새 아이디어를 발명하지 말고, 아래 자료를 흡수/정리/진단하는 편집자 역할을 하라.",
+          "바로 1화를 리라이트하지 말고, 먼저 독자 진입 순서와 작가 의도 확인이 필요한 지점을 제안하라.",
+        ],
+        fields: [
+          ["### 1화 초고", intake.firstChapterDraft],
+          ["### 세계관/설정 메모", intake.worldNotes],
+          ["### 주인공/인물 메모", intake.characterNotes],
+          ["### 반드시 살릴 장면/대사", intake.favoriteScenes],
+          ["### 리라이트 금지/주의", intake.rewriteBoundaries],
+        ] as const,
+      }
+    : language === "zh"
+      ? {
+          heading: "## 作者提供的原稿与设定",
+          instructions: [
+            "不要发明新设定，而是以编辑身份吸收、整理并诊断以下材料。",
+            "不要立刻重写第 1 章；先提出读者进入顺序和需要确认作者意图的地方。",
+          ],
+          fields: [
+            ["### 第 1 章草稿", intake.firstChapterDraft],
+            ["### 世界观/设定备注", intake.worldNotes],
+            ["### 主角/人物备注", intake.characterNotes],
+            ["### 必须保留的场景/台词", intake.favoriteScenes],
+            ["### 禁止重写/注意事项", intake.rewriteBoundaries],
+          ] as const,
+        }
+      : {
+          heading: "## Author-Provided Draft and Setup",
+          instructions: [
+            "Do not invent new ideas; act as an editor who absorbs, organizes, and diagnoses the material below.",
+            "Do not rewrite chapter 1 immediately; first propose reader-entry order and points where author intent needs confirmation.",
+          ],
+          fields: [
+            ["### Chapter 1 Draft", intake.firstChapterDraft],
+            ["### World/Setup Notes", intake.worldNotes],
+            ["### Protagonist/Character Notes", intake.characterNotes],
+            ["### Must-Keep Scenes/Lines", intake.favoriteScenes],
+            ["### Rewrite Boundaries/Cautions", intake.rewriteBoundaries],
+          ] as const,
+        };
+
+  const sections = copy.fields
+    .filter(([, content]) => content.length > 0)
+    .map(([heading, content]) => `${heading}\n${content}`);
+
+  return [copy.heading, ...copy.instructions, ...sections].join("\n\n");
 }
 
 function isBookSetupFoundationPreviewPayloadValue(value: unknown): value is BookSetupFoundationPreviewPayload {
@@ -695,6 +783,7 @@ function isBookSetupSessionRecordValue(value: unknown): value is BookSetupSessio
     && (value.previousProposal === undefined || isBookSetupProposalPayloadValue(value.previousProposal))
     && Array.isArray(value.reviewThreads)
     && value.reviewThreads.every((thread) => isBookSetupReviewThreadPayloadValue(thread))
+    && (value.intake === undefined || isBookSetupIntakePayloadValue(value.intake))
     && typeof value.externalContext === "string"
     && typeof value.createdAt === "string"
     && typeof value.updatedAt === "string"
@@ -806,11 +895,15 @@ function normalizeStoredBookSetupSession(value: unknown): BookSetupSessionRecord
       }
     : legacySession.foundationPreview;
   const reviewThreads = normalizeBookSetupReviewThreads(legacySession.reviewThreads);
+  const intake = legacySession.intake === undefined
+    ? undefined
+    : normalizeBookSetupIntake(legacySession.intake);
   const upgraded = {
     ...legacySession,
     revision,
     proposal,
     reviewThreads,
+    ...(intake ? { intake } : {}),
     ...(previousProposal ? { previousProposal } : {}),
     ...(foundationPreview ? { foundationPreview } : {}),
   };
@@ -2118,6 +2211,7 @@ function summarizeBookSetupSession(session: BookSetupSessionRecord): BookSetupSe
     chapterWordCount: session.chapterWordCount,
     targetChapters: session.targetChapters,
     brief: session.brief,
+    intake: session.intake,
     proposal: session.proposal,
     previousProposal: session.previousProposal,
     foundationPreview: session.foundationPreview,
@@ -2184,6 +2278,13 @@ function extractMarkdownSection(markdown: string, heading: string): string | nul
 
 function extractApprovedCreativeBrief(markdown: string): string {
   return extractMarkdownSection(markdown, "Approved Creative Brief") ?? markdown.trim();
+}
+
+function buildBookSetupExternalContext(language: StudioLanguage, proposalContent: string, intake: BookSetupIntakePayload): string {
+  return [
+    extractApprovedCreativeBrief(proposalContent),
+    buildBookSetupIntakePromptBlock(language, intake),
+  ].filter((section) => section.trim().length > 0).join("\n\n");
 }
 
 async function resolveCommandPath(command: string): Promise<string | null> {
@@ -3358,6 +3459,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
   });
 
   async function acquireDeleteGuard(bookId: string): Promise<() => Promise<void>> {
+    if (bookCreateStatus.get(bookId)?.status === "creating") {
+      throw new ApiError(
+        409,
+        "BOOK_BUSY",
+        `Book "${bookId}" is still being created. Wait for it to finish before deleting.`,
+      );
+    }
     try {
       return await state.acquireBookLock(bookId);
     } catch {
@@ -3809,6 +3917,12 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       }
     }
 
+    const hasIncomingIntake = Object.prototype.hasOwnProperty.call(body, "intake");
+    const intake = hasIncomingIntake
+      ? normalizeBookSetupIntake(body.intake)
+      : normalizeBookSetupIntake(revisingSession?.intake);
+    const intakePromptBlock = buildBookSetupIntakePromptBlock(language, intake);
+
     const brief = typeof body.brief === "string" ? body.brief.trim() : "";
     const conversation = normalizeBookSetupConversation(body.conversation, language);
     const client = createLLMClient({
@@ -3900,6 +4014,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
             ? `最近设定讨论：\n${conversation}`
             : `Recent setup discussion:\n${conversation}`
         : "",
+      intakePromptBlock,
       language === "ko"
         ? "Chosen Parameters 섹션에는 사용자가 고른 값을 그대로 bullet로 적고, Alignment Summary / Open Questions / Why This Shape 는 짧고 검증 가능하게 써라."
         : language === "zh"
@@ -3920,6 +4035,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       createdAt: proposalCreatedAt,
       revision: nextRevision,
     };
+    const externalContext = buildBookSetupExternalContext(language, proposalContent, intake);
     const session: BookSetupSessionRecord = revisingSession
       ? {
           ...revisingSession,
@@ -3933,12 +4049,13 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           chapterWordCount: draft.chapterWordCount,
           targetChapters: draft.targetChapters,
           brief,
+          intake,
           proposal: nextProposal,
           previousProposal: revisingSession.proposal,
           reviewThreads: [],
           foundationPreview: undefined,
           exactProposal: undefined,
-          externalContext: extractApprovedCreativeBrief(proposalContent),
+          externalContext,
           updatedAt: proposalCreatedAt,
         }
       : {
@@ -3953,9 +4070,10 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
           chapterWordCount: draft.chapterWordCount,
           targetChapters: draft.targetChapters,
           brief,
+          intake,
           proposal: nextProposal,
           reviewThreads: [],
-          externalContext: extractApprovedCreativeBrief(proposalContent),
+          externalContext,
           createdAt: now,
           updatedAt: proposalCreatedAt,
         };

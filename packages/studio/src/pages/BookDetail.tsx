@@ -900,23 +900,23 @@ export function BookDetail({
 
           <aside className="book-workspace-feedback rounded-2xl border border-border/40 bg-background/80 p-4">
             <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-              Reader Feedback
+              {t("reader.feedbackLabel")}
             </div>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">Mobile-first pass</h2>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">{t("reader.feedbackTitle")}</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              모바일 기본 보기에서 문단 밀도, 첫 화면 훅, 줄바꿈, 다음 화 클릭 욕구를 확인합니다.
+              {t("reader.feedbackBody")}
             </p>
             <p className="book-workspace-feedback-note">
               {t("reader.feedbackLocalOnly")}
             </p>
             <textarea
               className="mt-4 min-h-44 w-full resize-y rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm outline-none focus:border-[color:var(--studio-chip-border)] focus:ring-2 focus:ring-[color:var(--studio-state-text)]/20"
-              placeholder="독자 체험 메모..."
+              placeholder={t("reader.feedbackPlaceholder")}
             />
             <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
-              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">첫 화면에서 갈등이 보이는가?</span>
-              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">모바일 문단 길이가 부담스럽지 않은가?</span>
-              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">마지막 문단이 다음 화를 당기는가?</span>
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">{t("reader.feedbackQuestionConflict")}</span>
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">{t("reader.feedbackQuestionDensity")}</span>
+              <span className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">{t("reader.feedbackQuestionHook")}</span>
             </div>
           </aside>
       </section>

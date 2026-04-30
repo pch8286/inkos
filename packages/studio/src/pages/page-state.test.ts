@@ -38,6 +38,24 @@ describe("waitForBookReady", () => {
     expect(attempts).toBe(25);
   });
 
+  it("does not time out at the default polling budget while the server still reports creation in progress", async () => {
+    let attempts = 0;
+
+    await expect(waitForBookReady("legacy-slow-book", {
+      fetchBook: async () => {
+        attempts += 1;
+        if (attempts < 121) {
+          throw new Error("Book not found");
+        }
+      },
+      fetchStatus: async () => ({ status: "creating" }),
+      delayMs: 0,
+      waitImpl: async () => undefined,
+    })).resolves.toBeUndefined();
+
+    expect(attempts).toBe(121);
+  });
+
   it("surfaces a clear timeout when the book is still being created", async () => {
     await expect(waitForBookReady("missing-book", {
       fetchBook: async () => {

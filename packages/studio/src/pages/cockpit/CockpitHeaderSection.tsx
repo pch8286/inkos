@@ -89,21 +89,21 @@ export function CockpitHeaderSection({
           <button
             type="button"
             className="studio-cockpit-select-chip"
-            aria-label={`Workspace: ${selectedBookLabel}`}
+            aria-label={`${t("cockpit.workspace")}: ${selectedBookLabel}`}
             onClick={onFocusWorkspace}
           >
-            <span>Workspace</span>
+            <span>{t("cockpit.workspace")}</span>
             <strong>{selectedBookLabel}</strong>
           </button>
           <button
             type="button"
             className="studio-cockpit-select-chip"
-            aria-label="Refresh environment data: Production"
+            aria-label={t("cockpit.refreshWorkspaceData")}
             onClick={onRefresh}
           >
-            <span>Environment</span>
+            <span>{t("common.refresh")}</span>
             <i />
-            <strong>Production</strong>
+            <strong>{t("cockpit.workspaceData")}</strong>
             <RefreshCcw size={13} />
           </button>
           <div
@@ -147,20 +147,16 @@ export function CockpitHeaderSection({
           <strong>{statusModelLabel}</strong>
         </div>
         <div className="studio-cockpit-console-cell">
-          <span>Agents</span>
-          <strong>4</strong>
+          <span>{t("cockpit.statusTarget")}</span>
+          <strong>{statusTargetLabel || selectedBookLabel}</strong>
         </div>
         <div className="studio-cockpit-console-cell">
           <span>Mode</span>
           <strong>{modeLabel}</strong>
         </div>
         <div className="studio-cockpit-console-cell">
-          <span>Max Steps</span>
+          <span>{t("cockpit.statusStage")}</span>
           <strong>{statusStageLabel}</strong>
-        </div>
-        <div className="studio-cockpit-console-cell">
-          <span>Context</span>
-          <strong>85%</strong>
         </div>
         <div className="studio-cockpit-console-cell">
           <span>{t("cockpit.selectBook")}</span>
