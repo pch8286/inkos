@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { ZodError } from "zod";
 
 const schedulerStartMock = vi.fn<() => Promise<void>>();
 const initBookMock = vi.fn();
@@ -63,6 +64,21 @@ const logger = {
 vi.mock("@actalk/inkos-core", () => {
   const passthroughSchema = {
     parse(value: unknown): unknown {
+      return value;
+    },
+  };
+  const storySpineSchemaMock = {
+    parse(value: unknown): unknown {
+      const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+      const required = ["protagonistId", "currentGoal", "currentQuestion"];
+      const missing = required.filter((field) => typeof record[field] !== "string" || !record[field].trim());
+      if (missing.length > 0) {
+        throw new ZodError(missing.map((field) => ({
+          code: "custom",
+          message: `${field} is required`,
+          path: [field],
+        })));
+      }
       return value;
     },
   };
@@ -244,7 +260,7 @@ vi.mock("@actalk/inkos-core", () => {
     MovementCandidateSchema: passthroughSchema,
     ProjectStoryModeSchema: passthroughSchema,
     SceneContractSchema: passthroughSchema,
-    StorySpineSchema: passthroughSchema,
+    StorySpineSchema: storySpineSchemaMock,
     WorldPressureSchema: passthroughSchema,
     createAdaptiveTick: vi.fn((input: any) => ({
       ...input,
@@ -287,10 +303,14 @@ vi.mock("@actalk/inkos-core", () => {
     ].join("\n")),
     validateSceneContractAgainstChapterStatus: vi.fn((contract: any, statuses: any[], candidates: any[]) => {
       const published = new Set(statuses.filter((entry) => entry.status === "published").map((entry) => entry.chapter));
+      const selectedCandidates = candidates.filter((candidate) => contract.movementCandidateIds.includes(candidate.id));
       const blocked = candidates
         .filter((candidate) => contract.movementCandidateIds.includes(candidate.id))
         .some((candidate) => candidate.conflictLevel === "major" && candidate.affectedChapters.some((chapter: number) => published.has(chapter)));
-      return blocked ? { ok: false, blockers: ["major conflict with published chapter"], warnings: [] } : { ok: true, blockers: [], warnings: [] };
+      const warnings = selectedCandidates
+        .filter((candidate) => candidate.status !== "approved")
+        .map((candidate) => `Movement candidate ${candidate.id} is ${candidate.status}, not approved.`);
+      return blocked ? { ok: false, blockers: ["major conflict with published chapter"], warnings } : { ok: true, blockers: [], warnings };
     }),
     repairStrategiesForConflict: vi.fn((conflictLevel: string, serialized: boolean) => (
       conflictLevel === "none"
@@ -5648,6 +5668,44 @@ describe("createStudioServer daemon lifecycle", () => {
     await expect(readTruthFiles(root, bookId, truthFiles)).resolves.toEqual(truthFiles);
   });
 
+  it("does not create lab persistence for missing books", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/books/missing-lab/lab/story-spine", {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        protagonistId: "hero",
+        currentGoal: "reach the archive",
+        currentQuestion: "Can the hero move?",
+        emotionalState: [],
+        activeChoices: [],
+        constraints: [],
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toContain("BOOK_NOT_FOUND");
+    await expect(access(join(root, "books", "missing-lab", "story", "lab", "story_spine.json"))).rejects.toThrow();
+  });
+
+  it("maps invalid lab payload validation errors to invalid request responses", async () => {
+    const bookId = "lab-invalid-payload";
+    await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request(`http://localhost/api/books/${bookId}/lab/story-spine`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ protagonistId: "" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("INVALID_REQUEST");
+  });
+
   it("rejects compiling a scene contract that would conflict with a published chapter", async () => {
     const bookId = "lab-conflict";
     await seedStoryWorldLabBook(root, bookId);
@@ -5705,6 +5763,53 @@ describe("createStudioServer daemon lifecycle", () => {
     });
     expect(compileResponse.status).toBe(409);
     await expect(compileResponse.text()).resolves.toContain("published chapter");
+  });
+
+  it("rejects compiling a scene contract with unapproved selected movement candidates", async () => {
+    const bookId = "lab-unapproved";
+    await seedStoryWorldLabBook(root, bookId);
+    const labDir = join(root, "books", bookId, "story", "lab");
+    await mkdir(labDir, { recursive: true });
+    await writeFile(join(labDir, "movement_candidates.json"), JSON.stringify([{
+      id: "move-candidate",
+      sourceTickId: "tick-manual",
+      text: "Candidate movement is still pending approval.",
+      relevance: "high",
+      visibility: "observed_now",
+      risk: "medium",
+      conflictLevel: "none",
+      status: "candidate",
+      affectedChapters: [4],
+      affectedStateKeys: ["story_spine.currentQuestion"],
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }], null, 2), "utf-8");
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const sceneResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        chapter: 4,
+        pov: "hero",
+        location: "archive",
+        sceneGoal: "Check unapproved movement.",
+        mustInclude: [],
+        mustAvoid: [],
+        movementCandidateIds: ["move-candidate"],
+        endingState: [],
+      }),
+    });
+    expect(sceneResponse.status).toBe(200);
+    const scenePayload = await sceneResponse.json() as { sceneContract: { id: string } };
+
+    const compileResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts/${scenePayload.sceneContract.id}/compile`, {
+      method: "POST",
+    });
+
+    expect(compileResponse.status).toBe(409);
+    await expect(compileResponse.text()).resolves.toContain("not approved");
   });
 
   it("does not allow Studio Lab to downgrade a published chapter", async () => {

@@ -47,6 +47,7 @@ import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { ZodError } from "zod";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
 import { RunStore } from "./lib/run-store.js";
@@ -3590,6 +3591,10 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     if (error instanceof ApiError) {
       return c.json({ error: { code: error.code, message: error.message } }, error.status as 400);
     }
+    if (error instanceof ZodError) {
+      const message = error.issues.map((issue) => issue.message).join("; ") || "Invalid request payload.";
+      return c.json({ error: { code: "INVALID_REQUEST", message } }, 400);
+    }
     return c.json(
       { error: { code: "INTERNAL_ERROR", message: "Unexpected server error." } },
       500,
@@ -3691,6 +3696,14 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     };
   }
 
+  async function assertLabBookExists(bookId: string): Promise<void> {
+    try {
+      await state.loadBookConfig(bookId);
+    } catch {
+      throw new ApiError(404, "BOOK_NOT_FOUND", `Book "${bookId}" not found.`);
+    }
+  }
+
   // --- Books ---
 
   app.get("/api/books", async (c) => {
@@ -3745,6 +3758,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.get("/api/books/:id/lab", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     return c.json({
       projectMode: await readProjectStoryMode(root, id),
       chapterStatus: await readChapterStatus(root, id),
@@ -3759,6 +3773,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.put("/api/books/:id/lab/story-spine", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const body = await c.req.json<unknown>();
     const storySpine = StorySpineSchema.parse(body);
     await writeStorySpine(root, id, storySpine);
@@ -3767,6 +3782,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.put("/api/books/:id/lab/project-mode", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const body = await c.req.json<{ mode?: unknown }>().catch(() => ({} as { mode?: unknown }));
     const mode = ProjectStoryModeSchema.parse(body.mode);
     await writeProjectStoryMode(root, id, mode);
@@ -3775,6 +3791,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.patch("/api/books/:id/lab/chapter-status/:chapter", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const chapter = Number.parseInt(c.req.param("chapter"), 10);
     if (!Number.isInteger(chapter) || chapter < 1) {
       throw new ApiError(400, "INVALID_CHAPTER", "Chapter must be a positive integer.");
@@ -3802,6 +3819,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.put("/api/books/:id/lab/world-pressures", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const body = await c.req.json<{ worldPressures?: unknown }>().catch(() => ({} as { worldPressures?: unknown }));
     const worldPressures = Array.isArray(body.worldPressures)
       ? body.worldPressures.map((value: unknown) => WorldPressureSchema.parse(value))
@@ -3812,6 +3830,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.post("/api/books/:id/lab/ticks", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
     const storySpine = await readStorySpine(root, id);
     if (!storySpine) {
@@ -3849,6 +3868,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.patch("/api/books/:id/lab/movement-candidates/:candidateId", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const candidateId = c.req.param("candidateId");
     const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
     const movementCandidates = await readMovementCandidates(root, id);
@@ -3890,6 +3910,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.post("/api/books/:id/lab/scene-contracts", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
     const chapter = typeof body.chapter === "number" ? body.chapter : Number.parseInt(String(body.chapter ?? ""), 10);
     if (!Number.isInteger(chapter) || chapter < 1) {
@@ -3933,6 +3954,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
 
   app.post("/api/books/:id/lab/scene-contracts/:sceneContractId/compile", async (c) => {
     const id = c.req.param("id");
+    await assertLabBookExists(id);
     const sceneContractId = c.req.param("sceneContractId");
     const sceneContract = (await readSceneContracts(root, id)).find((contract) => contract.id === sceneContractId);
     if (!sceneContract) {
@@ -3944,6 +3966,9 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     const validation = validateSceneContractAgainstChapterStatus(sceneContract, chapterStatus, movementCandidates);
     if (!validation.ok) {
       throw new ApiError(409, "SCENE_CONTRACT_BLOCKED", validation.blockers.join("\n"));
+    }
+    if (validation.warnings.length > 0) {
+      throw new ApiError(409, "SCENE_CONTRACT_WARNINGS", validation.warnings.join("\n"));
     }
 
     const selectedIds = new Set(sceneContract.movementCandidateIds);
