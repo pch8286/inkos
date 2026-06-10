@@ -2382,3 +2382,123 @@ git commit -m "fix: stabilize story world lab verification"
 ```
 
 Expected: no commit is needed if all verification passes without code changes.
+
+## Task 7: Chat-First World Director Revision
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-06-10-story-led-world-movement-design.md`
+- Modify: `packages/studio/src/pages/story-world-state.ts`
+- Modify: `packages/studio/src/pages/story-world-state.test.ts`
+- Modify: `packages/studio/src/pages/StoryWorldLab.tsx`
+
+- [ ] **Step 1: Write failing UI helper tests**
+
+Add tests to `packages/studio/src/pages/story-world-state.test.ts`:
+
+```ts
+it("builds a World Director transcript from adaptive ticks", () => {
+  const transcript = buildWorldDirectorTranscript([tickWithTwoCandidates]);
+
+  expect(transcript).toEqual([
+    expect.objectContaining({ role: "user", text: "Reveal pressure through a public mistake." }),
+    expect.objectContaining({ role: "world", text: expect.stringContaining("The guild makes a visible mistake.") }),
+  ]);
+});
+
+it("bootstraps a Story Spine from the first chat direction", () => {
+  expect(buildDefaultStorySpineFromDirection("  Make the witness force Sera to choose. ")).toMatchObject({
+    protagonistId: "Protagonist",
+    currentGoal: "Make the witness force Sera to choose.",
+    currentQuestion: "How does the world respond now?",
+  });
+});
+
+it("builds a chat tick request as a direction override", () => {
+  expect(buildChatTickRequest({ chapter: 3, text: "Let the city react quietly." })).toEqual({
+    chapter: 3,
+    kind: "direction_override",
+    userDirection: "Let the city react quietly.",
+  });
+});
+```
+
+Run:
+
+```bash
+pnpm --filter @actalk/inkos-studio test -- story-world-state.test.ts
+```
+
+Expected: FAIL because the new helpers are not exported yet.
+
+- [ ] **Step 2: Implement minimal UI state helpers**
+
+Add these exports to `packages/studio/src/pages/story-world-state.ts`:
+
+```ts
+export function buildDefaultStorySpineFromDirection(direction: string): StorySpinePayload {
+  const text = direction.trim() || "Follow the user's latest direction.";
+  return {
+    protagonistId: "Protagonist",
+    currentGoal: text,
+    currentQuestion: "How does the world respond now?",
+    emotionalState: [],
+    activeChoices: [],
+    constraints: [],
+  };
+}
+
+export function buildChatTickRequest(input: { readonly chapter: number; readonly text: string }): TickRequestPayload {
+  return buildTickRequest({ chapter: input.chapter, kind: "direction_override", actionText: input.text });
+}
+```
+
+Also add `buildWorldDirectorTranscript` so persisted ticks render as paired user/world messages.
+
+- [ ] **Step 3: Run helper tests**
+
+Run:
+
+```bash
+pnpm --filter @actalk/inkos-studio test -- story-world-state.test.ts
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Refactor the Studio page around chat**
+
+Change `packages/studio/src/pages/StoryWorldLab.tsx` so the first visible work surface is:
+
+- `World Director` transcript in the main column.
+- Bottom composer with chapter, optional tick kind, freeform text, and send button.
+- Automatic minimal Story Spine save before the first chat tick if the lab has no saved spine.
+- Right `Debug Board` with latest reaction, candidates, selected approvals, scene intent, contracts, and compile.
+- Collapsible advanced Story Spine and World Pressure editors.
+
+Keep `buildWorldPressuresPayload`, `buildSceneContractPayload`, and the existing `canCompileSceneContract(candidates, selectedCandidateIds)` source guard intact.
+
+- [ ] **Step 5: Run targeted Studio verification**
+
+Run:
+
+```bash
+pnpm --filter @actalk/inkos-studio test -- story-world-state.test.ts App.test.ts
+pnpm --filter @actalk/inkos-studio typecheck
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Run final verification and commit**
+
+Run:
+
+```bash
+pnpm --filter @actalk/inkos-studio build
+git diff --check
+```
+
+Expected: PASS. Commit changed files with:
+
+```bash
+git add docs/superpowers/specs/2026-06-10-story-led-world-movement-design.md docs/superpowers/plans/2026-06-10-story-led-world-movement.md packages/studio/src/pages/story-world-state.ts packages/studio/src/pages/story-world-state.test.ts packages/studio/src/pages/StoryWorldLab.tsx
+git commit -m "feat(studio): make story world lab chat first"
+```

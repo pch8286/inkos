@@ -260,6 +260,21 @@ Primary actions:
 - `Lock chapter`
 - `Publish chapter`
 
+### 2026-06-11 Chat-First Revision
+
+The first Studio slice made the model visible, but it also made the user fill too many fields before the world could respond. The revised surface should feel like a director room: the main interaction is a chat composer where the user tells the world what the protagonist does, leaves undone, or wants to bend toward.
+
+`Story Spine` and `World Pressure` remain part of the model, but they move behind progressive controls. If no Story Spine exists, the first chat message should bootstrap a minimal valid spine instead of forcing the user to fill a form. Candidate movement, conflict reports, and scene-contract fields stay visible, but primarily as a right-side debug and approval board.
+
+Revised layout:
+
+- Center: `World Director` transcript, latest user direction, world response summary, and composer.
+- Composer: chapter picker, optional tick kind, freeform direction text, send action.
+- Right: debug board with latest world reaction, movement candidates, selected approved candidates, scene intent, scene contract preview, and compile actions.
+- Advanced controls: collapsible Story Spine and World Pressure editors for repair and debugging, not mandatory first-run input.
+
+This revision keeps the core rule unchanged: chat output and world reactions are candidates until the user approves them. The chat surface may create ticks and scene-contract drafts, but it must not directly mutate canonical story files or published chapter text.
+
 ## Integration With Existing InkOS Writer
 
 The existing writer/audit/revise/state-settlement pipeline should remain intact.
@@ -305,6 +320,8 @@ Studio UI tests should cover:
 - editing story spine,
 - submitting protagonist action,
 - applying direction override,
+- building a chat transcript from adaptive ticks,
+- bootstrapping a minimal Story Spine from the first user direction,
 - approving and rejecting movement candidates,
 - viewing impact reports,
 - disabled rewrite actions for published chapters,
@@ -317,4 +334,3 @@ Studio UI tests should cover:
 - No published chapter rewrite without explicit edition or retcon flow.
 - No WriterAgent replacement.
 - No image generation in this design slice.
-

@@ -4,11 +4,16 @@ import {
   ArrowLeft,
   Check,
   FileText,
+  Globe2,
   Loader2,
+  MessageSquareText,
+  PanelRight,
   PauseCircle,
   Plus,
   RefreshCw,
   Save,
+  Send,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   XCircle,
@@ -28,8 +33,11 @@ import type {
   WorldPressureTypePayload,
 } from "../shared/contracts";
 import {
+  buildChatTickRequest,
   buildDefaultStorySpine,
+  buildDefaultStorySpineFromDirection,
   buildTickRequest,
+  buildWorldDirectorTranscript,
   canCompileSceneContract,
   groupMovementCandidates,
   hasSelectedConflictRisk,
@@ -302,7 +310,7 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
   const [storySpineForm, setStorySpineForm] = useState<StorySpineForm>(() => storySpineToForm(null));
   const [worldPressureForms, setWorldPressureForms] = useState<WorldPressurePayload[]>([]);
   const [tickChapter, setTickChapter] = useState("1");
-  const [tickKind, setTickKind] = useState<AdaptiveTickKindPayload>("protagonist_action");
+  const [tickKind, setTickKind] = useState<AdaptiveTickKindPayload>("direction_override");
   const [tickActionText, setTickActionText] = useState("");
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [sceneForm, setSceneForm] = useState<SceneContractForm>({
@@ -332,6 +340,9 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
   }, [lab]);
 
   const candidates = lab?.movementCandidates ?? [];
+  const ticks = lab?.ticks ?? [];
+  const transcript = useMemo(() => buildWorldDirectorTranscript(ticks), [ticks]);
+  const latestTick = ticks.length > 0 ? ticks[ticks.length - 1] : null;
   const groupedCandidates = useMemo(() => groupMovementCandidates(candidates), [candidates]);
   const selectedConflictRisk = useMemo(
     () => hasSelectedConflictRisk(candidates, selectedCandidateIds),
@@ -355,13 +366,18 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
     }
   };
 
-  const saveStorySpine = () => runOperation("story-spine", async () => {
+  const saveStorySpinePayload = async (storySpine: StorySpinePayload): Promise<StorySpinePayload> => {
     const response = await fetchJson<{ storySpine: StorySpinePayload }>(`/books/${bookId}/lab/story-spine`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formToStorySpine(storySpineForm)),
+      body: JSON.stringify(storySpine),
     });
     setStorySpineForm(storySpineToForm(response.storySpine));
+    return response.storySpine;
+  };
+
+  const saveStorySpine = () => runOperation("story-spine", async () => {
+    await saveStorySpinePayload(formToStorySpine(storySpineForm));
     setMessage({ tone: "success", text: "Story Spine saved." });
     await refetch();
   });
@@ -393,12 +409,19 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
       setMessage({ tone: "error", text: "Tick text is required." });
       return;
     }
+    if (!lab?.storySpine) {
+      await saveStorySpinePayload(buildDefaultStorySpineFromDirection(tickActionText));
+    }
+    const tickPayload = tickKind === "direction_override"
+      ? buildChatTickRequest({ chapter, text: tickActionText })
+      : buildTickRequest({ chapter, kind: tickKind, actionText: tickActionText });
     await postApi<{ tick: AdaptiveTickPayload; movementCandidates: ReadonlyArray<MovementCandidatePayload> }>(
       `/books/${bookId}/lab/ticks`,
-      buildTickRequest({ chapter, kind: tickKind, actionText: tickActionText }),
+      tickPayload,
     );
     setTickActionText("");
-    setMessage({ tone: "success", text: "Adaptive tick created." });
+    setSceneForm((current) => ({ ...current, chapter: String(chapter) }));
+    setMessage({ tone: "success", text: "World reaction created." });
     await refetch();
   });
 
@@ -521,9 +544,9 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               Book
             </button>
             <span>/</span>
-            <span>Story World Lab</span>
+            <span>World Director</span>
           </div>
-          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-foreground">Story World Lab</h1>
+          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-foreground">World Director</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-border/60 bg-secondary/40 px-2.5 py-1 text-xs text-muted-foreground">
@@ -541,6 +564,105 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
+          <Section
+            title="World Director"
+            meta={`${ticks.length} world turns`}
+            actions={(
+              <Badge tone={lab?.storySpine ? "neutral" : "warn"}>
+                {lab?.storySpine ? "Spine saved" : "Auto spine"}
+              </Badge>
+            )}
+          >
+            <div className="flex min-h-[34rem] flex-col">
+              <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+                {transcript.length === 0 && (
+                  <div className="flex min-h-[18rem] items-center justify-center rounded-lg border border-dashed border-border/70 bg-secondary/20 px-4 text-center">
+                    <div className="max-w-md">
+                      <MessageSquareText className="mx-auto h-8 w-8 text-muted-foreground" />
+                      <div className="mt-3 text-sm font-medium text-foreground">No world movement yet.</div>
+                    </div>
+                  </div>
+                )}
+                {transcript.map((entry) => {
+                  const isUser = entry.role === "user";
+                  return (
+                    <div key={entry.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[min(40rem,92%)] rounded-lg border px-4 py-3 ${
+                        isUser
+                          ? "border-brand/30 bg-brand text-brand-foreground shadow-sm shadow-brand/15"
+                          : "border-border/60 bg-secondary/35 text-foreground"
+                      }`}>
+                        <div className={`mb-2 flex items-center gap-2 text-xs ${isUser ? "text-brand-foreground/80" : "text-muted-foreground"}`}>
+                          {isUser ? <MessageSquareText size={14} /> : <Globe2 size={14} />}
+                          <span>Chapter {entry.chapter}</span>
+                          {entry.tags?.map((tag) => <span key={tag}>/ {tag}</span>)}
+                        </div>
+                        <div className="whitespace-pre-line text-sm leading-6">{entry.text}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 border-t border-border/60 pt-4">
+                <div className="grid gap-3 md:grid-cols-[6rem_10rem_minmax(0,1fr)_7rem]">
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Chapter</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={tickChapter}
+                      onChange={(event) => setTickChapter(event.target.value)}
+                      className={fieldClassName()}
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Mode</span>
+                    <select
+                      value={tickKind}
+                      onChange={(event) => setTickKind(event.target.value as AdaptiveTickKindPayload)}
+                      className={selectClassName("w-full")}
+                    >
+                      {TICK_KIND_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Director prompt</span>
+                    <textarea
+                      value={tickActionText}
+                      onChange={(event) => setTickActionText(event.target.value)}
+                      placeholder={selectedTickKind.placeholder}
+                      rows={3}
+                      className={fieldClassName("min-h-[5.25rem] resize-y")}
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={createTick}
+                      disabled={busyOperation === "tick"}
+                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand px-3 text-sm font-medium text-brand-foreground shadow-sm shadow-brand/20 transition hover:brightness-[1.03] disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      {busyOperation === "tick" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={15} />}
+                      Send
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-secondary/30">
+              <span className="inline-flex items-center gap-2">
+                <SlidersHorizontal size={15} />
+                Advanced state controls
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">{worldPressureForms.length} pressures</span>
+            </summary>
+            <div className="mt-4 space-y-4">
           <Section
             title="Story Spine"
             meta={lab?.storySpine ? "Current driver" : "Not saved"}
@@ -678,54 +800,8 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               ))}
             </div>
           </Section>
-
-          <Section title="Adaptive Tick" meta={`${lab?.ticks.length ?? 0} ticks`}>
-            <div className="grid gap-3 lg:grid-cols-[6rem_11rem_minmax(0,1fr)_8rem]">
-              <label className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Chapter</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={tickChapter}
-                  onChange={(event) => setTickChapter(event.target.value)}
-                  className={fieldClassName()}
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Kind</span>
-                <select
-                  value={tickKind}
-                  onChange={(event) => setTickKind(event.target.value as AdaptiveTickKindPayload)}
-                  className={selectClassName("w-full")}
-                >
-                  {TICK_KIND_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Movement</span>
-                <textarea
-                  value={tickActionText}
-                  onChange={(event) => setTickActionText(event.target.value)}
-                  placeholder={selectedTickKind.placeholder}
-                  rows={3}
-                  className={fieldClassName("min-h-[5.25rem] resize-y")}
-                />
-              </label>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={createTick}
-                  disabled={busyOperation === "tick"}
-                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand px-3 text-sm font-medium text-brand-foreground shadow-sm shadow-brand/20 transition hover:brightness-[1.03] disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {busyOperation === "tick" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles size={15} />}
-                  Create
-                </button>
-              </div>
             </div>
-          </Section>
+          </details>
 
           <Section title="Movement Candidates" meta={`${candidates.length} total`}>
             <div className="grid gap-4 xl:grid-cols-2">
@@ -912,6 +988,79 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
         </div>
 
         <aside className="space-y-5">
+          <Section title="Debug Board" meta={lab?.projectMode === "serialized" ? "Serialized mode" : "Draft mode"}>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                  <Globe2 size={14} />
+                  World Reaction
+                </div>
+                {latestTick ? (
+                  <div className="mt-2 space-y-2">
+                    <div className="text-sm leading-6 text-foreground">
+                      {latestTick.candidates[0]?.text ?? "No movement candidates yet."}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge>Chapter {latestTick.chapter}</Badge>
+                      <Badge>{latestTick.kind}</Badge>
+                      <Badge>{latestTick.candidates.length} candidates</Badge>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-muted-foreground">No reaction yet.</div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                    <PanelRight size={14} />
+                    Candidate Changes
+                  </div>
+                  <Badge>{candidates.length}</Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Pending</div>
+                    <div className="mt-1 font-semibold text-foreground">{groupedCandidates.candidate.length}</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Approved</div>
+                    <div className="mt-1 font-semibold text-foreground">{groupedCandidates.approved.length}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                    <FileText size={14} />
+                    Scene Intent
+                  </div>
+                  <Badge>{selectedCandidateIds.length} selected</Badge>
+                </div>
+                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Chapter</span>
+                    <span className="font-medium text-foreground">{sceneForm.chapter || tickChapter}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>POV</span>
+                    <span className="max-w-[10rem] truncate font-medium text-foreground">
+                      {sceneForm.pov || storySpineForm.protagonistId || "Protagonist"}
+                    </span>
+                  </div>
+                  {!selectedCandidatesReady && selectedCandidateIds.length > 0 && (
+                    <div className="flex items-start gap-2 pt-1 text-xs leading-5 text-destructive">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      Approval preflight failed.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Section>
+
           <Section title="Chapter Status" meta={`${lab?.chapterStatus.length ?? 0} tracked`}>
             <div className="space-y-2">
               {(lab?.chapterStatus.length ?? 0) === 0 && (

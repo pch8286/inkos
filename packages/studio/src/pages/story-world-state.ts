@@ -1,4 +1,5 @@
 import type {
+  AdaptiveTickPayload,
   AdaptiveTickKindPayload,
   MovementCandidatePayload,
   MovementCandidateStatusPayload,
@@ -24,11 +25,39 @@ export type TickRequestPayload =
   | { readonly chapter: number; readonly kind: "elapsed_time"; readonly elapsedTime: string }
   | { readonly chapter: number; readonly kind: "direction_override"; readonly userDirection: string };
 
+export interface WorldDirectorMessage {
+  readonly id: string;
+  readonly role: "user" | "world";
+  readonly chapter: number;
+  readonly text: string;
+  readonly createdAt: string;
+  readonly candidateIds?: ReadonlyArray<string>;
+  readonly tags?: ReadonlyArray<string>;
+}
+
+const TICK_KIND_LABELS: Record<AdaptiveTickKindPayload, string> = {
+  protagonist_action: "Action",
+  protagonist_inaction: "Inaction",
+  elapsed_time: "Elapsed time",
+  direction_override: "Direction",
+};
+
 export function buildDefaultStorySpine(): StorySpinePayload {
   return {
     protagonistId: "",
     currentGoal: "",
     currentQuestion: "",
+    emotionalState: [],
+    activeChoices: [],
+    constraints: [],
+  };
+}
+
+export function buildDefaultStorySpineFromDirection(direction: string): StorySpinePayload {
+  return {
+    protagonistId: "Protagonist",
+    currentGoal: direction.trim() || "Follow the user's latest direction.",
+    currentQuestion: "How does the world respond now?",
     emotionalState: [],
     activeChoices: [],
     constraints: [],
@@ -73,6 +102,46 @@ export function buildTickRequest(input: BuildTickRequestInput): TickRequestPaylo
     return { chapter: input.chapter, kind: "elapsed_time", elapsedTime: text };
   }
   return { chapter: input.chapter, kind: "direction_override", userDirection: text };
+}
+
+export function buildChatTickRequest(input: { readonly chapter: number; readonly text: string }): TickRequestPayload {
+  return buildTickRequest({
+    chapter: input.chapter,
+    kind: "direction_override",
+    actionText: input.text,
+  });
+}
+
+export function buildWorldDirectorTranscript(ticks: ReadonlyArray<AdaptiveTickPayload>): WorldDirectorMessage[] {
+  return ticks.flatMap((tick) => [
+    {
+      id: `${tick.id}-user`,
+      role: "user" as const,
+      chapter: tick.chapter,
+      text: tickInputText(tick),
+      createdAt: tick.createdAt,
+      tags: [TICK_KIND_LABELS[tick.kind]],
+    },
+    {
+      id: `${tick.id}-world`,
+      role: "world" as const,
+      chapter: tick.chapter,
+      text: tick.candidates.length > 0
+        ? tick.candidates.map((candidate) => candidate.text).join("\n")
+        : "No movement candidates yet.",
+      createdAt: tick.createdAt,
+      candidateIds: tick.candidates.map((candidate) => candidate.id),
+      tags: [`${tick.candidates.length} ${tick.candidates.length === 1 ? "candidate" : "candidates"}`],
+    },
+  ]);
+}
+
+function tickInputText(tick: AdaptiveTickPayload): string {
+  return tick.protagonistAction
+    ?? tick.protagonistInaction
+    ?? tick.elapsedTime
+    ?? tick.userDirection
+    ?? "World movement advanced.";
 }
 
 /**

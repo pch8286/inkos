@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChatTickRequest,
   buildDefaultStorySpine,
+  buildDefaultStorySpineFromDirection,
   buildTickRequest,
+  buildWorldDirectorTranscript,
   canCompileSceneContract,
   groupMovementCandidates,
   hasSelectedConflictRisk,
@@ -9,7 +12,7 @@ import {
   parseLines,
   statusLabelForChapter,
 } from "./story-world-state";
-import type { MovementCandidatePayload } from "../shared/contracts";
+import type { AdaptiveTickPayload, MovementCandidatePayload } from "../shared/contracts";
 
 const candidate = (
   id: string,
@@ -28,6 +31,29 @@ const candidate = (
   affectedStateKeys: ["story_spine.currentQuestion"],
   createdAt: "2026-06-10T00:00:00.000Z",
   updatedAt: "2026-06-10T00:00:00.000Z",
+});
+
+const tick = (
+  candidates: ReadonlyArray<MovementCandidatePayload>,
+  overrides: Partial<AdaptiveTickPayload> = {},
+): AdaptiveTickPayload => ({
+  id: "tick-1",
+  bookId: "demo",
+  chapter: 3,
+  kind: "direction_override",
+  userDirection: "Reveal pressure through a public mistake.",
+  storySpine: {
+    protagonistId: "sera",
+    currentGoal: "pressure the guild",
+    currentQuestion: "How does the world answer?",
+    emotionalState: [],
+    activeChoices: [],
+    constraints: [],
+  },
+  worldPressures: [],
+  createdAt: "2026-06-10T00:00:00.000Z",
+  candidates,
+  ...overrides,
 });
 
 describe("story world state helpers", () => {
@@ -108,6 +134,65 @@ describe("story world state helpers", () => {
       kind: "direction_override",
       userDirection: "Reveal the hidden ledger.",
     });
+  });
+
+  it("builds a chat tick request as a direction override", () => {
+    expect(
+      buildChatTickRequest({
+        chapter: 3,
+        text: "  Let the city react quietly.  ",
+      }),
+    ).toEqual({
+      chapter: 3,
+      kind: "direction_override",
+      userDirection: "Let the city react quietly.",
+    });
+  });
+
+  it("bootstraps a Story Spine from the first chat direction", () => {
+    expect(buildDefaultStorySpineFromDirection("  Make the witness force Sera to choose.  ")).toEqual({
+      protagonistId: "Protagonist",
+      currentGoal: "Make the witness force Sera to choose.",
+      currentQuestion: "How does the world respond now?",
+      emotionalState: [],
+      activeChoices: [],
+      constraints: [],
+    });
+  });
+
+  it("builds a World Director transcript from adaptive ticks", () => {
+    const transcript = buildWorldDirectorTranscript([
+      tick([
+        {
+          ...candidate("a", "candidate"),
+          text: "The guild makes a visible mistake.",
+        },
+        {
+          ...candidate("b", "hold"),
+          text: "A rival clerk notices the opening.",
+        },
+      ]),
+    ]);
+
+    expect(transcript).toEqual([
+      {
+        id: "tick-1-user",
+        role: "user",
+        chapter: 3,
+        text: "Reveal pressure through a public mistake.",
+        createdAt: "2026-06-10T00:00:00.000Z",
+        tags: ["Direction"],
+      },
+      {
+        id: "tick-1-world",
+        role: "world",
+        chapter: 3,
+        text: "The guild makes a visible mistake.\nA rival clerk notices the opening.",
+        createdAt: "2026-06-10T00:00:00.000Z",
+        candidateIds: ["a", "b"],
+        tags: ["2 candidates"],
+      },
+    ]);
   });
 
   it("parses and formats line values", () => {
