@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Stethoscope,
   MessageSquareText,
+  Orbit,
   X,
 } from "lucide-react";
 
@@ -39,6 +40,7 @@ interface BookCreateJob {
 interface Nav {
   toDashboard: () => void;
   toBook: (id: string) => void;
+  toStoryWorld: (id: string) => void;
   toBookCreate: () => void;
   toCockpit: (bookId?: string, options?: Readonly<{ readonly newSetup?: boolean }>) => void;
   toConfig: () => void;
@@ -159,23 +161,36 @@ export function Sidebar({ nav, activePage, sse, t, mobileOpen = false, onClose }
             ))}
 
             {data?.books.map((book) => (
-              <button
-                key={book.id}
-                onClick={() => nav.toBook(book.id)}
-                className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-                  activePage === `book:${book.id}`
-                    ? "studio-chip-accent text-foreground font-semibold"
-                    : "studio-chip"
-                }`}
-              >
-                <Book size={16} className={activePage === `book:${book.id}` ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"} />
-                <span className="truncate flex-1 text-left">{book.title}</span>
-                {book.chaptersWritten > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded studio-chip">
-                    {book.chaptersWritten}
-                  </span>
-                )}
-              </button>
+              <div key={book.id} className="space-y-1">
+                <button
+                  onClick={() => nav.toBook(book.id)}
+                  className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
+                    activePage === `book:${book.id}`
+                      ? "studio-chip-accent text-foreground font-semibold"
+                      : "studio-chip"
+                  }`}
+                >
+                  <Book size={16} className={activePage === `book:${book.id}` ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"} />
+                  <span className="truncate flex-1 text-left">{book.title}</span>
+                  {book.chaptersWritten > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded studio-chip">
+                      {book.chaptersWritten}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nav.toStoryWorld(book.id)}
+                  className={`ml-7 flex w-[calc(100%-1.75rem)] items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                    activePage === `story-world:${book.id}`
+                      ? "studio-chip-accent text-foreground font-semibold"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <Orbit size={13} />
+                  <span className="truncate text-left">Story World</span>
+                </button>
+              </div>
             ))}
 
             {(!data?.books || data.books.length === 0) && (

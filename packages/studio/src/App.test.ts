@@ -278,6 +278,17 @@ describe("route search helpers", () => {
   });
 });
 
+describe("story world route", () => {
+  it("parses, builds, and marks the active book for Story World Lab", () => {
+    expect(appModule.parseRouteFromSearch("?page=story-world&bookId=demo")).toEqual({
+      page: "story-world",
+      bookId: "demo",
+    });
+    expect(appModule.buildRouteSearch({ page: "story-world", bookId: "demo" })).toBe("?page=story-world&bookId=demo");
+    expect(appModule.deriveActiveBookId({ page: "story-world", bookId: "demo" })).toBe("demo");
+  });
+});
+
 describe("legacy cockpit redirect", () => {
   it("builds a standalone cockpit redirect for the legacy cockpit route", () => {
     expect(appModule.buildLegacyCockpitRedirectUrl("/", { page: "cockpit", bookId: "alpha" }))

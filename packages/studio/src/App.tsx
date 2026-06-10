@@ -38,6 +38,7 @@ export type Route =
   | { page: "analytics"; bookId: string }
   | { page: "config" }
   | { page: "truth"; bookId: string }
+  | { page: "story-world"; bookId: string }
   | { page: "daemon" }
   | { page: "logs" }
   | { page: "genres" }
@@ -87,6 +88,10 @@ export function parseRouteFromSearch(search: string): Route | null {
     case "truth": {
       const bookId = params.get("bookId")?.trim();
       return bookId ? { page: "truth", bookId } : null;
+    }
+    case "story-world": {
+      const bookId = params.get("bookId")?.trim();
+      return bookId ? { page: "story-world", bookId } : null;
     }
     case "daemon":
       return { page: "daemon" };
@@ -140,6 +145,10 @@ export function buildRouteSearch(route: Route): string {
       params.set("page", "truth");
       params.set("bookId", route.bookId);
       break;
+    case "story-world":
+      params.set("page", "story-world");
+      params.set("bookId", route.bookId);
+      break;
     case "daemon":
       params.set("page", "daemon");
       break;
@@ -177,6 +186,7 @@ export function deriveActiveBookId(route: Route): string | undefined {
   return route.page === "book"
     || route.page === "chapter"
     || route.page === "truth"
+    || route.page === "story-world"
     || route.page === "analytics"
     || route.page === "cockpit"
     ? route.bookId
@@ -568,6 +578,10 @@ function AppShell({
       setRoute({ page: "truth", bookId });
       setSidebarOpen(false);
     },
+    toStoryWorld: (bookId: string) => {
+      setRoute({ page: "story-world", bookId });
+      setSidebarOpen(false);
+    },
     toDaemon: () => {
       setRoute({ page: "daemon" });
       setSidebarOpen(false);
@@ -599,14 +613,18 @@ function AppShell({
   };
 
   const activeBookId = deriveActiveBookId(route);
-  const activePage = activeBookId ? `book:${activeBookId}` : route.page;
+  const activePage = route.page === "story-world"
+    ? `story-world:${route.bookId}`
+    : activeBookId
+      ? `book:${activeBookId}`
+      : route.page;
   const assistantPaneWidth = clampAssistantPaneWidth(assistantPaneWidths[assistantPaneMode], {
     truthMode: assistantPaneMode === "truth",
     viewportWidth: typeof window !== "undefined" ? window.innerWidth : 1440,
   });
   const contentWidthClass = route.page === "config"
     ? "max-w-6xl"
-    : route.page === "truth"
+    : route.page === "truth" || route.page === "story-world"
       ? "max-w-7xl"
       : "max-w-5xl";
   const activeLlm = deriveActiveLlm(bootstrap ?? undefined, project ?? undefined);
