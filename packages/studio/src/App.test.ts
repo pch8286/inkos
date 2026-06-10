@@ -3,11 +3,51 @@ import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 
 type AppModule = typeof import("./App");
 type RuntimeNav = { toCockpit: (bookId?: string) => void };
+type SceneContractPayloadBuilder = (input: {
+  readonly chapter: number;
+  readonly form: {
+    readonly pov: string;
+    readonly location: string;
+    readonly outlineNode: string;
+    readonly sceneGoal: string;
+    readonly mustInclude: string;
+    readonly mustAvoid: string;
+    readonly styleEmphasis: string;
+    readonly endingState: string;
+  };
+  readonly storySpineForm: { readonly protagonistId: string };
+  readonly selectedCandidateIds: ReadonlyArray<string>;
+}) => {
+  readonly pov: string;
+  readonly location: string;
+  readonly movementCandidateIds: ReadonlyArray<string>;
+};
+type WorldPressurePayloadBuilder = (forms: ReadonlyArray<{
+  readonly id: string;
+  readonly type: "faction";
+  readonly label: string;
+  readonly currentMotion: string;
+  readonly pressureLevel: "high";
+  readonly visibleToProtagonist: "yes";
+}>) => {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly worldPressures?: ReadonlyArray<{
+    readonly label: string;
+    readonly currentMotion: string;
+  }>;
+};
+type StoryWorldLabTestModule = {
+  readonly buildSceneContractPayload?: SceneContractPayloadBuilder;
+  readonly buildWorldPressuresPayload?: WorldPressurePayloadBuilder;
+};
 
 let appModule: AppModule;
+let storyWorldLabModule: StoryWorldLabTestModule;
 
 beforeAll(async () => {
   appModule = await import("./App");
+  storyWorldLabModule = await import("./pages/StoryWorldLab") as unknown as StoryWorldLabTestModule;
 });
 
 afterEach(() => {
@@ -304,6 +344,77 @@ describe("story world route", () => {
     expect(source).not.toContain("if (selectedCandidateIds.length === 0)");
     expect(source).not.toContain("Select at least one approved candidate.");
     expect(source).toContain("canCompileSceneContract(candidates, selectedCandidateIds)");
+  });
+
+  it("builds schema-safe scene contract payload defaults", () => {
+    expect(typeof storyWorldLabModule.buildSceneContractPayload).toBe("function");
+
+    const payload = storyWorldLabModule.buildSceneContractPayload?.({
+      chapter: 4,
+      form: {
+        pov: " ",
+        location: "",
+        outlineNode: "",
+        sceneGoal: "",
+        mustInclude: "",
+        mustAvoid: "",
+        styleEmphasis: "",
+        endingState: "",
+      },
+      storySpineForm: { protagonistId: " Sera " },
+      selectedCandidateIds: [],
+    });
+
+    expect(payload).toMatchObject({
+      pov: "Sera",
+      location: "Current scene",
+      movementCandidateIds: [],
+    });
+  });
+
+  it("validates world pressure rows before saving", () => {
+    expect(typeof storyWorldLabModule.buildWorldPressuresPayload).toBe("function");
+
+    expect(storyWorldLabModule.buildWorldPressuresPayload?.([
+      {
+        id: "blank",
+        type: "faction",
+        label: " ",
+        currentMotion: "",
+        pressureLevel: "high",
+        visibleToProtagonist: "yes",
+      },
+      {
+        id: "complete",
+        type: "faction",
+        label: " Guild ",
+        currentMotion: " Closes the bridge ",
+        pressureLevel: "high",
+        visibleToProtagonist: "yes",
+      },
+    ])).toMatchObject({
+      ok: true,
+      worldPressures: [
+        {
+          label: "Guild",
+          currentMotion: "Closes the bridge",
+        },
+      ],
+    });
+
+    expect(storyWorldLabModule.buildWorldPressuresPayload?.([
+      {
+        id: "partial",
+        type: "faction",
+        label: "Guild",
+        currentMotion: " ",
+        pressureLevel: "high",
+        visibleToProtagonist: "yes",
+      },
+    ])).toEqual({
+      ok: false,
+      error: "World pressure rows need both label and current motion.",
+    });
   });
 });
 

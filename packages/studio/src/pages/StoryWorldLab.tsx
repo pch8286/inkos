@@ -43,7 +43,7 @@ interface StoryWorldLabProps {
   readonly onOpenBook: () => void;
 }
 
-interface StorySpineForm {
+export interface StorySpineForm {
   readonly protagonistId: string;
   readonly currentGoal: string;
   readonly currentQuestion: string;
@@ -52,7 +52,7 @@ interface StorySpineForm {
   readonly constraints: string;
 }
 
-interface SceneContractForm {
+export interface SceneContractForm {
   readonly chapter: string;
   readonly pov: string;
   readonly location: string;
@@ -65,6 +65,9 @@ interface SceneContractForm {
 }
 
 type Operation = "story-spine" | "world-pressures" | "tick" | "scene-contract";
+export type WorldPressuresPayloadResult =
+  | { readonly ok: true; readonly worldPressures: ReadonlyArray<WorldPressurePayload> }
+  | { readonly ok: false; readonly error: string };
 
 interface CompileFeedback {
   readonly contractId: string;
@@ -132,6 +135,58 @@ function formToStorySpine(form: StorySpineForm): StorySpinePayload {
     emotionalState: parseLines(form.emotionalState),
     activeChoices: parseLines(form.activeChoices),
     constraints: parseLines(form.constraints),
+  };
+}
+
+export function buildWorldPressuresPayload(
+  forms: ReadonlyArray<WorldPressurePayload>,
+): WorldPressuresPayloadResult {
+  const worldPressures: WorldPressurePayload[] = [];
+
+  for (const pressure of forms) {
+    const label = pressure.label.trim();
+    const currentMotion = pressure.currentMotion.trim();
+    const hasLabel = label.length > 0;
+    const hasCurrentMotion = currentMotion.length > 0;
+
+    if (!hasLabel && !hasCurrentMotion) {
+      continue;
+    }
+
+    if (!hasLabel || !hasCurrentMotion) {
+      return {
+        ok: false,
+        error: "World pressure rows need both label and current motion.",
+      };
+    }
+
+    worldPressures.push({
+      ...pressure,
+      label,
+      currentMotion,
+    });
+  }
+
+  return { ok: true, worldPressures };
+}
+
+export function buildSceneContractPayload(input: {
+  readonly chapter: number;
+  readonly form: SceneContractForm;
+  readonly storySpineForm: Pick<StorySpineForm, "protagonistId">;
+  readonly selectedCandidateIds: ReadonlyArray<string>;
+}) {
+  return {
+    chapter: input.chapter,
+    pov: input.form.pov.trim() || input.storySpineForm.protagonistId.trim() || "Protagonist",
+    location: input.form.location.trim() || "Current scene",
+    outlineNode: input.form.outlineNode.trim(),
+    sceneGoal: parseLines(input.form.sceneGoal),
+    mustInclude: parseLines(input.form.mustInclude),
+    mustAvoid: parseLines(input.form.mustAvoid),
+    styleEmphasis: parseLines(input.form.styleEmphasis),
+    movementCandidateIds: [...input.selectedCandidateIds],
+    endingState: parseLines(input.form.endingState),
   };
 }
 
@@ -312,15 +367,16 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
   });
 
   const saveWorldPressures = () => runOperation("world-pressures", async () => {
-    const worldPressures = worldPressureForms.map((pressure) => ({
-      ...pressure,
-      label: pressure.label.trim(),
-      currentMotion: pressure.currentMotion.trim(),
-    })).filter((pressure) => pressure.label || pressure.currentMotion);
+    const payload = buildWorldPressuresPayload(worldPressureForms);
+    if (!payload.ok) {
+      setMessage({ tone: "error", text: payload.error });
+      return;
+    }
+
     const response = await fetchJson<{ worldPressures: ReadonlyArray<WorldPressurePayload> }>(`/books/${bookId}/lab/world-pressures`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ worldPressures }),
+      body: JSON.stringify({ worldPressures: payload.worldPressures }),
     });
     setWorldPressureForms(response.worldPressures.map(pressureToForm));
     setMessage({ tone: "success", text: "World pressures saved." });
@@ -390,18 +446,12 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
       return;
     }
 
-    const response = await postApi<{ sceneContract: SceneContractPayload }>(`/books/${bookId}/lab/scene-contracts`, {
+    const response = await postApi<{ sceneContract: SceneContractPayload }>(`/books/${bookId}/lab/scene-contracts`, buildSceneContractPayload({
       chapter,
-      pov: sceneForm.pov,
-      location: sceneForm.location,
-      outlineNode: sceneForm.outlineNode,
-      sceneGoal: parseLines(sceneForm.sceneGoal),
-      mustInclude: parseLines(sceneForm.mustInclude),
-      mustAvoid: parseLines(sceneForm.mustAvoid),
-      styleEmphasis: parseLines(sceneForm.styleEmphasis),
-      movementCandidateIds: selectedCandidateIds,
-      endingState: parseLines(sceneForm.endingState),
-    });
+      form: sceneForm,
+      storySpineForm,
+      selectedCandidateIds,
+    }));
     setCompileFeedback(null);
     setMessage({ tone: "success", text: `Scene contract ${response.sceneContract.id} created.` });
     await refetch();
