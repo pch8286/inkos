@@ -385,10 +385,6 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
       setMessage({ tone: "error", text: "Scene chapter must be a positive integer." });
       return;
     }
-    if (selectedCandidateIds.length === 0) {
-      setMessage({ tone: "error", text: "Select at least one approved candidate." });
-      return;
-    }
     if (!canCompileSceneContract(candidates, selectedCandidateIds)) {
       setMessage({ tone: "error", text: "Selected candidates must be approved before creating a scene contract." });
       return;

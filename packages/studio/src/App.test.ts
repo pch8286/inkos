@@ -297,6 +297,14 @@ describe("story world route", () => {
     expect(source).toContain('route.page === "story-world"');
     expect(source).toContain("<StoryWorldLab");
   });
+
+  it("allows Story World Lab scene contracts without selected movement candidates", () => {
+    const source = readFileSync(new URL("./pages/StoryWorldLab.tsx", import.meta.url), "utf-8");
+
+    expect(source).not.toContain("if (selectedCandidateIds.length === 0)");
+    expect(source).not.toContain("Select at least one approved candidate.");
+    expect(source).toContain("canCompileSceneContract(candidates, selectedCandidateIds)");
+  });
 });
 
 describe("legacy cockpit redirect", () => {
