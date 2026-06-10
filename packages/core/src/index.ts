@@ -78,6 +78,50 @@ export {
   ChapterTraceSchema,
 } from "./models/input-governance.js";
 export { type StructuralGateSeverity, type StructuralGateFindingBase, type StructuralGateCriticalFinding, type StructuralGateSoftFinding, type StructuralGateResult, StructuralGateSeveritySchema, StructuralGateFindingBaseSchema, StructuralGateCriticalFindingSchema, StructuralGateSoftFindingSchema, StructuralGateResultSchema } from "./models/structural-gate.js";
+export {
+  type ProjectStoryMode,
+  type ChapterPublicationStatus,
+  type WorldPressureType,
+  type PressureLevel,
+  type ProtagonistVisibility,
+  type AdaptiveTickKind,
+  type MovementRelevance,
+  type MovementVisibility,
+  type MovementRisk,
+  type MovementConflictLevel,
+  type MovementCandidateStatus,
+  type ConflictPolicy,
+  type RepairStrategy,
+  type StorySpine,
+  type WorldPressure,
+  type AdaptiveTickInput,
+  type MovementCandidate,
+  type AdaptiveTick,
+  type ChapterStatusRecord,
+  type ImpactReport,
+  type SceneContract,
+  ProjectStoryModeSchema,
+  ChapterPublicationStatusSchema,
+  WorldPressureTypeSchema,
+  PressureLevelSchema,
+  ProtagonistVisibilitySchema,
+  AdaptiveTickKindSchema,
+  MovementRelevanceSchema,
+  MovementVisibilitySchema,
+  MovementRiskSchema,
+  MovementConflictLevelSchema,
+  MovementCandidateStatusSchema,
+  ConflictPolicySchema,
+  RepairStrategySchema,
+  StorySpineSchema,
+  WorldPressureSchema,
+  AdaptiveTickInputSchema,
+  MovementCandidateSchema,
+  AdaptiveTickSchema,
+  ChapterStatusRecordSchema,
+  ImpactReportSchema,
+  SceneContractSchema,
+} from "./models/story-world-lab.js";
 export { PlannerAgent, type PlanChapterInput, type PlanChapterOutput } from "./agents/planner.js";
 export { ComposerAgent, type ComposeChapterInput, type ComposeChapterOutput } from "./agents/composer.js";
 
@@ -122,6 +166,14 @@ export { parseSettlerDeltaOutput, type SettlerDeltaOutput } from "./agents/settl
 export { FanficCanonImporter, type FanficCanonOutput } from "./agents/fanfic-canon-importer.js";
 export { getFanficDimensionConfig, FANFIC_DIMENSIONS, type FanficDimensionConfig } from "./agents/fanfic-dimensions.js";
 export { buildFanficCanonSection, buildCharacterVoiceProfiles, buildFanficModeInstructions } from "./agents/fanfic-prompt-sections.js";
+export {
+  createAdaptiveTick,
+  filterApprovedMovementCandidates,
+  validateSceneContractAgainstChapterStatus,
+  renderStoryWorldIntentMarkdown,
+  repairStrategiesForConflict,
+  type SceneContractValidationResult,
+} from "./agents/story-world-compiler.js";
 
 // Utils
 export { fetchUrl, searchWeb } from "./utils/web-search.js";
