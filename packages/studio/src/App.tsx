@@ -17,6 +17,7 @@ import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
 import { LanguageSelector } from "./pages/LanguageSelector";
+import { StoryWorldLab } from "./pages/StoryWorldLab";
 import { useSSE, type SSEMessage } from "./hooks/use-sse";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
@@ -859,6 +860,12 @@ function AppShell({
                 theme={theme}
                 t={t}
                 onAssistantContextChange={setTruthAssistantContext}
+              />
+            )}
+            {route.page === "story-world" && (
+              <StoryWorldLab
+                bookId={route.bookId}
+                onOpenBook={() => nav.toBook(route.bookId)}
               />
             )}
             {route.page === "daemon" && <DaemonControl nav={nav} theme={theme} t={t} sse={sse} />}

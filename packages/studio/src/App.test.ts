@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 
 type AppModule = typeof import("./App");
@@ -147,6 +148,7 @@ async function loadRuntimeApp(options: {
   vi.doMock("./pages/RadarView", () => ({ RadarView: NullComponent }));
   vi.doMock("./pages/DoctorView", () => ({ DoctorView: NullComponent }));
   vi.doMock("./pages/LanguageSelector", () => ({ LanguageSelector: NullComponent }));
+  vi.doMock("./pages/StoryWorldLab", () => ({ StoryWorldLab: NullComponent }));
   vi.doMock("./hooks/use-sse", () => ({
     useSSE: () => ({ messages: [] }),
   }));
@@ -286,6 +288,14 @@ describe("story world route", () => {
     });
     expect(appModule.buildRouteSearch({ page: "story-world", bookId: "demo" })).toBe("?page=story-world&bookId=demo");
     expect(appModule.deriveActiveBookId({ page: "story-world", bookId: "demo" })).toBe("demo");
+  });
+
+  it("wires the Story World Lab page into the app shell source", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf-8");
+
+    expect(source).toContain('from "./pages/StoryWorldLab"');
+    expect(source).toContain('route.page === "story-world"');
+    expect(source).toContain("<StoryWorldLab");
   });
 });
 
