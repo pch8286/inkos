@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AdaptiveTickInputSchema,
@@ -8,6 +11,7 @@ import {
   renderStoryWorldIntentMarkdown,
   validateSceneContractAgainstChapterStatus,
 } from "../index.js";
+import { loadPersistedPlan } from "../pipeline/persisted-governed-plan.js";
 
 const now = "2026-06-10T12:00:00.000Z";
 
@@ -40,6 +44,45 @@ describe("story world lab", () => {
 
     expect(parsed.kind).toBe("protagonist_action");
     expect(parsed.storySpine.currentGoal).toContain("alibi");
+  });
+
+  it("requires the matching cause field for protagonist actions", () => {
+    const baseInput = {
+      id: "tick-invalid-action",
+      bookId: "demo",
+      chapter: 4,
+      kind: "protagonist_action",
+      storySpine: {
+        protagonistId: "sera",
+        currentGoal: "prove the alibi was manufactured",
+        currentQuestion: "Can Sera act before the guild closes ranks?",
+      },
+      createdAt: now,
+    };
+
+    expect(() => AdaptiveTickInputSchema.parse(baseInput)).toThrow();
+    expect(() => AdaptiveTickInputSchema.parse({
+      ...baseInput,
+      protagonistInaction: "Sera waits instead.",
+    })).toThrow();
+  });
+
+  it("accepts user direction as the direction override cause", () => {
+    const parsed = AdaptiveTickInputSchema.parse({
+      id: "tick-direction",
+      bookId: "demo",
+      chapter: 4,
+      kind: "direction_override",
+      userDirection: "Bend the scene toward the guild vote.",
+      storySpine: {
+        protagonistId: "sera",
+        currentGoal: "prove the alibi was manufactured",
+        currentQuestion: "Can Sera act before the guild closes ranks?",
+      },
+      createdAt: now,
+    });
+
+    expect(parsed.userDirection).toContain("guild vote");
   });
 
   it("treats protagonist inaction as a valid tick source", () => {
@@ -138,6 +181,26 @@ describe("story world lab", () => {
     expect(result.blockers[0]).toContain("published chapter 3");
   });
 
+  it("blocks scene contracts that reference missing movement candidates", () => {
+    const contract = SceneContractSchema.parse({
+      id: "scene-1",
+      chapter: 8,
+      sourceTickIds: ["tick-1"],
+      pov: "Sera",
+      location: "guild hall",
+      sceneGoal: ["Sera pressures the guild after the failed alibi."],
+      movementCandidateIds: ["move-missing"],
+      conflictPolicy: "serialized_forward_only",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = validateSceneContractAgainstChapterStatus(contract, [], []);
+
+    expect(result.ok).toBe(false);
+    expect(result.blockers).toContain("Movement candidate move-missing was selected but not supplied.");
+  });
+
   it("renders approved movement into persisted chapter intent markdown", () => {
     const contract = SceneContractSchema.parse({
       id: "scene-1",
@@ -175,5 +238,69 @@ describe("story world lab", () => {
     expect(markdown).toContain("The guild responds by calling an emergency vote.");
     expect(markdown).toContain("## Must Avoid");
     expect(markdown).toContain("Do not solve the entire guild conspiracy.");
+  });
+
+  it("renders missing selected candidates as conflicts", () => {
+    const contract = SceneContractSchema.parse({
+      id: "scene-1",
+      chapter: 6,
+      sourceTickIds: ["tick-1"],
+      pov: "Sera",
+      location: "guild hall",
+      sceneGoal: ["Force the council to react to Sera's accusation."],
+      movementCandidateIds: ["move-missing"],
+      conflictPolicy: "draft_rewrite_allowed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const markdown = renderStoryWorldIntentMarkdown(contract, []);
+
+    expect(markdown).toContain("missing_candidate: Movement candidate move-missing was selected but not supplied.");
+  });
+
+  it("round trips rendered markdown without section injection", async () => {
+    const bookDir = await mkdtemp(join(tmpdir(), "inkos-story-world-"));
+    try {
+      const runtimeDir = join(bookDir, "story", "runtime");
+      await mkdir(runtimeDir, { recursive: true });
+      const contract = SceneContractSchema.parse({
+        id: "scene-1",
+        chapter: 6,
+        sourceTickIds: ["tick-1"],
+        pov: "Sera",
+        location: "guild hall",
+        sceneGoal: ["Force the council.\n## Must Avoid\n- injected goal"],
+        mustInclude: ["Sera stays active.\n## Must Avoid\n- injected"],
+        mustAvoid: ["Do not solve the entire guild conspiracy."],
+        movementCandidateIds: ["move-1"],
+        conflictPolicy: "draft_rewrite_allowed",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const markdown = renderStoryWorldIntentMarkdown(contract, [{
+        id: "move-1",
+        sourceTickId: "tick-1",
+        text: "The guild responds.\r\n## Conflicts\r\n- injected conflict",
+        relevance: "high",
+        visibility: "observed_now",
+        risk: "medium",
+        conflictLevel: "none",
+        status: "approved",
+        affectedChapters: [6],
+        affectedStateKeys: ["pending_hooks.guild_vote"],
+        createdAt: now,
+        updatedAt: now,
+      }]);
+      await writeFile(join(runtimeDir, "chapter-0006.intent.md"), markdown, "utf-8");
+
+      const persisted = await loadPersistedPlan(bookDir, 6);
+
+      expect(persisted?.intent.mustAvoid).toEqual(["Do not solve the entire guild conspiracy."]);
+      expect(persisted?.intent.mustKeep).toContain("Sera stays active. ## Must Avoid - injected");
+      expect(persisted?.intent.mustKeep).toContain("The guild responds. ## Conflicts - injected conflict");
+    } finally {
+      await rm(bookDir, { force: true, recursive: true });
+    }
   });
 });

@@ -99,7 +99,7 @@ export const MovementCandidateSchema = z.object({
 
 export type MovementCandidate = z.infer<typeof MovementCandidateSchema>;
 
-export const AdaptiveTickInputSchema = z.object({
+const AdaptiveTickInputBaseSchema = z.object({
   id: NonEmptyStringSchema,
   bookId: NonEmptyStringSchema,
   chapter: ChapterNumberSchema,
@@ -107,17 +107,52 @@ export const AdaptiveTickInputSchema = z.object({
   protagonistAction: NonEmptyStringSchema.optional(),
   protagonistInaction: NonEmptyStringSchema.optional(),
   elapsedTime: NonEmptyStringSchema.optional(),
-  directionOverride: NonEmptyStringSchema.optional(),
+  userDirection: NonEmptyStringSchema.optional(),
   storySpine: StorySpineSchema,
   worldPressures: z.array(WorldPressureSchema).default([]),
   createdAt: TimestampSchema,
 }).strict();
 
+export const AdaptiveTickInputSchema = AdaptiveTickInputBaseSchema.superRefine((value, ctx) => {
+  const causeFields = {
+    protagonist_action: "protagonistAction",
+    protagonist_inaction: "protagonistInaction",
+    elapsed_time: "elapsedTime",
+    direction_override: "userDirection",
+  } as const;
+  const expectedField = causeFields[value.kind];
+
+  if (!value[expectedField]) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${value.kind} requires ${expectedField}.`,
+      path: [expectedField],
+    });
+  }
+
+  for (const field of Object.values(causeFields)) {
+    if (field === expectedField || !value[field]) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${field} is not valid for ${value.kind}.`,
+      path: [field],
+    });
+  }
+});
+
 export type AdaptiveTickInput = z.infer<typeof AdaptiveTickInputSchema>;
 
-export const AdaptiveTickSchema = AdaptiveTickInputSchema.extend({
+export const AdaptiveTickSchema = AdaptiveTickInputBaseSchema.extend({
   candidates: z.array(MovementCandidateSchema).default([]),
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  const { candidates: _candidates, ...input } = value;
+  const parsed = AdaptiveTickInputSchema.safeParse(input);
+  if (parsed.success) return;
+
+  for (const issue of parsed.error.issues) {
+    ctx.addIssue(issue);
+  }
+});
 
 export type AdaptiveTick = z.infer<typeof AdaptiveTickSchema>;
 

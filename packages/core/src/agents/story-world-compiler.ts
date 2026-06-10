@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import {
   AdaptiveTickInputSchema,
   AdaptiveTickSchema,
@@ -28,7 +29,7 @@ const SAFE_SERIALIZED_REPAIR_STRATEGIES = new Set<RepairStrategy>([
   "continuity_patch",
 ]);
 
-export function createAdaptiveTick(rawInput: AdaptiveTickInput): AdaptiveTick {
+export function createAdaptiveTick(rawInput: z.input<typeof AdaptiveTickInputSchema>): AdaptiveTick {
   const input = AdaptiveTickInputSchema.parse(rawInput);
   const candidates = [
     ...input.worldPressures.map((pressure, index) => MovementCandidateSchema.parse({
@@ -82,7 +83,14 @@ export function validateSceneContractAgainstChapterStatus(
   const warnings: string[] = [];
   const statusByChapter = new Map(chapterStatuses.map((status) => [status.chapter, status.status]));
   const selectedCandidateIds = new Set(contract.movementCandidateIds);
+  const suppliedCandidateIds = new Set(candidates.map((candidate) => candidate.id));
   const selectedCandidates = candidates.filter((candidate) => selectedCandidateIds.has(candidate.id));
+
+  for (const candidateId of selectedCandidateIds) {
+    if (!suppliedCandidateIds.has(candidateId)) {
+      blockers.push(`Movement candidate ${candidateId} was selected but not supplied.`);
+    }
+  }
 
   for (const candidate of selectedCandidates) {
     if (candidate.status !== "approved") {
@@ -120,6 +128,10 @@ export function renderStoryWorldIntentMarkdown(
   candidates: ReadonlyArray<MovementCandidate>,
 ): string {
   const selectedCandidateIds = new Set(contract.movementCandidateIds);
+  const suppliedCandidateIds = new Set(candidates.map((candidate) => candidate.id));
+  const missingCandidateConflicts = [...selectedCandidateIds]
+    .filter((candidateId) => !suppliedCandidateIds.has(candidateId))
+    .map((candidateId) => `missing_candidate: Movement candidate ${candidateId} was selected but not supplied.`);
   const selectedApprovedMovements = filterApprovedMovementCandidates(candidates)
     .filter((candidate) => selectedCandidateIds.has(candidate.id))
     .map((candidate) => candidate.text);
@@ -135,22 +147,22 @@ export function renderStoryWorldIntentMarkdown(
 
   return [
     "## Goal",
-    goal,
+    normalizeIntentValue(goal),
     "",
     "## Outline Node",
-    contract.outlineNode ?? `${contract.pov} at ${contract.location}`,
+    normalizeIntentValue(contract.outlineNode ?? `${contract.pov} at ${contract.location}`),
     "",
     "## Must Keep",
-    renderList(mustKeep),
+    renderList(mustKeep.map(normalizeIntentValue)),
     "",
     "## Must Avoid",
-    renderList(contract.mustAvoid),
+    renderList(contract.mustAvoid.map(normalizeIntentValue)),
     "",
     "## Style Emphasis",
-    renderList(contract.styleEmphasis),
+    renderList(contract.styleEmphasis.map(normalizeIntentValue)),
     "",
     "## Conflicts",
-    renderList(conflicts),
+    renderList([...conflicts, ...missingCandidateConflicts].map(normalizeIntentValue)),
     "",
   ].join("\n");
 }
@@ -197,7 +209,7 @@ function tickCause(input: AdaptiveTickInput): string {
     case "elapsed_time":
       return input.elapsedTime ?? "time passes";
     case "direction_override":
-      return input.directionOverride ?? input.storySpine.currentGoal;
+      return input.userDirection ?? input.storySpine.currentGoal;
   }
 }
 
@@ -226,4 +238,17 @@ function mapPressureLevel(level: PressureLevel): MovementRisk & MovementRelevanc
 function renderList(values: ReadonlyArray<string>): string {
   if (values.length === 0) return "- none";
   return values.map((value) => `- ${value}`).join("\n");
+}
+
+function normalizeIntentValue(value: string): string {
+  const normalized = value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized.startsWith("## ")) {
+    return `# ${normalized}`;
+  }
+
+  return normalized;
 }
