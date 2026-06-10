@@ -6,16 +6,39 @@ import {
   StateManager,
   PipelineRunner,
   Scheduler,
+  AdaptiveTickInputSchema,
+  AdaptiveTickSchema,
+  ChapterPublicationStatusSchema,
+  ChapterStatusRecordSchema,
+  ImpactReportSchema,
+  MovementCandidateSchema,
+  ProjectStoryModeSchema,
+  SceneContractSchema,
+  StorySpineSchema,
+  WorldPressureSchema,
   createLLMClient,
   createLogger,
+  createAdaptiveTick,
   computeAnalytics,
   loadProjectConfig,
+  repairStrategiesForConflict,
+  renderStoryWorldIntentMarkdown,
+  validateSceneContractAgainstChapterStatus,
   GLOBAL_ENV_PATH,
+  ReaderSettingsSchema,
   type PipelineConfig,
   type ProjectConfig,
   type LogSink,
   type LogEntry,
   type ChapterMeta,
+  type AdaptiveTick,
+  type ChapterStatusRecord,
+  type ImpactReport,
+  type MovementCandidate,
+  type ProjectStoryMode,
+  type SceneContract,
+  type StorySpine,
+  type WorldPressure,
 } from "@actalk/inkos-core";
 import { access, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -60,7 +83,6 @@ import type {
   TruthSaveRequest,
   TruthWriteScope,
 } from "../shared/contracts.js";
-import { ReaderSettingsSchema } from "@actalk/inkos-core";
 
 // --- Event bus for SSE ---
 
@@ -3034,6 +3056,138 @@ function radarStatusFromHistory(entry: RadarHistoryEntry): RadarStatusSummary {
   };
 }
 
+function storyWorldLabDir(root: string, bookId: string): string {
+  return join(root, "books", bookId, "story", "lab");
+}
+
+async function readJsonFile<T>(path: string, fallback: T): Promise<T> {
+  try {
+    return JSON.parse(await readFile(path, "utf-8")) as T;
+  } catch (error) {
+    if (
+      error instanceof Error
+      && "code" in error
+      && (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return fallback;
+    }
+    throw error;
+  }
+}
+
+async function writeJsonFile(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(value, null, 2), "utf-8");
+}
+
+async function readStorySpine(root: string, bookId: string): Promise<StorySpine | null> {
+  const value = await readJsonFile<unknown | null>(join(storyWorldLabDir(root, bookId), "story_spine.json"), null);
+  return value === null ? null : StorySpineSchema.parse(value);
+}
+
+async function writeStorySpine(root: string, bookId: string, storySpine: StorySpine): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "story_spine.json"), storySpine);
+}
+
+async function readProjectStoryMode(root: string, bookId: string): Promise<ProjectStoryMode> {
+  return ProjectStoryModeSchema.parse(await readJsonFile<unknown>(join(storyWorldLabDir(root, bookId), "project_mode.json"), "draft"));
+}
+
+async function writeProjectStoryMode(root: string, bookId: string, mode: ProjectStoryMode): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "project_mode.json"), mode);
+}
+
+async function readChapterStatus(root: string, bookId: string): Promise<ChapterStatusRecord[]> {
+  const values = await readJsonFile<unknown[]>(join(storyWorldLabDir(root, bookId), "chapter_status.json"), []);
+  return values.map((value) => ChapterStatusRecordSchema.parse(value)).sort((left, right) => left.chapter - right.chapter);
+}
+
+async function writeChapterStatus(root: string, bookId: string, chapterStatus: ReadonlyArray<ChapterStatusRecord>): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "chapter_status.json"), [...chapterStatus].sort((left, right) => left.chapter - right.chapter));
+}
+
+async function readWorldPressures(root: string, bookId: string): Promise<WorldPressure[]> {
+  const values = await readJsonFile<unknown[]>(join(storyWorldLabDir(root, bookId), "world_pressures.json"), []);
+  return values.map((value) => WorldPressureSchema.parse(value));
+}
+
+async function writeWorldPressures(root: string, bookId: string, worldPressures: ReadonlyArray<WorldPressure>): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "world_pressures.json"), worldPressures);
+}
+
+async function readAdaptiveTicks(root: string, bookId: string): Promise<AdaptiveTick[]> {
+  const ticksDir = join(storyWorldLabDir(root, bookId), "ticks");
+  const files = await readdir(ticksDir).catch(() => []);
+  const ticks = await Promise.all(files
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .map(async (file) => AdaptiveTickSchema.parse(
+      JSON.parse(await readFile(join(ticksDir, file), "utf-8")),
+    )));
+  return ticks;
+}
+
+async function writeAdaptiveTick(root: string, bookId: string, tick: AdaptiveTick): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "ticks", `${tick.id}.json`), tick);
+}
+
+async function readMovementCandidates(root: string, bookId: string): Promise<MovementCandidate[]> {
+  const values = await readJsonFile<unknown[]>(join(storyWorldLabDir(root, bookId), "movement_candidates.json"), []);
+  return values.map((value) => MovementCandidateSchema.parse(value));
+}
+
+async function writeMovementCandidates(root: string, bookId: string, movementCandidates: ReadonlyArray<MovementCandidate>): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "movement_candidates.json"), movementCandidates);
+}
+
+async function readImpactReports(root: string, bookId: string): Promise<ImpactReport[]> {
+  const reportsDir = join(storyWorldLabDir(root, bookId), "impact_reports");
+  const files = await readdir(reportsDir).catch(() => []);
+  const reports = await Promise.all(files
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .map(async (file) => ImpactReportSchema.parse(
+      JSON.parse(await readFile(join(reportsDir, file), "utf-8")),
+    )));
+  return reports;
+}
+
+async function writeImpactReport(root: string, bookId: string, impactReport: ImpactReport): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "impact_reports", `impact-${randomUUID()}.json`), impactReport);
+}
+
+async function readSceneContracts(root: string, bookId: string): Promise<SceneContract[]> {
+  const contractsDir = join(storyWorldLabDir(root, bookId), "scene_contracts");
+  const files = await readdir(contractsDir).catch(() => []);
+  const contracts = await Promise.all(files
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .map(async (file) => SceneContractSchema.parse(
+      JSON.parse(await readFile(join(contractsDir, file), "utf-8")),
+    )));
+  return contracts;
+}
+
+async function writeSceneContract(root: string, bookId: string, sceneContract: SceneContract): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "scene_contracts", `${sceneContract.id}.json`), sceneContract);
+}
+
+function parseStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 // --- Server factory ---
 
 export function createStudioServer(initialConfig: ProjectConfig | null, root: string) {
@@ -3585,6 +3739,222 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
     } catch {
       return c.json({ error: `Book "${id}" not found` }, 404);
     }
+  });
+
+  // --- Story World Lab ---
+
+  app.get("/api/books/:id/lab", async (c) => {
+    const id = c.req.param("id");
+    return c.json({
+      projectMode: await readProjectStoryMode(root, id),
+      chapterStatus: await readChapterStatus(root, id),
+      storySpine: await readStorySpine(root, id),
+      worldPressures: await readWorldPressures(root, id),
+      ticks: await readAdaptiveTicks(root, id),
+      movementCandidates: await readMovementCandidates(root, id),
+      impactReports: await readImpactReports(root, id),
+      sceneContracts: await readSceneContracts(root, id),
+    });
+  });
+
+  app.put("/api/books/:id/lab/story-spine", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<unknown>();
+    const storySpine = StorySpineSchema.parse(body);
+    await writeStorySpine(root, id, storySpine);
+    return c.json({ storySpine });
+  });
+
+  app.put("/api/books/:id/lab/project-mode", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<{ mode?: unknown }>().catch(() => ({} as { mode?: unknown }));
+    const mode = ProjectStoryModeSchema.parse(body.mode);
+    await writeProjectStoryMode(root, id, mode);
+    return c.json({ projectMode: mode });
+  });
+
+  app.patch("/api/books/:id/lab/chapter-status/:chapter", async (c) => {
+    const id = c.req.param("id");
+    const chapter = Number.parseInt(c.req.param("chapter"), 10);
+    if (!Number.isInteger(chapter) || chapter < 1) {
+      throw new ApiError(400, "INVALID_CHAPTER", "Chapter must be a positive integer.");
+    }
+    const body = await c.req.json<{ status?: unknown }>().catch(() => ({} as { status?: unknown }));
+    const status = ChapterPublicationStatusSchema.parse(body.status);
+    const chapterStatus = await readChapterStatus(root, id);
+    const existing = chapterStatus.find((entry) => entry.chapter === chapter);
+    if (existing?.status === "published" && status !== "published") {
+      throw new ApiError(
+        409,
+        "PUBLISHED_CHAPTER_IMMUTABLE",
+        `Published chapter ${chapter} cannot be downgraded from Studio Lab.`,
+      );
+    }
+
+    const updatedAt = new Date().toISOString();
+    const next = [
+      ...chapterStatus.filter((entry) => entry.chapter !== chapter),
+      ChapterStatusRecordSchema.parse({ chapter, status, updatedAt }),
+    ].sort((left, right) => left.chapter - right.chapter);
+    await writeChapterStatus(root, id, next);
+    return c.json({ chapterStatus: next });
+  });
+
+  app.put("/api/books/:id/lab/world-pressures", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<{ worldPressures?: unknown }>().catch(() => ({} as { worldPressures?: unknown }));
+    const worldPressures = Array.isArray(body.worldPressures)
+      ? body.worldPressures.map((value: unknown) => WorldPressureSchema.parse(value))
+      : [];
+    await writeWorldPressures(root, id, worldPressures);
+    return c.json({ worldPressures });
+  });
+
+  app.post("/api/books/:id/lab/ticks", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    const storySpine = await readStorySpine(root, id);
+    if (!storySpine) {
+      throw new ApiError(409, "STORY_SPINE_REQUIRED", "Save a story spine before creating adaptive ticks.");
+    }
+
+    const chapter = typeof body.chapter === "number" ? body.chapter : Number.parseInt(String(body.chapter ?? ""), 10);
+    if (!Number.isInteger(chapter) || chapter < 1) {
+      throw new ApiError(400, "INVALID_CHAPTER", "Chapter must be a positive integer.");
+    }
+
+    const now = new Date().toISOString();
+    const rawInput: Record<string, unknown> = {
+      id: `tick-${randomUUID()}`,
+      bookId: id,
+      chapter,
+      kind: body.kind,
+      storySpine,
+      worldPressures: await readWorldPressures(root, id),
+      createdAt: now,
+    };
+    for (const field of ["protagonistAction", "protagonistInaction", "elapsedTime", "userDirection"] as const) {
+      if (typeof body[field] === "string" && body[field].trim()) {
+        rawInput[field] = body[field];
+      }
+    }
+
+    const input = AdaptiveTickInputSchema.parse(rawInput);
+    const tick = createAdaptiveTick(input);
+    await writeAdaptiveTick(root, id, tick);
+    const movementCandidates = [...await readMovementCandidates(root, id), ...tick.candidates];
+    await writeMovementCandidates(root, id, movementCandidates);
+    return c.json({ tick, movementCandidates });
+  });
+
+  app.patch("/api/books/:id/lab/movement-candidates/:candidateId", async (c) => {
+    const id = c.req.param("id");
+    const candidateId = c.req.param("candidateId");
+    const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    const movementCandidates = await readMovementCandidates(root, id);
+    const candidate = movementCandidates.find((entry) => entry.id === candidateId);
+    if (!candidate) {
+      throw new ApiError(404, "MOVEMENT_CANDIDATE_NOT_FOUND", `Movement candidate "${candidateId}" not found.`);
+    }
+
+    const now = new Date().toISOString();
+    const updated = MovementCandidateSchema.parse({
+      ...candidate,
+      ...(typeof body.text === "string" ? { text: body.text } : {}),
+      ...(typeof body.status === "string" ? { status: body.status } : {}),
+      ...(typeof body.repairStrategy === "string" ? { repairStrategy: body.repairStrategy } : {}),
+      updatedAt: now,
+    });
+    const next = movementCandidates.map((entry) => entry.id === candidateId ? updated : entry);
+    await writeMovementCandidates(root, id, next);
+
+    if (updated.conflictLevel === "none") {
+      return c.json({ movementCandidate: updated, movementCandidates: next });
+    }
+
+    const serialized = await readProjectStoryMode(root, id) === "serialized";
+    const impactReport = ImpactReportSchema.parse({
+      movementCandidateId: updated.id,
+      affectedChapters: updated.affectedChapters,
+      affectedStateKeys: updated.affectedStateKeys,
+      conflictLevel: updated.conflictLevel,
+      repairStrategy: updated.repairStrategy,
+      notes: repairStrategiesForConflict(updated.conflictLevel, serialized)
+        .map((strategy) => `Available repair: ${strategy}`),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await writeImpactReport(root, id, impactReport);
+    return c.json({ movementCandidate: updated, movementCandidates: next, impactReport });
+  });
+
+  app.post("/api/books/:id/lab/scene-contracts", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    const chapter = typeof body.chapter === "number" ? body.chapter : Number.parseInt(String(body.chapter ?? ""), 10);
+    if (!Number.isInteger(chapter) || chapter < 1) {
+      throw new ApiError(400, "INVALID_CHAPTER", "Chapter must be a positive integer.");
+    }
+
+    const movementCandidateIds = parseStringList(body.movementCandidateIds);
+    const movementCandidates = await readMovementCandidates(root, id);
+    const selectedCandidateIds = new Set(movementCandidateIds);
+    const sourceTickIds = [...new Set(movementCandidates
+      .filter((candidate) => selectedCandidateIds.has(candidate.id))
+      .map((candidate) => candidate.sourceTickId))];
+    const sceneGoal = parseStringList(body.sceneGoal);
+    const now = new Date().toISOString();
+    const rawContract: Record<string, unknown> = {
+      id: `scene-${randomUUID()}`,
+      chapter,
+      sourceTickIds,
+      pov: typeof body.pov === "string" ? body.pov : "",
+      location: typeof body.location === "string" ? body.location : "",
+      sceneGoal: sceneGoal.length > 0 ? sceneGoal : [`Advance chapter ${chapter} through protagonist-facing world movement.`],
+      mustInclude: parseStringList(body.mustInclude),
+      mustAvoid: parseStringList(body.mustAvoid),
+      styleEmphasis: parseStringList(body.styleEmphasis),
+      movementCandidateIds,
+      endingState: parseStringList(body.endingState),
+      conflictPolicy: await readProjectStoryMode(root, id) === "serialized"
+        ? "serialized_forward_only"
+        : "draft_rewrite_allowed",
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (typeof body.outlineNode === "string" && body.outlineNode.trim()) {
+      rawContract.outlineNode = body.outlineNode;
+    }
+
+    const sceneContract = SceneContractSchema.parse(rawContract);
+    await writeSceneContract(root, id, sceneContract);
+    return c.json({ sceneContract });
+  });
+
+  app.post("/api/books/:id/lab/scene-contracts/:sceneContractId/compile", async (c) => {
+    const id = c.req.param("id");
+    const sceneContractId = c.req.param("sceneContractId");
+    const sceneContract = (await readSceneContracts(root, id)).find((contract) => contract.id === sceneContractId);
+    if (!sceneContract) {
+      throw new ApiError(404, "SCENE_CONTRACT_NOT_FOUND", `Scene contract "${sceneContractId}" not found.`);
+    }
+
+    const movementCandidates = await readMovementCandidates(root, id);
+    const chapterStatus = await readChapterStatus(root, id);
+    const validation = validateSceneContractAgainstChapterStatus(sceneContract, chapterStatus, movementCandidates);
+    if (!validation.ok) {
+      throw new ApiError(409, "SCENE_CONTRACT_BLOCKED", validation.blockers.join("\n"));
+    }
+
+    const selectedIds = new Set(sceneContract.movementCandidateIds);
+    const selectedCandidates = movementCandidates.filter((candidate) => selectedIds.has(candidate.id));
+    const intentMarkdown = renderStoryWorldIntentMarkdown(sceneContract, selectedCandidates);
+    const fileName = `chapter-${String(sceneContract.chapter).padStart(4, "0")}.intent.md`;
+    const runtimePath = join("story", "runtime", fileName);
+    const fullRuntimePath = join(state.bookDir(id), runtimePath);
+    await mkdir(dirname(fullRuntimePath), { recursive: true });
+    await writeFile(fullRuntimePath, intentMarkdown, "utf-8");
+    return c.json({ runtimePath, intentMarkdown });
   });
 
   // --- Genres ---

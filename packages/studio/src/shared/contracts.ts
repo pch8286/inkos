@@ -547,3 +547,117 @@ export interface RadarHistoryEntry {
 export interface RadarHistorySummary {
   readonly scans: ReadonlyArray<RadarHistoryEntry>;
 }
+
+// --- Story World Lab ---
+
+export type ProjectStoryModePayload = "draft" | "serialized";
+export type ChapterPublicationStatusPayload = "draft" | "locked" | "published";
+export type WorldPressureTypePayload = "faction" | "character" | "location" | "hook" | "environment";
+export type PressureLevelPayload = "low" | "medium" | "high";
+export type ProtagonistVisibilityPayload = "yes" | "no" | "partial";
+export type AdaptiveTickKindPayload = "protagonist_action" | "protagonist_inaction" | "elapsed_time" | "direction_override";
+export type MovementRelevancePayload = "low" | "medium" | "high";
+export type MovementVisibilityPayload = "observed_now" | "rumor" | "hidden" | "delayed";
+export type MovementRiskPayload = "low" | "medium" | "high";
+export type MovementConflictLevelPayload = "none" | "minor" | "major";
+export type MovementCandidateStatusPayload = "candidate" | "approved" | "rejected" | "hold";
+export type ConflictPolicyPayload = "draft_rewrite_allowed" | "serialized_forward_only" | "edition_retcon_required";
+export type RepairStrategyPayload = "forward_bend" | "soft_reveal" | "continuity_patch" | "local_rewrite" | "cascade_retcon" | "edition_retcon";
+
+export interface StorySpinePayload {
+  readonly protagonistId: string;
+  readonly currentGoal: string;
+  readonly currentQuestion: string;
+  readonly emotionalState: ReadonlyArray<string>;
+  readonly activeChoices: ReadonlyArray<string>;
+  readonly constraints: ReadonlyArray<string>;
+}
+
+export interface WorldPressurePayload {
+  readonly id: string;
+  readonly type: WorldPressureTypePayload;
+  readonly label: string;
+  readonly currentMotion: string;
+  readonly pressureLevel: PressureLevelPayload;
+  readonly visibleToProtagonist: ProtagonistVisibilityPayload;
+}
+
+export interface AdaptiveTickInputPayload {
+  readonly id: string;
+  readonly bookId: string;
+  readonly chapter: number;
+  readonly kind: AdaptiveTickKindPayload;
+  readonly protagonistAction?: string;
+  readonly protagonistInaction?: string;
+  readonly elapsedTime?: string;
+  readonly userDirection?: string;
+  readonly storySpine: StorySpinePayload;
+  readonly worldPressures: ReadonlyArray<WorldPressurePayload>;
+  readonly createdAt: string;
+}
+
+export interface MovementCandidatePayload {
+  readonly id: string;
+  readonly sourceTickId: string;
+  readonly text: string;
+  readonly relevance: MovementRelevancePayload;
+  readonly visibility: MovementVisibilityPayload;
+  readonly risk: MovementRiskPayload;
+  readonly conflictLevel: MovementConflictLevelPayload;
+  readonly status: MovementCandidateStatusPayload;
+  readonly affectedChapters: ReadonlyArray<number>;
+  readonly affectedStateKeys: ReadonlyArray<string>;
+  readonly repairStrategy?: RepairStrategyPayload;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AdaptiveTickPayload extends AdaptiveTickInputPayload {
+  readonly candidates: ReadonlyArray<MovementCandidatePayload>;
+}
+
+export interface ChapterStatusRecordPayload {
+  readonly chapter: number;
+  readonly status: ChapterPublicationStatusPayload;
+  readonly updatedAt: string;
+}
+
+export interface ImpactReportPayload {
+  readonly movementCandidateId: string;
+  readonly affectedChapters: ReadonlyArray<number>;
+  readonly affectedStateKeys: ReadonlyArray<string>;
+  readonly conflictLevel: MovementConflictLevelPayload;
+  readonly repairStrategy?: RepairStrategyPayload;
+  readonly notes: ReadonlyArray<string>;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface SceneContractPayload {
+  readonly id: string;
+  readonly chapter: number;
+  readonly sourceTickIds: ReadonlyArray<string>;
+  readonly pov: string;
+  readonly location: string;
+  readonly sceneGoal: ReadonlyArray<string>;
+  readonly outlineNode?: string | null;
+  readonly mustInclude: ReadonlyArray<string>;
+  readonly mustAvoid: ReadonlyArray<string>;
+  readonly styleEmphasis: ReadonlyArray<string>;
+  readonly movementCandidateIds: ReadonlyArray<string>;
+  readonly endingState: ReadonlyArray<string>;
+  readonly conflictPolicy: ConflictPolicyPayload;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface StoryWorldLabPayload {
+  readonly projectMode: ProjectStoryModePayload;
+  readonly chapterStatus: ReadonlyArray<ChapterStatusRecordPayload>;
+  readonly storySpine: StorySpinePayload | null;
+  readonly worldPressures: ReadonlyArray<WorldPressurePayload>;
+  readonly ticks: ReadonlyArray<AdaptiveTickPayload>;
+  readonly movementCandidates: ReadonlyArray<MovementCandidatePayload>;
+  readonly impactReports: ReadonlyArray<ImpactReportPayload>;
+  readonly sceneContracts: ReadonlyArray<SceneContractPayload>;
+}

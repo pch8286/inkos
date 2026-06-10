@@ -61,6 +61,12 @@ const logger = {
 };
 
 vi.mock("@actalk/inkos-core", () => {
+  const passthroughSchema = {
+    parse(value: unknown): unknown {
+      return value;
+    },
+  };
+
   class MockStateManager {
     constructor(private readonly root: string) {}
 
@@ -230,6 +236,69 @@ vi.mock("@actalk/inkos-core", () => {
     loadProjectConfig: loadProjectConfigMock,
     GLOBAL_CONFIG_DIR: tmpdir(),
     GLOBAL_ENV_PATH: globalEnvPath,
+    AdaptiveTickInputSchema: passthroughSchema,
+    AdaptiveTickSchema: passthroughSchema,
+    ChapterPublicationStatusSchema: passthroughSchema,
+    ChapterStatusRecordSchema: passthroughSchema,
+    ImpactReportSchema: passthroughSchema,
+    MovementCandidateSchema: passthroughSchema,
+    ProjectStoryModeSchema: passthroughSchema,
+    SceneContractSchema: passthroughSchema,
+    StorySpineSchema: passthroughSchema,
+    WorldPressureSchema: passthroughSchema,
+    createAdaptiveTick: vi.fn((input: any) => ({
+      ...input,
+      candidates: [{
+        id: `${input.id}-move-01`,
+        sourceTickId: input.id,
+        text: `${input.storySpine.protagonistId} acts: ${input.protagonistAction ?? input.protagonistInaction ?? input.userDirection ?? input.elapsedTime}.`,
+        relevance: "high",
+        visibility: "observed_now",
+        risk: "medium",
+        conflictLevel: "none",
+        status: "candidate",
+        affectedChapters: [input.chapter],
+        affectedStateKeys: ["story_spine.currentQuestion"],
+        createdAt: input.createdAt,
+        updatedAt: input.createdAt,
+      }],
+    })),
+    renderStoryWorldIntentMarkdown: vi.fn((contract: any, candidates: any[]) => [
+      "# Chapter Intent",
+      "",
+      "## Goal",
+      contract.sceneGoal.join(" "),
+      "",
+      "## Outline Node",
+      `POV: ${contract.pov}; Location: ${contract.location}; Policy: ${contract.conflictPolicy}.`,
+      "",
+      "## Must Keep",
+      candidates.filter((candidate) => candidate.status === "approved").map((candidate) => `- ${candidate.text}`).join("\n") || "- none",
+      "",
+      "## Must Avoid",
+      (contract.mustAvoid ?? []).map((item: string) => `- ${item}`).join("\n") || "- none",
+      "",
+      "## Style Emphasis",
+      "- protagonist agency remains visible",
+      "",
+      "## Conflicts",
+      "- none",
+      "",
+    ].join("\n")),
+    validateSceneContractAgainstChapterStatus: vi.fn((contract: any, statuses: any[], candidates: any[]) => {
+      const published = new Set(statuses.filter((entry) => entry.status === "published").map((entry) => entry.chapter));
+      const blocked = candidates
+        .filter((candidate) => contract.movementCandidateIds.includes(candidate.id))
+        .some((candidate) => candidate.conflictLevel === "major" && candidate.affectedChapters.some((chapter: number) => published.has(chapter)));
+      return blocked ? { ok: false, blockers: ["major conflict with published chapter"], warnings: [] } : { ok: true, blockers: [], warnings: [] };
+    }),
+    repairStrategiesForConflict: vi.fn((conflictLevel: string, serialized: boolean) => (
+      conflictLevel === "none"
+        ? ["forward_bend"]
+        : serialized
+          ? ["forward_bend", "soft_reveal", "continuity_patch", "edition_retcon"]
+          : ["forward_bend", "soft_reveal", "local_rewrite", "cascade_retcon"]
+    )),
   };
 });
 
@@ -477,6 +546,44 @@ async function seedFitCheckBook(
   await Promise.all(files.map(async ({ file, content }) => {
     await writeFile(join(storyDir, file), content, "utf-8");
   }));
+}
+
+async function seedStoryWorldLabBook(rootPath: string, id = "lab-book"): Promise<Record<string, string>> {
+  const bookDir = join(rootPath, "books", id);
+  const storyDir = join(bookDir, "story");
+  await mkdir(storyDir, { recursive: true });
+  await writeFile(join(rootPath, "inkos.json"), JSON.stringify(projectConfig, null, 2), "utf-8");
+  await writeFile(join(bookDir, "book.json"), JSON.stringify({
+    id,
+    title: "Lab Book",
+    genre: "modern-fantasy",
+    platform: "munpia",
+    status: "active",
+    targetChapters: 120,
+    chapterWordCount: 2800,
+    language: "ko",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  }, null, 2), "utf-8");
+
+  const truthFiles = {
+    "story_bible.md": "# Story Bible\nOriginal truth.",
+    "current_state.md": "# Current State\nOriginal truth.",
+    "character_matrix.md": "# Character Matrix\nOriginal truth.",
+    "pending_hooks.md": "# Pending Hooks\nOriginal truth.",
+  };
+  await Promise.all(Object.entries(truthFiles).map(async ([file, content]) => {
+    await writeFile(join(storyDir, file), content, "utf-8");
+  }));
+  return truthFiles;
+}
+
+async function readTruthFiles(rootPath: string, bookId: string, files: Record<string, string>): Promise<Record<string, string>> {
+  const entries = await Promise.all(Object.keys(files).map(async (file) => [
+    file,
+    await readFile(join(rootPath, "books", bookId, "story", file), "utf-8"),
+  ] as const));
+  return Object.fromEntries(entries);
 }
 
 describe("createStudioServer daemon lifecycle", () => {
@@ -5450,5 +5557,195 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/javascript");
     await expect(response.text()).resolves.toContain("asset-ok");
+  });
+
+  it("persists Story World Lab state, compiles intent, and leaves truth files unchanged", async () => {
+    const bookId = "lab-happy";
+    const truthFiles = await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const storySpine = {
+      protagonistId: "hero",
+      currentGoal: "reach the archive",
+      currentQuestion: "Can the hero move before the faction closes in?",
+      emotionalState: ["focused"],
+      activeChoices: ["negotiate"],
+      constraints: ["no public magic"],
+    };
+    const storySpineResponse = await app.request(`http://localhost/api/books/${bookId}/lab/story-spine`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify(storySpine),
+    });
+    expect(storySpineResponse.status).toBe(200);
+
+    const worldPressures = [{
+      id: "guild",
+      type: "faction",
+      label: "Guild",
+      currentMotion: "tightening the checkpoint net",
+      pressureLevel: "medium",
+      visibleToProtagonist: "partial",
+    }];
+    const pressuresResponse = await app.request(`http://localhost/api/books/${bookId}/lab/world-pressures`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ worldPressures }),
+    });
+    expect(pressuresResponse.status).toBe(200);
+
+    const tickResponse = await app.request(`http://localhost/api/books/${bookId}/lab/ticks`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        chapter: 4,
+        kind: "protagonist_action",
+        protagonistAction: "opens the sealed door",
+      }),
+    });
+    expect(tickResponse.status).toBe(200);
+    const tickPayload = await tickResponse.json() as { movementCandidates: Array<{ id: string }> };
+    const candidateId = tickPayload.movementCandidates[0]?.id;
+    expect(candidateId).toBeTruthy();
+
+    const candidateResponse = await app.request(`http://localhost/api/books/${bookId}/lab/movement-candidates/${candidateId}`, {
+      method: "PATCH",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ status: "approved" }),
+    });
+    expect(candidateResponse.status).toBe(200);
+
+    const sceneResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        chapter: 4,
+        pov: "hero",
+        location: "archive",
+        sceneGoal: "Hero reaches the archive while the guild closes in.",
+        mustInclude: "sealed door\ncheckpoint pressure",
+        mustAvoid: ["truth rewrite"],
+        movementCandidateIds: [candidateId],
+        endingState: "hero inside archive",
+        outlineNode: "Archive breach",
+        styleEmphasis: ["protagonist agency remains visible"],
+      }),
+    });
+    expect(sceneResponse.status).toBe(200);
+    const scenePayload = await sceneResponse.json() as { sceneContract: { id: string } };
+
+    const compileResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts/${scenePayload.sceneContract.id}/compile`, {
+      method: "POST",
+    });
+    expect(compileResponse.status).toBe(200);
+    const compilePayload = await compileResponse.json() as { runtimePath: string; intentMarkdown: string };
+    expect(compilePayload.runtimePath).toBe("story/runtime/chapter-0004.intent.md");
+    expect(compilePayload.intentMarkdown).toContain("Hero reaches the archive");
+
+    const intentPath = join(root, "books", bookId, "story", "runtime", "chapter-0004.intent.md");
+    await expect(readFile(intentPath, "utf-8")).resolves.toContain("Hero reaches the archive");
+    await expect(readTruthFiles(root, bookId, truthFiles)).resolves.toEqual(truthFiles);
+  });
+
+  it("rejects compiling a scene contract that would conflict with a published chapter", async () => {
+    const bookId = "lab-conflict";
+    await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    await app.request(`http://localhost/api/books/${bookId}/lab/project-mode`, {
+      method: "PUT",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ mode: "serialized" }),
+    });
+    const statusResponse = await app.request(`http://localhost/api/books/${bookId}/lab/chapter-status/3`, {
+      method: "PATCH",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ status: "published" }),
+    });
+    expect(statusResponse.status).toBe(200);
+
+    const labDir = join(root, "books", bookId, "story", "lab");
+    await mkdir(labDir, { recursive: true });
+    await writeFile(join(labDir, "movement_candidates.json"), JSON.stringify([{
+      id: "move-major",
+      sourceTickId: "tick-manual",
+      text: "Major change affects chapter 3.",
+      relevance: "high",
+      visibility: "observed_now",
+      risk: "high",
+      conflictLevel: "major",
+      status: "approved",
+      affectedChapters: [3],
+      affectedStateKeys: ["current_state.fact"],
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    }], null, 2), "utf-8");
+
+    const sceneResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        chapter: 4,
+        pov: "hero",
+        location: "archive",
+        sceneGoal: "Expose the contradiction.",
+        mustInclude: [],
+        mustAvoid: [],
+        movementCandidateIds: ["move-major"],
+        endingState: [],
+      }),
+    });
+    expect(sceneResponse.status).toBe(200);
+    const scenePayload = await sceneResponse.json() as { sceneContract: { id: string } };
+
+    const compileResponse = await app.request(`http://localhost/api/books/${bookId}/lab/scene-contracts/${scenePayload.sceneContract.id}/compile`, {
+      method: "POST",
+    });
+    expect(compileResponse.status).toBe(409);
+    await expect(compileResponse.text()).resolves.toContain("published chapter");
+  });
+
+  it("does not allow Studio Lab to downgrade a published chapter", async () => {
+    const bookId = "lab-published";
+    await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const publishResponse = await app.request(`http://localhost/api/books/${bookId}/lab/chapter-status/2`, {
+      method: "PATCH",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ status: "published" }),
+    });
+    expect(publishResponse.status).toBe(200);
+
+    const downgradeResponse = await app.request(`http://localhost/api/books/${bookId}/lab/chapter-status/2`, {
+      method: "PATCH",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ status: "draft" }),
+    });
+    expect(downgradeResponse.status).toBe(409);
+    await expect(downgradeResponse.text()).resolves.toContain("PUBLISHED_CHAPTER_IMMUTABLE");
+  });
+
+  it("requires a saved story spine before creating an adaptive tick", async () => {
+    const bookId = "lab-spine-required";
+    await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request(`http://localhost/api/books/${bookId}/lab/ticks`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        chapter: 1,
+        kind: "elapsed_time",
+        elapsedTime: "one day passes",
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.text()).resolves.toContain("STORY_SPINE_REQUIRED");
   });
 });
