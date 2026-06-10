@@ -16,8 +16,13 @@ export interface BuildTickRequestInput {
   readonly chapter: number;
   readonly kind: AdaptiveTickKindPayload;
   readonly actionText: string;
-  readonly storySpine: StorySpinePayload;
 }
+
+export type TickRequestPayload =
+  | { readonly chapter: number; readonly kind: "protagonist_action"; readonly protagonistAction: string }
+  | { readonly chapter: number; readonly kind: "protagonist_inaction"; readonly protagonistInaction: string }
+  | { readonly chapter: number; readonly kind: "elapsed_time"; readonly elapsedTime: string }
+  | { readonly chapter: number; readonly kind: "direction_override"; readonly userDirection: string };
 
 export function buildDefaultStorySpine(): StorySpinePayload {
   return {
@@ -56,18 +61,24 @@ export function groupMovementCandidates(
   return grouped;
 }
 
-export function buildTickRequest(input: BuildTickRequestInput): Record<string, unknown> {
+export function buildTickRequest(input: BuildTickRequestInput): TickRequestPayload {
   const text = input.actionText.trim();
-  const base = {
-    chapter: input.chapter,
-    kind: input.kind,
-  };
-  if (input.kind === "protagonist_action") return { ...base, protagonistAction: text };
-  if (input.kind === "protagonist_inaction") return { ...base, protagonistInaction: text };
-  if (input.kind === "elapsed_time") return { ...base, elapsedTime: text };
-  return { ...base, userDirection: text };
+  if (input.kind === "protagonist_action") {
+    return { chapter: input.chapter, kind: "protagonist_action", protagonistAction: text };
+  }
+  if (input.kind === "protagonist_inaction") {
+    return { chapter: input.chapter, kind: "protagonist_inaction", protagonistInaction: text };
+  }
+  if (input.kind === "elapsed_time") {
+    return { chapter: input.chapter, kind: "elapsed_time", elapsedTime: text };
+  }
+  return { chapter: input.chapter, kind: "direction_override", userDirection: text };
 }
 
+/**
+ * Client-side compile preflight only. The server compile path can still reject
+ * serialized conflicts or other authoritative validation after submission.
+ */
 export function canCompileSceneContract(
   candidates: ReadonlyArray<MovementCandidatePayload>,
   selectedCandidateIds: ReadonlyArray<string>,
@@ -75,7 +86,15 @@ export function canCompileSceneContract(
   const approved = new Set(
     candidates.filter((candidate) => candidate.status === "approved").map((candidate) => candidate.id),
   );
-  return selectedCandidateIds.length > 0 && selectedCandidateIds.every((id) => approved.has(id));
+  return selectedCandidateIds.every((id) => approved.has(id));
+}
+
+export function hasSelectedConflictRisk(
+  candidates: ReadonlyArray<MovementCandidatePayload>,
+  selectedCandidateIds: ReadonlyArray<string>,
+): boolean {
+  const selected = new Set(selectedCandidateIds);
+  return candidates.some((candidate) => selected.has(candidate.id) && candidate.conflictLevel !== "none");
 }
 
 export function statusLabelForChapter(status: "draft" | "locked" | "published"): string {
