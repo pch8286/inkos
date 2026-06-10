@@ -98,7 +98,7 @@ export function validateSceneContractAgainstChapterStatus(
       continue;
     }
 
-    if (contract.conflictPolicy !== "serialized_forward_only" || candidate.conflictLevel !== "major") {
+    if (candidate.conflictLevel !== "major") {
       continue;
     }
 

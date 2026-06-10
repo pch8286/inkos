@@ -181,6 +181,43 @@ describe("story world lab", () => {
     expect(result.blockers[0]).toContain("published chapter 3");
   });
 
+  it("blocks major conflicts against published chapters even in draft rewrite mode", () => {
+    const contract = SceneContractSchema.parse({
+      id: "scene-draft-major",
+      chapter: 8,
+      sourceTickIds: ["tick-1"],
+      pov: "Sera",
+      location: "guild hall",
+      sceneGoal: ["Sera pressures the guild after the failed alibi."],
+      movementCandidateIds: ["move-major"],
+      conflictPolicy: "draft_rewrite_allowed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = validateSceneContractAgainstChapterStatus(contract, [{
+      chapter: 3,
+      status: "published",
+      updatedAt: now,
+    }], [{
+      id: "move-major",
+      sourceTickId: "tick-1",
+      text: "Chapter 3's public confession becomes false.",
+      relevance: "high",
+      visibility: "observed_now",
+      risk: "high",
+      conflictLevel: "major",
+      status: "approved",
+      affectedChapters: [3],
+      affectedStateKeys: ["chapter_summaries.3"],
+      createdAt: now,
+      updatedAt: now,
+    }]);
+
+    expect(result.ok).toBe(false);
+    expect(result.blockers[0]).toContain("published chapter 3");
+  });
+
   it("blocks scene contracts that reference missing movement candidates", () => {
     const contract = SceneContractSchema.parse({
       id: "scene-1",
