@@ -42,6 +42,9 @@ export type MovementConflictLevel = z.infer<typeof MovementConflictLevelSchema>;
 export const MovementCandidateStatusSchema = z.enum(["candidate", "approved", "rejected", "hold"]);
 export type MovementCandidateStatus = z.infer<typeof MovementCandidateStatusSchema>;
 
+export const LabChatRoleSchema = z.enum(["user", "world"]);
+export type LabChatRole = z.infer<typeof LabChatRoleSchema>;
+
 export const ConflictPolicySchema = z.enum([
   "draft_rewrite_allowed",
   "serialized_forward_only",
@@ -98,6 +101,18 @@ export const MovementCandidateSchema = z.object({
 }).strict();
 
 export type MovementCandidate = z.infer<typeof MovementCandidateSchema>;
+
+export const LabChatTurnSchema = z.object({
+  id: NonEmptyStringSchema,
+  role: LabChatRoleSchema,
+  text: NonEmptyStringSchema,
+  chapter: ChapterNumberSchema.optional(),
+  sourceTickId: NonEmptyStringSchema.optional(),
+  movementCandidateIds: z.array(NonEmptyStringSchema).default([]),
+  createdAt: TimestampSchema,
+}).strict();
+
+export type LabChatTurn = z.infer<typeof LabChatTurnSchema>;
 
 const AdaptiveTickInputBaseSchema = z.object({
   id: NonEmptyStringSchema,

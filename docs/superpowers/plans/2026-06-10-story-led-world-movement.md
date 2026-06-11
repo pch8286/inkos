@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first Story World Lab slice: protagonist-led adaptive ticks, world pressure candidates, human approval, draft/serialized guardrails, and scene-contract compile into the existing InkOS chapter intent flow.
+**Goal:** Build the first Story World Lab slice: a chat-first World Director surface, protagonist-led adaptive ticks, world pressure candidates, human approval, draft/serialized guardrails, and scene-contract compile into the existing InkOS chapter intent flow.
 
 **Architecture:** Add a focused story-world-lab domain in `@actalk/inkos-core`, expose it through Studio API persistence under `books/<bookId>/story/lab/`, and render a Studio page at `?page=story-world&bookId=<bookId>`. The feature writes lab artifacts and `story/runtime/chapter-XXXX.intent.md`; it does not mutate truth files or published chapter text.
 
@@ -14,8 +14,10 @@
 
 This plan resolves the current ambiguity this way:
 
-- The center of the feature is `Story Spine`, not character chat.
-- `Adaptive Tick` means protagonist action, protagonist inaction, elapsed time, or user direction causing story-relevant world movement.
+- The center of the feature is `World Director Chat`: not character chat, but a chat surface where the user drives story-world movement.
+- `Adaptive Tick` means protagonist action, protagonist inaction, elapsed time, or user direction inferred from chat causing story-relevant world movement.
+- `Story Spine` and `World Pressure` are advanced controls. Chat can bootstrap a minimal Story Spine instead of forcing setup first.
+- Chat turns are the primary lab transcript. Ticks and movement candidates are structured side effects attached to world replies.
 - The first implementation uses deterministic candidate generation so storage, approval, conflict policy, compile, and UI can be tested without adding a new LLM call.
 - LLM-driven tick generation, image generation, character chat, and generic always-on simulation logs are out of scope for this slice.
 - `Draft Mode` is the default. Published chapters are immutable by default.
@@ -2501,4 +2503,82 @@ Expected: PASS. Commit changed files with:
 ```bash
 git add docs/superpowers/specs/2026-06-10-story-led-world-movement-design.md docs/superpowers/plans/2026-06-10-story-led-world-movement.md packages/studio/src/pages/story-world-state.ts packages/studio/src/pages/story-world-state.test.ts packages/studio/src/pages/StoryWorldLab.tsx
 git commit -m "feat(studio): make story world lab chat first"
+```
+
+## Task 8: True Chat Transcript Revision
+
+This revision corrects Task 7's remaining form-first behavior. The UI must not be a tick form disguised as chat.
+
+**Files:**
+- Modify: `packages/core/src/models/story-world-lab.ts`
+- Modify: `packages/core/src/__tests__/story-world-lab.test.ts`
+- Modify: `packages/core/src/index.ts`
+- Modify: `packages/studio/src/shared/contracts.ts`
+- Modify: `packages/studio/src/api/server.ts`
+- Modify: `packages/studio/src/api/server.test.ts`
+- Modify: `packages/studio/src/pages/story-world-state.ts`
+- Modify: `packages/studio/src/pages/story-world-state.test.ts`
+- Modify: `packages/studio/src/pages/StoryWorldLab.tsx`
+- Modify: `packages/studio/src/App.test.ts`
+- Modify: `docs/superpowers/specs/2026-06-10-story-led-world-movement-design.md`
+- Modify: `docs/superpowers/plans/2026-06-10-story-led-world-movement.md`
+
+- [x] **Step 1: Add a first-class chat turn model**
+
+Add `LabChatTurnSchema` with:
+
+```ts
+type LabChatTurn = {
+  id: string;
+  role: "user" | "world";
+  text: string;
+  chapter?: number;
+  sourceTickId?: string;
+  movementCandidateIds: string[];
+  createdAt: string;
+};
+```
+
+Verify with a core test that user turns and world turns parse as the primary lab transcript.
+
+- [x] **Step 2: Add a chat endpoint**
+
+Add:
+
+```text
+POST /api/books/:id/lab/chat-turns
+```
+
+Behavior:
+
+- Accept one freeform `text` field.
+- Bootstrap a minimal Story Spine from the first chat message if none exists.
+- Create an internal `direction_override` adaptive tick.
+- Persist user and world `LabChatTurn` records under `story/lab/chat_turns.json`.
+- Attach generated movement candidate ids to the world reply.
+- Include `chatTurns` in `GET /api/books/:id/lab`.
+
+- [x] **Step 3: Make the Studio page truly chat-first**
+
+The first visible surface is:
+
+- world/director chat transcript,
+- one textarea composer,
+- one send button,
+- candidate attachments under world replies.
+
+Move candidate groups, scene-contract tooling, debug tick details, Story Spine, and World Pressure editors into collapsed sections.
+
+- [x] **Step 4: Verify**
+
+Run:
+
+```bash
+pnpm --filter @actalk/inkos-core exec vitest run src/__tests__/story-world-lab.test.ts
+pnpm --filter @actalk/inkos-studio exec vitest run src/api/server.test.ts -t "creates Story World chat turns"
+pnpm --filter @actalk/inkos-studio exec vitest run src/pages/story-world-state.test.ts src/App.test.ts
+pnpm --filter @actalk/inkos-core build
+pnpm --filter @actalk/inkos-studio typecheck
+pnpm --filter @actalk/inkos-studio build
+git diff --check
 ```

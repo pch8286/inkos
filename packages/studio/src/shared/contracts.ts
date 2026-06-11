@@ -561,6 +561,7 @@ export type MovementVisibilityPayload = "observed_now" | "rumor" | "hidden" | "d
 export type MovementRiskPayload = "low" | "medium" | "high";
 export type MovementConflictLevelPayload = "none" | "minor" | "major";
 export type MovementCandidateStatusPayload = "candidate" | "approved" | "rejected" | "hold";
+export type LabChatRolePayload = "user" | "world";
 export type ConflictPolicyPayload = "draft_rewrite_allowed" | "serialized_forward_only" | "edition_retcon_required";
 export type RepairStrategyPayload = "forward_bend" | "soft_reveal" | "continuity_patch" | "local_rewrite" | "cascade_retcon" | "edition_retcon";
 
@@ -616,6 +617,16 @@ export interface AdaptiveTickPayload extends AdaptiveTickInputPayload {
   readonly candidates: ReadonlyArray<MovementCandidatePayload>;
 }
 
+export interface LabChatTurnPayload {
+  readonly id: string;
+  readonly role: LabChatRolePayload;
+  readonly text: string;
+  readonly chapter?: number;
+  readonly sourceTickId?: string;
+  readonly movementCandidateIds: ReadonlyArray<string>;
+  readonly createdAt: string;
+}
+
 export interface ChapterStatusRecordPayload {
   readonly chapter: number;
   readonly status: ChapterPublicationStatusPayload;
@@ -656,6 +667,7 @@ export interface StoryWorldLabPayload {
   readonly chapterStatus: ReadonlyArray<ChapterStatusRecordPayload>;
   readonly storySpine: StorySpinePayload | null;
   readonly worldPressures: ReadonlyArray<WorldPressurePayload>;
+  readonly chatTurns: ReadonlyArray<LabChatTurnPayload>;
   readonly ticks: ReadonlyArray<AdaptiveTickPayload>;
   readonly movementCandidates: ReadonlyArray<MovementCandidatePayload>;
   readonly impactReports: ReadonlyArray<ImpactReportPayload>;

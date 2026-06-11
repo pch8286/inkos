@@ -11,6 +11,7 @@ import {
   ChapterPublicationStatusSchema,
   ChapterStatusRecordSchema,
   ImpactReportSchema,
+  LabChatTurnSchema,
   MovementCandidateSchema,
   ProjectStoryModeSchema,
   SceneContractSchema,
@@ -34,6 +35,7 @@ import {
   type AdaptiveTick,
   type ChapterStatusRecord,
   type ImpactReport,
+  type LabChatTurn,
   type MovementCandidate,
   type ProjectStoryMode,
   type SceneContract,
@@ -3116,6 +3118,26 @@ async function writeWorldPressures(root: string, bookId: string, worldPressures:
   await writeJsonFile(join(storyWorldLabDir(root, bookId), "world_pressures.json"), worldPressures);
 }
 
+function buildStorySpineFromChatText(text: string): StorySpine {
+  return StorySpineSchema.parse({
+    protagonistId: "Protagonist",
+    currentGoal: text.trim() || "Follow the user's latest direction.",
+    currentQuestion: "How does the world respond now?",
+    emotionalState: [],
+    activeChoices: [],
+    constraints: [],
+  });
+}
+
+async function readLabChatTurns(root: string, bookId: string): Promise<LabChatTurn[]> {
+  const values = await readJsonFile<unknown[]>(join(storyWorldLabDir(root, bookId), "chat_turns.json"), []);
+  return values.map((value) => LabChatTurnSchema.parse(value));
+}
+
+async function writeLabChatTurns(root: string, bookId: string, chatTurns: ReadonlyArray<LabChatTurn>): Promise<void> {
+  await writeJsonFile(join(storyWorldLabDir(root, bookId), "chat_turns.json"), chatTurns);
+}
+
 async function readAdaptiveTicks(root: string, bookId: string): Promise<AdaptiveTick[]> {
   const ticksDir = join(storyWorldLabDir(root, bookId), "ticks");
   const files = await readdir(ticksDir).catch(() => []);
@@ -3764,6 +3786,7 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       chapterStatus: await readChapterStatus(root, id),
       storySpine: await readStorySpine(root, id),
       worldPressures: await readWorldPressures(root, id),
+      chatTurns: await readLabChatTurns(root, id),
       ticks: await readAdaptiveTicks(root, id),
       movementCandidates: await readMovementCandidates(root, id),
       impactReports: await readImpactReports(root, id),
@@ -3826,6 +3849,75 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       : [];
     await writeWorldPressures(root, id, worldPressures);
     return c.json({ worldPressures });
+  });
+
+  app.post("/api/books/:id/lab/chat-turns", async (c) => {
+    const id = c.req.param("id");
+    await assertLabBookExists(id);
+    const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) {
+      throw new ApiError(400, "CHAT_TEXT_REQUIRED", "Chat text is required.");
+    }
+
+    const ticks = await readAdaptiveTicks(root, id);
+    const bodyChapter = typeof body.chapter === "number" ? body.chapter : Number.parseInt(String(body.chapter ?? ""), 10);
+    const chapter = Number.isInteger(bodyChapter) && bodyChapter > 0
+      ? bodyChapter
+      : ticks.at(-1)?.chapter ?? 1;
+    const now = new Date().toISOString();
+    const existingStorySpine = await readStorySpine(root, id);
+    const storySpine = existingStorySpine ?? buildStorySpineFromChatText(text);
+    if (!existingStorySpine) {
+      await writeStorySpine(root, id, storySpine);
+    }
+
+    const rawInput = {
+      id: `tick-${randomUUID()}`,
+      bookId: id,
+      chapter,
+      kind: "direction_override",
+      userDirection: text,
+      storySpine,
+      worldPressures: await readWorldPressures(root, id),
+      createdAt: now,
+    };
+    const input = AdaptiveTickInputSchema.parse(rawInput);
+    const tick = createAdaptiveTick(input);
+    await writeAdaptiveTick(root, id, tick);
+
+    const movementCandidates = [...await readMovementCandidates(root, id), ...tick.candidates];
+    await writeMovementCandidates(root, id, movementCandidates);
+
+    const userTurn = LabChatTurnSchema.parse({
+      id: `turn-${randomUUID()}`,
+      role: "user",
+      text,
+      chapter,
+      createdAt: now,
+    });
+    const worldTurn = LabChatTurnSchema.parse({
+      id: `turn-${randomUUID()}`,
+      role: "world",
+      text: tick.candidates.length > 0
+        ? tick.candidates.map((candidate) => candidate.text).join("\n")
+        : "The world holds its movement for now.",
+      chapter,
+      sourceTickId: tick.id,
+      movementCandidateIds: tick.candidates.map((candidate) => candidate.id),
+      createdAt: now,
+    });
+    const chatTurns = [...await readLabChatTurns(root, id), userTurn, worldTurn];
+    await writeLabChatTurns(root, id, chatTurns);
+
+    return c.json({
+      userTurn,
+      worldTurn,
+      tick,
+      movementCandidates,
+      storySpine,
+      chatTurns,
+    });
   });
 
   app.post("/api/books/:id/lab/ticks", async (c) => {

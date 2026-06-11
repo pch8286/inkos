@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AdaptiveTickInputSchema,
+  LabChatTurnSchema,
   MovementCandidateSchema,
   SceneContractSchema,
   createAdaptiveTick,
@@ -16,6 +17,28 @@ import { loadPersistedPlan } from "../pipeline/persisted-governed-plan.js";
 const now = "2026-06-10T12:00:00.000Z";
 
 describe("story world lab", () => {
+  it("parses chat turns as the primary world lab transcript", () => {
+    const userTurn = LabChatTurnSchema.parse({
+      id: "turn-user-1",
+      role: "user",
+      text: "Let the city react quietly.",
+      chapter: 3,
+      createdAt: now,
+    });
+    const worldTurn = LabChatTurnSchema.parse({
+      id: "turn-world-1",
+      role: "world",
+      text: "The city shifts in rumor and hesitation.",
+      chapter: 3,
+      sourceTickId: "tick-1",
+      movementCandidateIds: ["move-1"],
+      createdAt: now,
+    });
+
+    expect(userTurn.role).toBe("user");
+    expect(worldTurn.movementCandidateIds).toEqual(["move-1"]);
+  });
+
   it("parses a protagonist-led tick input", () => {
     const parsed = AdaptiveTickInputSchema.parse({
       id: "tick-1",

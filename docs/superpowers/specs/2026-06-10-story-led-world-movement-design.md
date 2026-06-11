@@ -2,9 +2,9 @@
 
 ## Goal
 
-Replace the chat-first Narrative Lab framing with a story-led movement layer for InkOS. The new layer keeps the protagonist and current story question as the primary axis, while the world continues to move as pressure, consequence, opportunity, and delayed fallout.
+Replace the character-chat Narrative Lab framing with a story-led World Director layer for InkOS. The new layer keeps the protagonist and current story question as the primary axis, while the user drives the world through a chat surface and the world continues to move as pressure, consequence, opportunity, and delayed fallout.
 
-InkOS should not become a generic world simulator. It should become a human-driven story compiler where the user acts as the final authority, the protagonist drives the camera, and world movement produces story-relevant candidates for approval.
+InkOS should not become a generic world simulator or a form-heavy tick editor. It should become a human-driven story compiler where the user acts as the final authority, the protagonist drives the camera, chat is the primary interaction, and world movement produces story-relevant candidates for approval.
 
 ## Core Position
 
@@ -18,31 +18,35 @@ User = final authority over direction and canon
 
 The system may propose natural consequences, offscreen movement, and continuity repairs, but it must not decide canon without user approval.
 
+The chat transcript is the source of truth for lab interaction. Adaptive ticks, movement candidates, impact reports, and scene contracts are structured artifacts produced from that transcript.
+
 ## Product Model
 
-The previous `Narrative Lab` concept centered on character chat and director notes. This design supersedes that framing for the main experience.
+The previous `Narrative Lab` concept centered on character chat and director notes. This design supersedes that framing for the main experience: it is not character chat, but it should still feel chat-driven. The user talks to the story-world/director surface; the system replies with world reaction plus structured candidate attachments.
 
 The main experience should be a `Story World Lab` or equivalent work surface:
 
-- `Story Spine`: protagonist goal, current chapter question, emotional state, active choice.
-- `World Pressure`: factions, locations, hooks, timers, offscreen actors, environmental pressures.
-- `Adaptive Tick`: consequence generation based on protagonist action, inaction, or time passage.
-- `Movement Candidates`: proposed world/story consequences grouped by relevance and risk.
-- `Direction Override`: user prompt for changing story direction before approval.
-- `Canonization Gate`: approve, hold, reject, or request repair.
+- `World Director Chat`: the primary transcript where the user tells the world what happens, what the protagonist tries, or how direction should change.
+- `World Reply`: a natural-language response summarizing the immediate world/story reaction.
+- `Movement Candidate Attachments`: proposed world/story consequences attached to world replies, with approve, hold, reject, and select controls inline.
+- `Story Spine`: protagonist goal, current chapter question, emotional state, active choice. It may be bootstrapped from the first chat message and refined later.
+- `World Pressure`: factions, locations, hooks, timers, offscreen actors, environmental pressures. These are advanced controls, not required before chat can start.
+- `Adaptive Tick`: internal consequence generation based on protagonist action, inaction, user direction, or time passage inferred from chat.
+- `Canonization Gate`: approve, hold, reject, or request repair before anything becomes scene-contract material.
 - `Scene Contract`: protagonist-facing instructions for the existing InkOS writer.
 
-Character chat can remain as an optional input source later, but it should not be the product's center.
+Character chat can remain as an optional input source later, but it should not be the product's center. The product center is user-driven story-world direction through chat.
 
 ## Adaptive Tick Semantics
 
 A tick is not a fixed time unit. A tick is the story/world reaction caused by protagonist action, protagonist inaction, explicit user direction, or meaningful time passage.
 
 ```text
-Protagonist action / inaction
+User chat direction
+-> Story Spine bootstrap or update
 -> Adaptive Tick
--> World reaction candidates
--> User direction override
+-> World reply with candidate attachments
+-> User approval / hold / reject / follow-up direction
 -> Regenerated or reweighted candidates
 -> User approval
 -> Scene contract
@@ -196,6 +200,16 @@ type AdaptiveTickInput = {
   worldPressures: WorldPressure[];
 };
 
+type LabChatTurn = {
+  id: string;
+  role: "user" | "world";
+  text: string;
+  chapter?: number;
+  sourceTickId?: string;
+  movementCandidateIds: string[];
+  createdAt: string;
+};
+
 type MovementCandidate = {
   id: string;
   sourceTickId: string;
@@ -218,6 +232,7 @@ Persist the layer under the existing book story directory:
 
 ```text
 books/<bookId>/story/lab/
+  chat_turns.json
   story_spine.json
   project_mode.json
   chapter_status.json
@@ -239,25 +254,26 @@ The layer must not directly mutate these canonical files without an explicit app
 
 ## UI Direction
 
-The Studio page should be organized around repeated story work, not freeform chat.
+The Studio page should be organized around a chat-first World Director surface. It should not ask for chapter, tick kind, protagonist action, and world state before the user can begin.
 
 Recommended layout:
 
-- Left: book, chapter status, protagonist, current story spine.
-- Center: protagonist action or direction prompt, tick result, movement candidates.
-- Right: world pressures, conflicts, impact report, canon decisions.
-- Bottom or side action area: build scene contract, compile intent, request repair.
+- Main: World Director chat transcript and composer.
+- Inline with world replies: movement candidate attachments with approve, hold, reject, and select controls.
+- Collapsed planning queue: candidate groups, scene contract form, compile output.
+- Collapsed debug board: latest tick, impact reports, chapter status, selected candidate internals.
+- Collapsed advanced state controls: Story Spine and World Pressure editors.
 
 Primary actions:
 
-- `Advance from protagonist action`
-- `Advance from inaction`
-- `Apply direction override`
-- `Approve movement`
-- `Request repair`
+- `Send` a world/story direction in chat.
+- `Approve`, `Hold`, or `Reject` movement candidates directly under a world reply.
+- `Select` approved candidates for scene contract material.
 - `Build scene contract`
 - `Compile intent`
 - `Lock chapter`
+
+Chat submit should create or update lab artifacts, but character/world chat must not directly mutate canonical truth files. Only approved candidate material may flow into scene contracts and then the existing InkOS write pipeline.
 - `Publish chapter`
 
 ### 2026-06-11 Chat-First Revision

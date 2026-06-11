@@ -257,6 +257,7 @@ vi.mock("@actalk/inkos-core", () => {
     ChapterPublicationStatusSchema: passthroughSchema,
     ChapterStatusRecordSchema: passthroughSchema,
     ImpactReportSchema: passthroughSchema,
+    LabChatTurnSchema: passthroughSchema,
     MovementCandidateSchema: passthroughSchema,
     ProjectStoryModeSchema: passthroughSchema,
     SceneContractSchema: passthroughSchema,
@@ -5666,6 +5667,58 @@ describe("createStudioServer daemon lifecycle", () => {
     const intentPath = join(root, "books", bookId, "story", "runtime", "chapter-0004.intent.md");
     await expect(readFile(intentPath, "utf-8")).resolves.toContain("Hero reaches the archive");
     await expect(readTruthFiles(root, bookId, truthFiles)).resolves.toEqual(truthFiles);
+  });
+
+  it("creates Story World chat turns as the primary interaction and bootstraps story spine", async () => {
+    const bookId = "lab-chat-first";
+    await seedStoryWorldLabBook(root, bookId);
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const chatResponse = await app.request(`http://localhost/api/books/${bookId}/lab/chat-turns`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        text: "Let the city react quietly.",
+      }),
+    });
+
+    const chatResponseText = await chatResponse.clone().text();
+    expect(chatResponse.status, chatResponseText).toBe(200);
+    const chatPayload = await chatResponse.json() as {
+      userTurn: { role: string; text: string; chapter: number };
+      worldTurn: { role: string; sourceTickId: string; movementCandidateIds: string[] };
+      tick: { kind: string; userDirection: string };
+      storySpine: { protagonistId: string; currentGoal: string };
+    };
+    expect(chatPayload.userTurn).toMatchObject({
+      role: "user",
+      text: "Let the city react quietly.",
+      chapter: 1,
+    });
+    expect(chatPayload.worldTurn.role).toBe("world");
+    expect(chatPayload.worldTurn.sourceTickId).toBeTruthy();
+    expect(chatPayload.worldTurn.movementCandidateIds.length).toBeGreaterThan(0);
+    expect(chatPayload.tick).toMatchObject({
+      kind: "direction_override",
+      userDirection: "Let the city react quietly.",
+    });
+    expect(chatPayload.storySpine).toMatchObject({
+      protagonistId: "Protagonist",
+      currentGoal: "Let the city react quietly.",
+    });
+
+    const labResponse = await app.request(`http://localhost/api/books/${bookId}/lab`);
+    expect(labResponse.status).toBe(200);
+    const labPayload = await labResponse.json() as {
+      chatTurns: Array<{ role: string; movementCandidateIds?: string[] }>;
+      ticks: unknown[];
+      movementCandidates: unknown[];
+    };
+    expect(labPayload.chatTurns.map((turn) => turn.role)).toEqual(["user", "world"]);
+    expect(labPayload.chatTurns[1]?.movementCandidateIds?.length).toBeGreaterThan(0);
+    expect(labPayload.ticks).toHaveLength(1);
+    expect(labPayload.movementCandidates.length).toBeGreaterThan(0);
   });
 
   it("does not create lab persistence for missing books", async () => {

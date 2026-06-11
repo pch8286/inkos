@@ -7,7 +7,6 @@ import {
   Globe2,
   Loader2,
   MessageSquareText,
-  PanelRight,
   PauseCircle,
   Plus,
   RefreshCw,
@@ -20,8 +19,7 @@ import {
 } from "lucide-react";
 import { fetchJson, postApi, useApi } from "../hooks/use-api";
 import type {
-  AdaptiveTickKindPayload,
-  AdaptiveTickPayload,
+  LabChatTurnPayload,
   MovementCandidatePayload,
   MovementCandidateStatusPayload,
   PressureLevelPayload,
@@ -33,11 +31,7 @@ import type {
   WorldPressureTypePayload,
 } from "../shared/contracts";
 import {
-  buildChatTickRequest,
   buildDefaultStorySpine,
-  buildDefaultStorySpineFromDirection,
-  buildTickRequest,
-  buildWorldDirectorTranscript,
   canCompileSceneContract,
   groupMovementCandidates,
   hasSelectedConflictRisk,
@@ -72,7 +66,7 @@ export interface SceneContractForm {
   readonly endingState: string;
 }
 
-type Operation = "story-spine" | "world-pressures" | "tick" | "scene-contract";
+type Operation = "story-spine" | "world-pressures" | "chat" | "scene-contract";
 export type WorldPressuresPayloadResult =
   | { readonly ok: true; readonly worldPressures: ReadonlyArray<WorldPressurePayload> }
   | { readonly ok: false; readonly error: string };
@@ -95,33 +89,6 @@ const PRESSURE_TYPE_OPTIONS: ReadonlyArray<WorldPressureTypePayload> = [
 
 const PRESSURE_LEVEL_OPTIONS: ReadonlyArray<PressureLevelPayload> = ["low", "medium", "high"];
 const PROTAGONIST_VISIBILITY_OPTIONS: ReadonlyArray<ProtagonistVisibilityPayload> = ["yes", "partial", "no"];
-
-const TICK_KIND_OPTIONS: ReadonlyArray<{
-  readonly value: AdaptiveTickKindPayload;
-  readonly label: string;
-  readonly placeholder: string;
-}> = [
-  {
-    value: "protagonist_action",
-    label: "Action",
-    placeholder: "What does the protagonist do?",
-  },
-  {
-    value: "protagonist_inaction",
-    label: "Inaction",
-    placeholder: "What does the protagonist leave unresolved?",
-  },
-  {
-    value: "elapsed_time",
-    label: "Elapsed time",
-    placeholder: "What changes while time passes?",
-  },
-  {
-    value: "direction_override",
-    label: "Direction",
-    placeholder: "What movement should the world bend toward?",
-  },
-];
 
 function storySpineToForm(storySpine: StorySpinePayload | null): StorySpineForm {
   const source = storySpine ?? buildDefaultStorySpine();
@@ -309,9 +276,7 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
   const { data: lab, loading, error, refetch } = useApi<StoryWorldLabPayload>(`/books/${bookId}/lab`);
   const [storySpineForm, setStorySpineForm] = useState<StorySpineForm>(() => storySpineToForm(null));
   const [worldPressureForms, setWorldPressureForms] = useState<WorldPressurePayload[]>([]);
-  const [tickChapter, setTickChapter] = useState("1");
-  const [tickKind, setTickKind] = useState<AdaptiveTickKindPayload>("direction_override");
-  const [tickActionText, setTickActionText] = useState("");
+  const [chatInput, setChatInput] = useState("");
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [sceneForm, setSceneForm] = useState<SceneContractForm>({
     chapter: "1",
@@ -341,8 +306,12 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
 
   const candidates = lab?.movementCandidates ?? [];
   const ticks = lab?.ticks ?? [];
-  const transcript = useMemo(() => buildWorldDirectorTranscript(ticks), [ticks]);
+  const chatTurns = lab?.chatTurns ?? [];
   const latestTick = ticks.length > 0 ? ticks[ticks.length - 1] : null;
+  const candidateById = useMemo(
+    () => new Map(candidates.map((candidate) => [candidate.id, candidate])),
+    [candidates],
+  );
   const groupedCandidates = useMemo(() => groupMovementCandidates(candidates), [candidates]);
   const selectedConflictRisk = useMemo(
     () => hasSelectedConflictRisk(candidates, selectedCandidateIds),
@@ -352,8 +321,6 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
     () => canCompileSceneContract(candidates, selectedCandidateIds),
     [candidates, selectedCandidateIds],
   );
-  const selectedTickKind = TICK_KIND_OPTIONS.find((option) => option.value === tickKind) ?? TICK_KIND_OPTIONS[0];
-
   const runOperation = async (operation: Operation, action: () => Promise<void>) => {
     setBusyOperation(operation);
     setMessage(null);
@@ -399,29 +366,20 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
     await refetch();
   });
 
-  const createTick = () => runOperation("tick", async () => {
-    const chapter = parsePositiveChapter(tickChapter);
-    if (!chapter) {
-      setMessage({ tone: "error", text: "Chapter must be a positive integer." });
+  const submitChat = () => runOperation("chat", async () => {
+    const text = chatInput.trim();
+    if (!text) {
+      setMessage({ tone: "error", text: "Chat text is required." });
       return;
     }
-    if (!tickActionText.trim()) {
-      setMessage({ tone: "error", text: "Tick text is required." });
-      return;
-    }
-    if (!lab?.storySpine) {
-      await saveStorySpinePayload(buildDefaultStorySpineFromDirection(tickActionText));
-    }
-    const tickPayload = tickKind === "direction_override"
-      ? buildChatTickRequest({ chapter, text: tickActionText })
-      : buildTickRequest({ chapter, kind: tickKind, actionText: tickActionText });
-    await postApi<{ tick: AdaptiveTickPayload; movementCandidates: ReadonlyArray<MovementCandidatePayload> }>(
-      `/books/${bookId}/lab/ticks`,
-      tickPayload,
+    const response = await postApi<{ worldTurn: LabChatTurnPayload }>(
+      `/books/${bookId}/lab/chat-turns`,
+      { text },
     );
-    setTickActionText("");
-    setSceneForm((current) => ({ ...current, chapter: String(chapter) }));
-    setMessage({ tone: "success", text: "World reaction created." });
+    setChatInput("");
+    if (response.worldTurn.chapter) {
+      setSceneForm((current) => ({ ...current, chapter: String(response.worldTurn.chapter) }));
+    }
     await refetch();
   });
 
@@ -562,31 +520,34 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
       {message && <StatusLine tone={message.tone} message={message.text} />}
       {error && lab && <StatusLine tone="warn" message={error} />}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="space-y-5">
         <div className="space-y-5">
           <Section
             title="World Director"
-            meta={`${ticks.length} world turns`}
+            meta={`${chatTurns.length} chat turns`}
             actions={(
               <Badge tone={lab?.storySpine ? "neutral" : "warn"}>
                 {lab?.storySpine ? "Spine saved" : "Auto spine"}
               </Badge>
             )}
           >
-            <div className="flex min-h-[34rem] flex-col">
+            <div className="flex h-[clamp(32rem,calc(100vh-18rem),48rem)] flex-col">
               <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-                {transcript.length === 0 && (
+                {chatTurns.length === 0 && (
                   <div className="flex min-h-[18rem] items-center justify-center rounded-lg border border-dashed border-border/70 bg-secondary/20 px-4 text-center">
                     <div className="max-w-md">
                       <MessageSquareText className="mx-auto h-8 w-8 text-muted-foreground" />
-                      <div className="mt-3 text-sm font-medium text-foreground">No world movement yet.</div>
+                      <div className="mt-3 text-sm font-medium text-foreground">Start directing the world.</div>
                     </div>
                   </div>
                 )}
-                {transcript.map((entry) => {
-                  const isUser = entry.role === "user";
+                {chatTurns.map((turn) => {
+                  const isUser = turn.role === "user";
+                  const attachedCandidates = turn.movementCandidateIds
+                    .map((id) => candidateById.get(id))
+                    .filter((candidate): candidate is MovementCandidatePayload => Boolean(candidate));
                   return (
-                    <div key={entry.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                    <div key={turn.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[min(40rem,92%)] rounded-lg border px-4 py-3 ${
                         isUser
                           ? "border-brand/30 bg-brand text-brand-foreground shadow-sm shadow-brand/15"
@@ -594,10 +555,19 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
                       }`}>
                         <div className={`mb-2 flex items-center gap-2 text-xs ${isUser ? "text-brand-foreground/80" : "text-muted-foreground"}`}>
                           {isUser ? <MessageSquareText size={14} /> : <Globe2 size={14} />}
-                          <span>Chapter {entry.chapter}</span>
-                          {entry.tags?.map((tag) => <span key={tag}>/ {tag}</span>)}
+                          {turn.chapter && <span>Chapter {turn.chapter}</span>}
+                          {!isUser && attachedCandidates.length > 0 && <span>/ {attachedCandidates.length} candidates</span>}
                         </div>
-                        <div className="whitespace-pre-line text-sm leading-6">{entry.text}</div>
+                        <div className="whitespace-pre-line text-sm leading-6">{turn.text}</div>
+                        {!isUser && attachedCandidates.length > 0 && (
+                          <ChatCandidateAttachments
+                            candidates={attachedCandidates}
+                            selectedCandidateIds={selectedCandidateIds}
+                            candidateBusyId={candidateBusyId}
+                            onToggle={toggleCandidateSelection}
+                            onStatus={updateCandidateStatus}
+                          />
+                        )}
                       </div>
                     </div>
                   );
@@ -605,48 +575,27 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               </div>
 
               <div className="mt-4 border-t border-border/60 pt-4">
-                <div className="grid gap-3 md:grid-cols-[6rem_10rem_minmax(0,1fr)_7rem]">
+                <div className="grid grid-cols-[minmax(0,1fr)_3.5rem] gap-3 md:grid-cols-[minmax(0,1fr)_7rem]">
                   <label className="space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">Chapter</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={tickChapter}
-                      onChange={(event) => setTickChapter(event.target.value)}
-                      className={fieldClassName()}
-                    />
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">Mode</span>
-                    <select
-                      value={tickKind}
-                      onChange={(event) => setTickKind(event.target.value as AdaptiveTickKindPayload)}
-                      className={selectClassName("w-full")}
-                    >
-                      {TICK_KIND_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">Director prompt</span>
+                    <span className="sr-only">World message</span>
                     <textarea
-                      value={tickActionText}
-                      onChange={(event) => setTickActionText(event.target.value)}
-                      placeholder={selectedTickKind.placeholder}
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      placeholder="Tell the world what happens, what the protagonist tries, or what direction should change..."
                       rows={3}
                       className={fieldClassName("min-h-[5.25rem] resize-y")}
                     />
                   </label>
-                  <div className="flex items-end">
+                  <div className="flex items-start md:items-end">
                     <button
                       type="button"
-                      onClick={createTick}
-                      disabled={busyOperation === "tick"}
+                      onClick={submitChat}
+                      disabled={busyOperation === "chat"}
+                      aria-label="Send world message"
                       className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand px-3 text-sm font-medium text-brand-foreground shadow-sm shadow-brand/20 transition hover:brightness-[1.03] disabled:pointer-events-none disabled:opacity-50"
                     >
-                      {busyOperation === "tick" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={15} />}
-                      Send
+                      {busyOperation === "chat" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={15} />}
+                      <span className="hidden md:inline">Send</span>
                     </button>
                   </div>
                 </div>
@@ -803,6 +752,15 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
             </div>
           </details>
 
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-secondary/30">
+              <span className="inline-flex items-center gap-2">
+                <FileText size={15} />
+                Planning queue
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">{selectedCandidateIds.length} selected</span>
+            </summary>
+            <div className="mt-4 space-y-5">
           <Section title="Movement Candidates" meta={`${candidates.length} total`}>
             <div className="grid gap-4 xl:grid-cols-2">
               <CandidateGroup
@@ -985,9 +943,19 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               })}
             </div>
           </Section>
+            </div>
+          </details>
         </div>
 
-        <aside className="space-y-5">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-secondary/30">
+            <span className="inline-flex items-center gap-2">
+              <SlidersHorizontal size={15} />
+              Debug board
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">{ticks.length} ticks</span>
+          </summary>
+          <aside className="mt-4 space-y-5">
           <Section title="Debug Board" meta={lab?.projectMode === "serialized" ? "Serialized mode" : "Draft mode"}>
             <div className="space-y-4">
               <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
@@ -1014,7 +982,7 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <PanelRight size={14} />
+                    <FileText size={14} />
                     Candidate Changes
                   </div>
                   <Badge>{candidates.length}</Badge>
@@ -1042,7 +1010,7 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
                 <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between gap-3">
                     <span>Chapter</span>
-                    <span className="font-medium text-foreground">{sceneForm.chapter || tickChapter}</span>
+                    <span className="font-medium text-foreground">{latestTick?.chapter ?? sceneForm.chapter}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span>POV</span>
@@ -1143,7 +1111,8 @@ export function StoryWorldLab({ bookId, onOpenBook }: StoryWorldLabProps) {
               )}
             </div>
           </Section>
-        </aside>
+          </aside>
+        </details>
       </div>
     </div>
   );
@@ -1168,6 +1137,69 @@ function LineTextArea({
         className={fieldClassName("min-h-[5.25rem] resize-y")}
       />
     </label>
+  );
+}
+
+function ChatCandidateAttachments({
+  candidates,
+  selectedCandidateIds,
+  candidateBusyId,
+  onToggle,
+  onStatus,
+}: {
+  readonly candidates: ReadonlyArray<MovementCandidatePayload>;
+  readonly selectedCandidateIds: ReadonlyArray<string>;
+  readonly candidateBusyId: string | null;
+  readonly onToggle: (candidate: MovementCandidatePayload) => void;
+  readonly onStatus: (candidate: MovementCandidatePayload, status: MovementCandidateStatusPayload) => void;
+}) {
+  return (
+    <div className="mt-3 space-y-2 border-t border-border/50 pt-3">
+      {candidates.map((candidate) => (
+        <div key={candidate.id} className="rounded-lg border border-border/60 bg-background/70 p-3">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={selectedCandidateIds.includes(candidate.id)}
+              disabled={candidate.status !== "approved"}
+              onChange={() => onToggle(candidate)}
+              className="mt-1 h-4 w-4 rounded border-border text-brand focus:ring-ring"
+              aria-label="Use candidate in scene"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm leading-6 text-foreground">{candidate.text}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge>{labelForStatus(candidate.status)}</Badge>
+                <Badge>{candidate.relevance}</Badge>
+                <Badge tone={candidate.conflictLevel === "major" ? "danger" : candidate.conflictLevel === "minor" ? "warn" : "neutral"}>
+                  {labelForConflict(candidate.conflictLevel)}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <CandidateStatusButton
+              candidate={candidate}
+              status="approved"
+              busy={candidateBusyId === candidate.id}
+              onStatus={onStatus}
+            />
+            <CandidateStatusButton
+              candidate={candidate}
+              status="hold"
+              busy={candidateBusyId === candidate.id}
+              onStatus={onStatus}
+            />
+            <CandidateStatusButton
+              candidate={candidate}
+              status="rejected"
+              busy={candidateBusyId === candidate.id}
+              onStatus={onStatus}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1268,6 +1300,7 @@ function CandidateStatusButton({
     : status === "hold"
       ? <PauseCircle size={14} />
       : <XCircle size={14} />;
+  const actionLabel = status === "approved" ? "Approve" : status === "hold" ? "Hold" : "Reject";
   return (
     <button
       type="button"
@@ -1276,7 +1309,7 @@ function CandidateStatusButton({
       className={actionButtonClassName(tone)}
     >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon}
-      {labelForStatus(status)}
+      {actionLabel}
     </button>
   );
 }

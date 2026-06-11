@@ -346,6 +346,17 @@ describe("story world route", () => {
     expect(source).toContain("canCompileSceneContract(candidates, selectedCandidateIds)");
   });
 
+  it("keeps Story World Lab centered on chat turns instead of tick form controls", () => {
+    const source = readFileSync(new URL("./pages/StoryWorldLab.tsx", import.meta.url), "utf-8");
+
+    expect(source).toContain("chatTurns");
+    expect(source).toContain("/lab/chat-turns");
+    expect(source).toContain("ChatCandidateAttachments");
+    expect(source).not.toContain("TICK_KIND_OPTIONS");
+    expect(source).not.toContain("tickChapter");
+    expect(source).not.toContain("tickActionText");
+  });
+
   it("builds schema-safe scene contract payload defaults", () => {
     expect(typeof storyWorldLabModule.buildSceneContractPayload).toBe("function");
 
