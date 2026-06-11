@@ -268,7 +268,7 @@ vi.mock("@actalk/inkos-core", () => {
       candidates: [{
         id: `${input.id}-move-01`,
         sourceTickId: input.id,
-        text: `${input.storySpine.protagonistId} acts: ${input.protagonistAction ?? input.protagonistInaction ?? input.userDirection ?? input.elapsedTime}.`,
+        text: `${input.storySpine.protagonistId}: ${input.storySpine.currentQuestion} / ${input.protagonistAction ?? input.protagonistInaction ?? input.userDirection ?? input.elapsedTime}.`,
         relevance: "high",
         visibility: "observed_now",
         risk: "medium",
@@ -5679,7 +5679,7 @@ describe("createStudioServer daemon lifecycle", () => {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({
-        text: "Let the city react quietly.",
+        text: "주인공이 침묵하자 도시가 조용히 반응한다.",
       }),
     });
 
@@ -5687,25 +5687,29 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(chatResponse.status, chatResponseText).toBe(200);
     const chatPayload = await chatResponse.json() as {
       userTurn: { role: string; text: string; chapter: number };
-      worldTurn: { role: string; sourceTickId: string; movementCandidateIds: string[] };
+      worldTurn: { role: string; text: string; sourceTickId: string; movementCandidateIds: string[] };
       tick: { kind: string; userDirection: string };
-      storySpine: { protagonistId: string; currentGoal: string };
+      storySpine: { protagonistId: string; currentGoal: string; currentQuestion: string };
     };
     expect(chatPayload.userTurn).toMatchObject({
       role: "user",
-      text: "Let the city react quietly.",
+      text: "주인공이 침묵하자 도시가 조용히 반응한다.",
       chapter: 1,
     });
     expect(chatPayload.worldTurn.role).toBe("world");
+    expect(chatPayload.worldTurn.text).toContain("세계는 어떻게 반응하는가?");
+    expect(chatPayload.worldTurn.text).not.toContain("How does the world respond now?");
+    expect(chatPayload.worldTurn.text).not.toContain("Protagonist");
     expect(chatPayload.worldTurn.sourceTickId).toBeTruthy();
     expect(chatPayload.worldTurn.movementCandidateIds.length).toBeGreaterThan(0);
     expect(chatPayload.tick).toMatchObject({
       kind: "direction_override",
-      userDirection: "Let the city react quietly.",
+      userDirection: "주인공이 침묵하자 도시가 조용히 반응한다.",
     });
     expect(chatPayload.storySpine).toMatchObject({
-      protagonistId: "Protagonist",
-      currentGoal: "Let the city react quietly.",
+      protagonistId: "주인공",
+      currentGoal: "주인공이 침묵하자 도시가 조용히 반응한다.",
+      currentQuestion: "세계는 어떻게 반응하는가?",
     });
 
     const labResponse = await app.request(`http://localhost/api/books/${bookId}/lab`);
@@ -5719,6 +5723,44 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(labPayload.chatTurns[1]?.movementCandidateIds?.length).toBeGreaterThan(0);
     expect(labPayload.ticks).toHaveLength(1);
     expect(labPayload.movementCandidates.length).toBeGreaterThan(0);
+  });
+
+  it("repairs legacy English auto Story Spine when Korean chat continues the lab", async () => {
+    const bookId = "lab-chat-legacy-english-spine";
+    await seedStoryWorldLabBook(root, bookId);
+    await mkdir(join(root, "books", bookId, "story", "lab"), { recursive: true });
+    await writeFile(join(root, "books", bookId, "story", "lab", "story_spine.json"), JSON.stringify({
+      protagonistId: "Protagonist",
+      currentGoal: "Let the city react quietly.",
+      currentQuestion: "How does the world respond now?",
+      emotionalState: [],
+      activeChoices: [],
+      constraints: [],
+    }, null, 2), "utf-8");
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request(`http://localhost/api/books/${bookId}/lab/chat-turns`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        text: "주인공이 다시 침묵하자 도시가 낮게 출렁인다.",
+      }),
+    });
+
+    const responseText = await response.clone().text();
+    expect(response.status, responseText).toBe(200);
+    const payload = await response.json() as {
+      worldTurn: { text: string };
+      storySpine: { protagonistId: string; currentGoal: string; currentQuestion: string };
+    };
+    expect(payload.storySpine).toMatchObject({
+      protagonistId: "주인공",
+      currentGoal: "주인공이 다시 침묵하자 도시가 낮게 출렁인다.",
+      currentQuestion: "세계는 어떻게 반응하는가?",
+    });
+    expect(payload.worldTurn.text).not.toContain("Protagonist");
+    expect(payload.worldTurn.text).not.toContain("How does the world respond now?");
   });
 
   it("does not create lab persistence for missing books", async () => {

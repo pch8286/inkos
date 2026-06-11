@@ -3118,15 +3118,27 @@ async function writeWorldPressures(root: string, bookId: string, worldPressures:
   await writeJsonFile(join(storyWorldLabDir(root, bookId), "world_pressures.json"), worldPressures);
 }
 
-function buildStorySpineFromChatText(text: string): StorySpine {
+function buildStorySpineFromChatText(text: string, language: StudioLanguage): StorySpine {
+  const trimmed = text.trim();
+  const useKorean = language === "ko" || /[가-힣]/.test(trimmed);
   return StorySpineSchema.parse({
-    protagonistId: "Protagonist",
-    currentGoal: text.trim() || "Follow the user's latest direction.",
-    currentQuestion: "How does the world respond now?",
+    protagonistId: useKorean ? "주인공" : "Protagonist",
+    currentGoal: trimmed || (useKorean ? "사용자의 최근 방향을 따른다." : "Follow the user's latest direction."),
+    currentQuestion: useKorean ? "세계는 어떻게 반응하는가?" : "How does the world respond now?",
     emotionalState: [],
     activeChoices: [],
     constraints: [],
   });
+}
+
+function shouldReplaceLegacyEnglishAutoStorySpine(storySpine: StorySpine, text: string, language: StudioLanguage): boolean {
+  const useKorean = language === "ko" || /[가-힣]/.test(text);
+  return useKorean
+    && storySpine.protagonistId === "Protagonist"
+    && storySpine.currentQuestion === "How does the world respond now?"
+    && storySpine.emotionalState.length === 0
+    && storySpine.activeChoices.length === 0
+    && storySpine.constraints.length === 0;
 }
 
 async function readLabChatTurns(root: string, bookId: string): Promise<LabChatTurn[]> {
@@ -3867,9 +3879,14 @@ export function createStudioServer(initialConfig: ProjectConfig | null, root: st
       : ticks.at(-1)?.chapter ?? 1;
     const now = new Date().toISOString();
     const existingStorySpine = await readStorySpine(root, id);
-    const storySpine = existingStorySpine ?? buildStorySpineFromChatText(text);
-    if (!existingStorySpine) {
+    const book = await state.loadBookConfig(id);
+    const language = isStudioLanguage(book.language) ? book.language : "ko";
+    let storySpine: StorySpine;
+    if (!existingStorySpine || shouldReplaceLegacyEnglishAutoStorySpine(existingStorySpine, text, language)) {
+      storySpine = buildStorySpineFromChatText(text, language);
       await writeStorySpine(root, id, storySpine);
+    } else {
+      storySpine = existingStorySpine;
     }
 
     const rawInput = {

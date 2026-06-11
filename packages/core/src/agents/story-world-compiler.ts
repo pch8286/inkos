@@ -192,11 +192,17 @@ function renderPressureMovementText(
   currentMotion: string,
 ): string {
   const cause = tickCause(input);
+  if (shouldRenderKorean(input)) {
+    return `${cause} 때문에 ${label}의 흐름이 이어진다: ${currentMotion}`;
+  }
   return `${label} keeps ${currentMotion} because ${cause}`;
 }
 
 function renderStorySpineMovementText(input: AdaptiveTickInput): string {
   const cause = tickCause(input);
+  if (shouldRenderKorean(input)) {
+    return `${withKoreanTopicParticle(koreanProtagonistId(input.storySpine.protagonistId))} "${koreanCurrentQuestion(input.storySpine.currentQuestion)}"라는 질문 앞에서 움직인다: ${cause}`;
+  }
   return `${input.storySpine.protagonistId} faces "${input.storySpine.currentQuestion}" as ${cause}`;
 }
 
@@ -207,10 +213,43 @@ function tickCause(input: AdaptiveTickInput): string {
     case "protagonist_inaction":
       return input.protagonistInaction ?? input.storySpine.currentGoal;
     case "elapsed_time":
-      return input.elapsedTime ?? "time passes";
+      return input.elapsedTime ?? (shouldRenderKorean(input) ? "시간이 흐른다" : "time passes");
     case "direction_override":
       return input.userDirection ?? input.storySpine.currentGoal;
   }
+}
+
+function shouldRenderKorean(input: AdaptiveTickInput): boolean {
+  return [
+    input.protagonistAction,
+    input.protagonistInaction,
+    input.elapsedTime,
+    input.userDirection,
+    input.storySpine.protagonistId,
+    input.storySpine.currentGoal,
+    input.storySpine.currentQuestion,
+    ...input.storySpine.emotionalState,
+    ...input.storySpine.activeChoices,
+    ...input.storySpine.constraints,
+    ...input.worldPressures.flatMap((pressure) => [pressure.label, pressure.currentMotion]),
+  ].some((value) => typeof value === "string" && /[가-힣]/.test(value));
+}
+
+function koreanProtagonistId(value: string): string {
+  return value === "Protagonist" ? "주인공" : value;
+}
+
+function koreanCurrentQuestion(value: string): string {
+  return value === "How does the world respond now?" ? "세계는 어떻게 반응하는가?" : value;
+}
+
+function withKoreanTopicParticle(value: string): string {
+  const trimmed = value.trim();
+  const last = trimmed.charCodeAt(trimmed.length - 1);
+  if (last >= 0xac00 && last <= 0xd7a3) {
+    return `${trimmed}${(last - 0xac00) % 28 === 0 ? "는" : "은"}`;
+  }
+  return `${trimmed}는`;
 }
 
 function mapVisibility(visibility: ProtagonistVisibility): MovementVisibility {

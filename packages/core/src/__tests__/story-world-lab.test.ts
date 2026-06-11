@@ -139,6 +139,53 @@ describe("story world lab", () => {
     expect(tick.candidates.map((candidate) => candidate.text).join("\n")).toContain("waits");
   });
 
+  it("renders Korean movement candidates for Korean world chat input", () => {
+    const tick = createAdaptiveTick({
+      id: "tick-ko",
+      bookId: "demo",
+      chapter: 1,
+      kind: "direction_override",
+      userDirection: "주인공이 침묵하자 도시가 조용히 반응한다.",
+      storySpine: {
+        protagonistId: "주인공",
+        currentGoal: "주인공이 침묵하자 도시가 조용히 반응한다.",
+        currentQuestion: "세계는 어떻게 반응하는가?",
+      },
+      createdAt: now,
+    });
+
+    const text = tick.candidates.map((candidate) => candidate.text).join("\n");
+    expect(text).toContain("주인공은");
+    expect(text).toContain("세계는 어떻게 반응하는가?");
+    expect(text).not.toContain("주인공는");
+    expect(text).not.toContain("Protagonist faces");
+    expect(text).not.toContain("How does the world respond now?");
+    expect(text).not.toContain(" as ");
+  });
+
+  it("localizes legacy English auto spine labels when Korean direction drives the tick", () => {
+    const tick = createAdaptiveTick({
+      id: "tick-ko-legacy",
+      bookId: "demo",
+      chapter: 1,
+      kind: "direction_override",
+      userDirection: "주인공이 다시 침묵하자 도시가 낮게 출렁인다.",
+      storySpine: {
+        protagonistId: "Protagonist",
+        currentGoal: "Let the city react quietly.",
+        currentQuestion: "How does the world respond now?",
+      },
+      createdAt: now,
+    });
+
+    const text = tick.candidates.map((candidate) => candidate.text).join("\n");
+    expect(text).toContain("주인공은");
+    expect(text).toContain("세계는 어떻게 반응하는가?");
+    expect(text).not.toContain("주인공는");
+    expect(text).not.toContain("Protagonist");
+    expect(text).not.toContain("How does the world respond now?");
+  });
+
   it("filters approved movement candidates before compile", () => {
     const approved = MovementCandidateSchema.parse({
       id: "move-1",
